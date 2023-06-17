@@ -22,8 +22,13 @@
 #include "xalloc.h"
 #include "nls.h"
 #include "libsmartcols.h"
+#include "signames.h"
+#include "timeutils.h"
 
 #include "lsfd.h"
+
+#include <sys/timerfd.h>
+#include <time.h>
 
 struct unkn {
 	struct file file;
@@ -227,8 +232,7 @@ static int anon_pidfd_handle_fdinfo(struct unkn *unkn, const char *key, const ch
 			return 0; /* ignore -- parse failed */
 		((struct anon_pidfd_data *)unkn->anon_data)->pid = (pid_t)pid;
 		return 1;
-	}
-	else if (strcmp(key, "NSpid") == 0) {
+	} else if (strcmp(key, "NSpid") == 0) {
 		((struct anon_pidfd_data *)unkn->anon_data)->nspid = xstrdup(value);
 		return 1;
 
@@ -320,7 +324,7 @@ static const struct ipc_class anon_eventfd_ipc_class = {
 
 static bool anon_eventfd_probe(const char *str)
 {
-	return (strncmp(str, "[eventfd]", 9) == 0);
+	return strncmp(str, "[eventfd]", 9) == 0;
 }
 
 static char *anon_eventfd_get_name(struct unkn *unkn)
@@ -442,7 +446,6 @@ struct anon_eventpoll_data {
 	int *tfds;
 };
 
-
 static bool anon_eventpoll_probe(const char *str)
 {
 	return strncmp(str, "[eventpoll]", 11) == 0;
@@ -456,8 +459,8 @@ static void anon_eventpoll_init(struct unkn *unkn)
 static void anon_eventpoll_free(struct unkn *unkn)
 {
 	struct anon_eventpoll_data *data = unkn->anon_data;
-	free (data->tfds);
-	free (data);
+	free(data->tfds);
+	free(data);
 }
 
 static int anon_eventpoll_handle_fdinfo(struct unkn *unkn, const char *key, const char *value)
@@ -473,14 +476,14 @@ static int anon_eventpoll_handle_fdinfo(struct unkn *unkn, const char *key, cons
 			return 0; /* ignore -- parse failed */
 
 		data = (struct anon_eventpoll_data *)unkn->anon_data;
-		data->tfds = xreallocarray (data->tfds, ++data->count, sizeof(int));
+		data->tfds = xreallocarray(data->tfds, ++data->count, sizeof(int));
 		data->tfds[data->count - 1] = (int)tfd;
 		return 1;
 	}
 	return 0;
 }
 
-static int intcmp (const void *a, const void *b)
+static int intcmp(const void *a, const void *b)
 {
 	int ai = *(int *)a;
 	int bi = *(int *)b;
@@ -491,8 +494,8 @@ static int intcmp (const void *a, const void *b)
 static void anon_eventpoll_attach_xinfo(struct unkn *unkn)
 {
 	struct anon_eventpoll_data *data = (struct anon_eventpoll_data *)unkn->anon_data;
-	qsort (data->tfds, data->count, sizeof (data->tfds[0]),
-	       intcmp);
+	qsort(data->tfds, data->count, sizeof(data->tfds[0]),
+	      intcmp);
 }
 
 static char *anon_eventpoll_make_tfds_string(struct anon_eventpoll_data *data,
@@ -516,8 +519,8 @@ static char *anon_eventpoll_make_tfds_string(struct anon_eventpoll_data *data,
 
 static char *anon_eventpoll_get_name(struct unkn *unkn)
 {
-	return anon_eventpoll_make_tfds_string ((struct anon_eventpoll_data *)unkn->anon_data,
-						"tfds=");
+	return anon_eventpoll_make_tfds_string((struct anon_eventpoll_data *)unkn->anon_data,
+					       "tfds=");
 }
 
 static bool anon_eventpoll_fill_column(struct proc *proc  __attribute__((__unused__)),
@@ -531,7 +534,7 @@ static bool anon_eventpoll_fill_column(struct proc *proc  __attribute__((__unuse
 
 	switch(column_id) {
 	case COL_EVENTPOLL_TFDS:
-		*str =anon_eventpoll_make_tfds_string (data, NULL);
+		*str =anon_eventpoll_make_tfds_string(data, NULL);
 		if (*str)
 			return true;
 		break;
@@ -552,6 +555,403 @@ static const struct anon_ops anon_eventpoll_ops = {
 };
 
 /*
+ * timerfd
+ */
+struct anon_timerfd_data {
+	int clockid;
+	struct itimerspec itimerspec;
+};
+
+static bool anon_timerfd_probe(const char *str)
+{
+	return strncmp(str, "[timerfd]", 9) == 0;
+}
+
+static void anon_timerfd_init(struct unkn *unkn)
+{
+	unkn->anon_data = xcalloc(1, sizeof(struct anon_timerfd_data));
+}
+
+static void anon_timerfd_free(struct unkn *unkn)
+{
+	struct anon_timerfd_data *data = unkn->anon_data;
+	free(data);
+}
+
+static int anon_timerfd_handle_fdinfo(struct unkn *unkn, const char *key, const char *value)
+{
+	struct anon_timerfd_data *data = (struct anon_timerfd_data *)unkn->anon_data;
+
+	if (strcmp(key, "clockid") == 0) {
+		unsigned long clockid;
+		char *end = NULL;
+
+		errno = 0;
+		clockid = strtoul(value, &end, 0);
+		if (errno != 0)
+			return 0; /* ignore -- parse failed */
+		if (*end != '\0')
+			return 0; /* ignore -- garbage remains. */
+
+		data->clockid = clockid;
+		return 1;
+	} else {
+		struct timespec *t;
+		uint64_t tv_sec;
+		uint64_t tv_nsec;
+
+		if (strcmp(key, "it_value") == 0)
+			t = &data->itimerspec.it_value;
+		else if (strcmp(key, "it_interval") == 0)
+			t = &data->itimerspec.it_interval;
+		else
+			return 0;
+
+		if (sscanf(value, "(%"SCNu64", %"SCNu64")",
+			   &tv_sec, &tv_nsec) == 2) {
+			t->tv_sec = (time_t)tv_sec;
+			t->tv_nsec = (long)tv_nsec;
+			return 1;
+		}
+
+		return 0;
+	}
+}
+
+static const char *anon_timerfd_decode_clockid(int clockid)
+{
+	switch (clockid) {
+	case CLOCK_REALTIME:
+		return "realtime";
+	case CLOCK_MONOTONIC:
+		return "monotonic";
+	case CLOCK_BOOTTIME:
+		return "boottime";
+	case CLOCK_REALTIME_ALARM:
+		return "realtime-alarm";
+	case CLOCK_BOOTTIME_ALARM:
+		return "boottime-alarm";
+	default:
+		return "unknown";
+	}
+}
+
+static void anon_timerfd_render_timespec_string(char *buf, size_t size,
+						const char *prefix,
+						const struct timespec *t)
+{
+	snprintf(buf, size, "%s%llu.%09ld",
+		 prefix? prefix: "",
+		 (unsigned long long)t->tv_sec, t->tv_nsec);
+}
+
+static char *anon_timerfd_get_name(struct unkn *unkn)
+{
+	char *str = NULL;
+
+	struct anon_timerfd_data *data = (struct anon_timerfd_data *)unkn->anon_data;
+	const struct timespec *exp;
+	const struct timespec *ival;
+
+	const char *clockid_name;
+	char exp_buf[BUFSIZ] = {'\0'};
+	char ival_buf[BUFSIZ] = {'\0'};
+
+	clockid_name = anon_timerfd_decode_clockid(data->clockid);
+
+	exp = &data->itimerspec.it_value;
+	if (is_timespecset(exp))
+		anon_timerfd_render_timespec_string(exp_buf, sizeof(exp_buf),
+						    " remaining=", exp);
+
+	ival = &data->itimerspec.it_interval;
+	if (is_timespecset(ival))
+		anon_timerfd_render_timespec_string(ival_buf, sizeof(ival_buf),
+						    " interval=", ival);
+
+	xasprintf(&str, "clockid=%s%s%s", clockid_name, exp_buf, ival_buf);
+	return str;
+}
+
+static bool anon_timerfd_fill_column(struct proc *proc  __attribute__((__unused__)),
+				     struct unkn *unkn,
+				     struct libscols_line *ln __attribute__((__unused__)),
+				     int column_id,
+				     size_t column_index __attribute__((__unused__)),
+				     char **str)
+{
+	struct anon_timerfd_data *data = (struct anon_timerfd_data *)unkn->anon_data;
+	char buf[BUFSIZ] = {'\0'};
+
+	switch(column_id) {
+	case COL_TIMERFD_CLOCKID:
+		*str = xstrdup(anon_timerfd_decode_clockid(data->clockid));
+		return true;
+	case COL_TIMERFD_INTERVAL:
+		anon_timerfd_render_timespec_string(buf, sizeof(buf), NULL,
+						    &data->itimerspec.it_interval);
+		*str = xstrdup(buf);
+		return true;
+	case COL_TIMERFD_REMAINING:
+		anon_timerfd_render_timespec_string(buf, sizeof(buf), NULL,
+						    &data->itimerspec.it_value);
+		*str = xstrdup(buf);
+		return true;
+	}
+
+	return false;
+}
+
+static const struct anon_ops anon_timerfd_ops = {
+	.class = "timerfd",
+	.probe = anon_timerfd_probe,
+	.get_name = anon_timerfd_get_name,
+	.fill_column = anon_timerfd_fill_column,
+	.init = anon_timerfd_init,
+	.free = anon_timerfd_free,
+	.handle_fdinfo = anon_timerfd_handle_fdinfo,
+};
+
+/*
+ * signalfd
+ */
+struct anon_signalfd_data {
+	uint64_t sigmask;
+};
+
+static bool anon_signalfd_probe(const char *str)
+{
+	return strncmp(str, "[signalfd]", 10) == 0;
+}
+
+static void anon_signalfd_init(struct unkn *unkn)
+{
+	unkn->anon_data = xcalloc(1, sizeof(struct anon_signalfd_data));
+}
+
+static void anon_signalfd_free(struct unkn *unkn)
+{
+	struct anon_signalfd_data *data = unkn->anon_data;
+	free(data);
+}
+
+static int anon_signalfd_handle_fdinfo(struct unkn *unkn, const char *key, const char *value)
+{
+	struct anon_signalfd_data *data = (struct anon_signalfd_data *)unkn->anon_data;
+
+	if (strcmp(key, "sigmask") == 0) {
+		if (ul_strtou64(value, &data->sigmask, 16) < 0) {
+			data->sigmask = 0;
+			return 0;
+		}
+	}
+	return 0;
+}
+
+static char *anon_signalfd_make_mask_string(const char* prefix, uint64_t sigmask)
+{
+	char *str = NULL;
+
+	for (size_t i = 0; i < sizeof(sigmask) * 8; i++) {
+		if ((((uint64_t)0x1) << i) & sigmask) {
+			const int signum = i + 1;
+			const char *signame = signum_to_signame(signum);
+
+			if (str)
+				xstrappend(&str, ",");
+			else if (prefix)
+				xstrappend(&str, prefix);
+
+			if (signame) {
+				xstrappend(&str, signame);
+			} else {
+				char buf[BUFSIZ];
+				snprintf(buf, sizeof(buf), "%d", signum);
+				xstrappend(&str, buf);
+			}
+		}
+	}
+
+	return str;
+}
+
+static char *anon_signalfd_get_name(struct unkn *unkn)
+{
+	struct anon_signalfd_data *data = (struct anon_signalfd_data *)unkn->anon_data;
+	return anon_signalfd_make_mask_string("mask=", data->sigmask);
+}
+
+static bool anon_signalfd_fill_column(struct proc *proc  __attribute__((__unused__)),
+				      struct unkn *unkn,
+				      struct libscols_line *ln __attribute__((__unused__)),
+				      int column_id,
+				      size_t column_index __attribute__((__unused__)),
+				      char **str)
+{
+	struct anon_signalfd_data *data = (struct anon_signalfd_data *)unkn->anon_data;
+
+	switch(column_id) {
+	case COL_SIGNALFD_MASK:
+		*str = anon_signalfd_make_mask_string(NULL, data->sigmask);
+		return true;
+	default:
+		return false;
+	}
+}
+
+static const struct anon_ops anon_signalfd_ops = {
+	.class = "signalfd",
+	.probe = anon_signalfd_probe,
+	.get_name = anon_signalfd_get_name,
+	.fill_column = anon_signalfd_fill_column,
+	.init = anon_signalfd_init,
+	.free = anon_signalfd_free,
+	.handle_fdinfo = anon_signalfd_handle_fdinfo,
+};
+
+/*
+ * inotify
+ */
+struct anon_inotify_data {
+	struct list_head inodes;
+};
+
+struct anon_inotify_inode {
+	ino_t ino;
+	dev_t sdev;
+	struct list_head inodes;
+};
+
+static bool anon_inotify_probe(const char *str)
+{
+	return strncmp(str, "inotify", 7) == 0;
+}
+
+/* A device number appeared in fdinfo of an inotify file uses the kernel
+ * internal representation. It is different from what we are familiar with;
+ * major(3) and minor(3) don't work with the representation.
+ * See linux/include/linux/kdev_t.h. */
+#define ANON_INOTIFY_MINORBITS	20
+#define ANON_INOTIFY_MINORMASK	((1U << ANON_INOTIFY_MINORBITS) - 1)
+
+#define ANON_INOTIFY_MAJOR(dev)	((unsigned int) ((dev) >> ANON_INOTIFY_MINORBITS))
+#define ANON_INOTIFY_MINOR(dev)	((unsigned int) ((dev) &  ANON_INOTIFY_MINORMASK))
+
+static char *anon_inotify_make_inodes_string(const char *prefix,
+					     enum decode_source_level decode_level,
+					     struct anon_inotify_data *data)
+{
+	char *str = NULL;
+	char buf[BUFSIZ] = {'\0'};
+	bool first_element = true;
+
+	struct list_head *i;
+	list_for_each(i, &data->inodes) {
+		char source[BUFSIZ/2] = {'\0'};
+		struct anon_inotify_inode *inode = list_entry(i,
+							      struct anon_inotify_inode,
+							      inodes);
+
+		decode_source(source, sizeof(source),
+			      ANON_INOTIFY_MAJOR(inode->sdev), ANON_INOTIFY_MINOR(inode->sdev),
+			      decode_level);
+		snprintf(buf, sizeof(buf), "%s%llu@%s", first_element? prefix: ",",
+			 (unsigned long long)inode->ino, source);
+		first_element = false;
+
+		xstrappend(&str, buf);
+	}
+
+	return str;
+}
+
+static char *anon_inotify_get_name(struct unkn *unkn)
+{
+	return anon_inotify_make_inodes_string("inodes=", DECODE_SOURCE_FULL,
+					       (struct anon_inotify_data *)unkn->anon_data);
+}
+
+static void anon_inotify_init(struct unkn *unkn)
+{
+	struct anon_inotify_data *data = xcalloc(1, sizeof(struct anon_inotify_data));
+	INIT_LIST_HEAD (&data->inodes);
+	unkn->anon_data = data;
+}
+
+static void anon_inotify_free(struct unkn *unkn)
+{
+	struct anon_inotify_data *data = unkn->anon_data;
+
+	list_free(&data->inodes, struct anon_inotify_inode, inodes,
+		  free);
+	free(data);
+}
+
+static void add_inode(struct anon_inotify_data *data, ino_t ino, dev_t sdev)
+{
+	struct anon_inotify_inode *inode = xmalloc(sizeof(*inode));
+
+	INIT_LIST_HEAD (&inode->inodes);
+	inode->ino = ino;
+	inode->sdev = sdev;
+
+	list_add_tail(&inode->inodes, &data->inodes);
+}
+
+static int anon_inotify_handle_fdinfo(struct unkn *unkn, const char *key, const char *value)
+{
+	struct anon_inotify_data *data = (struct anon_inotify_data *)unkn->anon_data;
+
+	if (strcmp(key, "inotify wd") == 0) {
+		unsigned long long ino;
+		unsigned long long sdev;
+
+		if (sscanf(value, "%*d ino:%llx sdev:%llx %*s", &ino, &sdev) == 2) {
+			add_inode(data, (ino_t)ino, (dev_t)sdev);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static bool anon_inotify_fill_column(struct proc *proc  __attribute__((__unused__)),
+				     struct unkn *unkn,
+				     struct libscols_line *ln __attribute__((__unused__)),
+				     int column_id,
+				     size_t column_index __attribute__((__unused__)),
+				     char **str)
+{
+	struct anon_inotify_data *data = (struct anon_inotify_data *)unkn->anon_data;
+
+	switch(column_id) {
+	case COL_INOTIFY_INODES:
+		*str = anon_inotify_make_inodes_string("", DECODE_SOURCE_FULL,
+						       data);
+		if (*str)
+			return true;
+		break;
+	case COL_INOTIFY_INODES_RAW:
+		*str = anon_inotify_make_inodes_string("", DECODE_SOURCE_MAJMIN,
+						       data);
+		if (*str)
+			return true;
+		break;
+	}
+
+	return false;
+}
+
+static const struct anon_ops anon_inotify_ops = {
+	.class = "inotify",
+	.probe = anon_inotify_probe,
+	.get_name = anon_inotify_get_name,
+	.fill_column = anon_inotify_fill_column,
+	.init = anon_inotify_init,
+	.free = anon_inotify_free,
+	.handle_fdinfo = anon_inotify_handle_fdinfo,
+};
+
+/*
  * generic (fallback implementation)
  */
 static const struct anon_ops anon_generic_ops = {
@@ -567,6 +967,9 @@ static const struct anon_ops *anon_ops[] = {
 	&anon_pidfd_ops,
 	&anon_eventfd_ops,
 	&anon_eventpoll_ops,
+	&anon_timerfd_ops,
+	&anon_signalfd_ops,
+	&anon_inotify_ops,
 };
 
 static const struct anon_ops *anon_probe(const char *str)

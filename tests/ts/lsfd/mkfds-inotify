@@ -15,35 +15,38 @@
 # GNU General Public License for more details.
 #
 TS_TOPDIR="${0%/*}/../.."
-TS_DESC="RAW6 sockets"
+TS_DESC="inotify"
 
 . "$TS_TOPDIR"/functions.sh
 ts_init "$*"
 
-ts_skip_nonroot
-
 ts_check_test_command "$TS_CMD_LSFD"
-ts_check_test_command "$TS_HELPER_MKFDS"
-ts_check_native_byteorder
-ts_skip_docker
+ts_check_prog "stat"
+ts_check_prog "sed"
 
 ts_cd "$TS_OUTDIR"
 
 PID=
 FD=3
-EXPR='(TYPE == "RAWv6") and (FD == 3)'
-PROTOCOL=5
-
+ROOT_DEV=$(stat -c %d /)
+ROOT="$(stat -c %i /)"@"$(((ROOT_DEV >> 8) & 255)):$((ROOT_DEV & 255))"
+FSTAB_DEV=$(stat -c %d /etc/fstab)
+FSTAB="$(stat -c %i /etc/fstab)"@"$(((FSTAB_DEV >> 8) & 255)):$((FSTAB_DEV & 255))"
 {
-    coproc MKFDS { "$TS_HELPER_MKFDS" raw6 $FD protocol=$PROTOCOL; }
-    if read -r -u "${MKFDS[0]}" PID; then
-	${TS_CMD_LSFD} -n \
-		       -o ASSOC,TYPE,NAME,SOCK.STATE,SOCK.TYPE,INET6.LADDR,INET6.RADDR,RAW.PROTOCOL \
-		       -p "${PID}" -Q "${EXPR}"
-	echo 'ASSOC,TYPE,NAME,SOCK.STATE,SOCK.TYPE,INET6.LADDR,INET6.RADDR,RAW.PROTOCOL': $?
+    coproc MKFDS { "$TS_HELPER_MKFDS" inotify $FD; }
+    if read -u ${MKFDS[0]} PID; then
+	EXPR='(PID == '"${PID}"') and (FD == '"$FD"')'
+	INODES_RAW=$(${TS_CMD_LSFD} --raw -n -o INOTIFY.INODES.RAW -Q "${EXPR}")
+	echo "INOTIFY.INODES.RAW": $?
+	if [[ "$INODES_RAW" == "$FSTAB","$ROOT" ]]; then
+	    echo "INOTIFY.INODES.RAW" == "FSTAB","ROOT"
+	else
+	    echo "INOTIFY.INODES.RAW": "$INODES_RAW"
+	    echo "FSTAB": "$FSTAB"
+	    echo "ROOT": "$ROOT"
+	fi
 	kill -CONT "${PID}"
     fi
-
     wait "${MKFDS_PID}"
 } > "$TS_OUTPUT" 2>&1
 

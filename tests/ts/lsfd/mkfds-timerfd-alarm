@@ -15,36 +15,42 @@
 # GNU General Public License for more details.
 #
 TS_TOPDIR="${0%/*}/../.."
-TS_DESC="RAW6 sockets"
+TS_DESC="timerfd associating alarm"
 
 . "$TS_TOPDIR"/functions.sh
 ts_init "$*"
 
-ts_skip_nonroot
+ts_skip_capability cap_wake_alarm
 
 ts_check_test_command "$TS_CMD_LSFD"
 ts_check_test_command "$TS_HELPER_MKFDS"
-ts_check_native_byteorder
-ts_skip_docker
 
 ts_cd "$TS_OUTDIR"
 
 PID=
 FD=3
-EXPR='(TYPE == "RAWv6") and (FD == 3)'
-PROTOCOL=5
+EXPR='(FD == '"$FD"')'
 
 {
-    coproc MKFDS { "$TS_HELPER_MKFDS" raw6 $FD protocol=$PROTOCOL; }
-    if read -r -u "${MKFDS[0]}" PID; then
-	${TS_CMD_LSFD} -n \
-		       -o ASSOC,TYPE,NAME,SOCK.STATE,SOCK.TYPE,INET6.LADDR,INET6.RADDR,RAW.PROTOCOL \
-		       -p "${PID}" -Q "${EXPR}"
-	echo 'ASSOC,TYPE,NAME,SOCK.STATE,SOCK.TYPE,INET6.LADDR,INET6.RADDR,RAW.PROTOCOL': $?
-	kill -CONT "${PID}"
-    fi
+    for clock in realtime-alarm  boottime-alarm; do
+	coproc MKFDS { "$TS_HELPER_MKFDS" timerfd $FD clockid=$clock remaining=0 interval=0 interval-nanofrac=0; }
+	if read -u ${MKFDS[0]} PID; then
+	    ${TS_CMD_LSFD} -p "${PID}" -n -o ASSOC,TYPE,NAME -Q "${EXPR}"
+	    echo 'ASSOC,TYPE,NAME': $?
 
-    wait "${MKFDS_PID}"
+	    ${TS_CMD_LSFD} -p "${PID}" -n -o TIMERFD.CLOCKID -Q "${EXPR}"
+	    echo 'CLOCKID': $?
+
+	    ${TS_CMD_LSFD} -p "${PID}" -n -o TIMERFD.REMAINING -Q "${EXPR}"
+	    echo 'TIMERFD.REMAINING': $?
+
+	    ${TS_CMD_LSFD} -p "${PID}" -n -o TIMERFD.INTERVAL -Q "${EXPR}"
+	    echo 'TIMERFD.INTERVAL': $?
+
+	    kill -CONT "${PID}"
+	fi
+	wait "${MKFDS_PID}"
+    done
 } > "$TS_OUTPUT" 2>&1
 
 ts_finalize

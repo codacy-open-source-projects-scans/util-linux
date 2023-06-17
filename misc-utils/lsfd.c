@@ -177,6 +177,12 @@ static const struct colinfo infos[] = {
 	[COL_INODE]            = { "INODE",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
 				   N_("inode number") },
+	[COL_INOTIFY_INODES]   = { "INOTIFY.INODES",
+				   0,   SCOLS_FL_WRAP,  SCOLS_JSON_STRING,
+				   N_("list of monitoring inodes (cooked)") },
+	[COL_INOTIFY_INODES_RAW]={ "INOTIFY.INODES.RAW",
+				   0,   SCOLS_FL_WRAP,  SCOLS_JSON_STRING,
+				   N_("list of monitoring inodes (raw, don't decode devices)") },
 	[COL_KNAME]            = { "KNAME",
 				   0.4, SCOLS_FL_TRUNC, SCOLS_JSON_STRING,
 				   N_("name of the file (raw)") },
@@ -255,6 +261,9 @@ static const struct colinfo infos[] = {
 	[COL_RDEV]             = { "RDEV",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("device ID (if special file)") },
+	[COL_SIGNALFD_MASK]    = { "SIGNALFD.MASK",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
+				   N_("masked signals") },
 	[COL_SIZE]             = { "SIZE",
 				   4,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
 				   N_("file size"), },
@@ -294,6 +303,15 @@ static const struct colinfo infos[] = {
 	[COL_TID]              = { "TID",
 				   5,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
 				   N_("thread ID of the process opening the file") },
+	[COL_TIMERFD_CLOCKID]  = { "TIMERFD.CLOCKID",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
+				   N_("clockid") },
+	[COL_TIMERFD_INTERVAL] = { "TIMERFD.INTERVAL",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("interval") },
+	[COL_TIMERFD_REMAINING]= { "TIMERFD.REMAINING",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("remaining time") },
 	[COL_TYPE]             = { "TYPE",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("file type (cooked)") },
@@ -612,7 +630,10 @@ static struct file *new_file(struct proc *proc, const struct file_class *class)
 {
 	struct file *file;
 
+	assert(class);
 	file = xcalloc(1, class->size);
+	file->class = class;
+
 	file->proc = proc;
 
 	INIT_LIST_HEAD(&file->files);
@@ -639,11 +660,6 @@ static struct file *copy_file(struct file *old)
 
 static void file_set_path(struct file *file, struct stat *sb, const char *name, int association)
 {
-	const struct file_class *class = stat2class(sb);
-
-	assert(class);
-
-	file->class = class;
 	file->association = association;
 	file->name = xstrdup(name);
 	file->stat = *sb;
@@ -850,9 +866,6 @@ static void parse_maps_line(struct path_cxt *pc, char *buf, struct proc *proc)
 			 */
 			goto try_map_files;
 		f = new_file(proc, stat2class(&sb));
-		if (!f)
-			return;
-
 		file_set_path(f, &sb, path, -assoc);
 	} else {
 		/* As used in tcpdump, AF_PACKET socket can be mmap'ed. */
@@ -866,9 +879,6 @@ static void parse_maps_line(struct path_cxt *pc, char *buf, struct proc *proc)
 		if (ul_path_readlink(pc, sym, sizeof(sym), map_file) < 0)
 			return;
 		f = new_file(proc, stat2class(&sb));
-		if (!f)
-			return;
-
 		file_set_path(f, &sb, sym, -assoc);
 	}
 
