@@ -184,6 +184,8 @@ Since util-linux 2.35, *mount* does not exit when user permissions are inadequat
 
 For more details, see *fstab*(5). Only the user that mounted a filesystem can unmount it again. If any user should be able to unmount it, then use *users* instead of *user* in the _fstab_ line. The *owner* option is similar to the *user* option, with the restriction that the user must be the owner of the special file. This may be useful e.g. for _/dev/fd_ if a login script makes the console user owner of this device. The *group* option is similar, with the restriction that the user must be a member of the group of the special file.
 
+The *user* mount option is accepted if no username is specified. If used in the format *user=someone*, the option is silently ignored and visible only for external mount helpers (/sbin/mount.<type>) for compatibility with some network filesystems.
+
 === Bind mount operation
 
 Remount part of the file hierarchy somewhere else. The call is:
@@ -521,9 +523,12 @@ The *rootcontext=* option allows you to explicitly label the root inode of a FS 
 Note that the kernel rejects any remount request that includes the context option, *even* when unchanged from the current context.
 +
 *Warning: the* _context_ *value might contain commas*, in which case the value has to be properly quoted, otherwise *mount* will interpret the comma as a separator between mount options. Don't forget that the shell strips off quotes and thus *double quoting is required*. For example:
++
 ____
+....
 mount -t tmpfs none /mnt -o \
 'context="system_u:object_r:tmp_t:s0:c127,c456",noexec'
+....
 ____
 
 For more details, see *selinux*(8).
