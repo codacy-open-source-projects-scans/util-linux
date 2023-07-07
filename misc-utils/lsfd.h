@@ -101,6 +101,7 @@ enum {
 	COL_TIMERFD_CLOCKID,
 	COL_TIMERFD_INTERVAL,
 	COL_TIMERFD_REMAINING,
+	COL_TUN_IFACE,
 	COL_TYPE,
 	COL_UDP_LADDR,
 	COL_UDP_RADDR,
@@ -113,6 +114,7 @@ enum {
 	COL_UID,		/* process */
 	COL_UNIX_PATH,
 	COL_USER,		/* process */
+	COL_XMODE,
 	LSFD_N_COLS		/* This must be at last. */
 };
 

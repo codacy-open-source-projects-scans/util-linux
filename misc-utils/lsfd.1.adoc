@@ -235,6 +235,13 @@ Access mode (rwx).
 
 NAME <``string``>::
 Cooked version of KNAME. It is mostly same as KNAME.
+
+____
+Note that `(deleted)` markers are removed from this column.
+Refer to _KNAME_, _DELETED_, or _XMODE_ to know the
+readability of the file from the file system.
+____
+
 +
 Some files have special formats and information sources:
 +
@@ -246,6 +253,9 @@ id=_EVENTFD.ID_
 +
 inotify:::
 inodes=_INOTIFY.INODES_
++
+misc:tun:::
+iface=_TUN.IFACE_
 +
 NETLINK:::
 protocol=_NETLINK.PROTOCOL_[ lport=_NETLINK.LPORT_[ group=_NETLINK.GROUPS_]]
@@ -426,6 +436,9 @@ Interval.
 TIMERFD.REMAINING <``number``>::
 Remaining time.
 
+TUN.IFACE <``string``>::
+Network intrface behind the tun device.
+
 TYPE <``string``>::
 Cooked version of STTYPE. It is same as STTYPE with exceptions.
 For SOCK, print the value for SOCK.PROTONAME.
@@ -463,6 +476,23 @@ Filesystem pathname for UNIX domain socket.
 
 USER <``string``>::
 User of the process.
+
+XMODE <``string``>::
+Extended version of _MODE_. This column may grow; new letters may be
+added to _XMODE_ when *lsfd* supports a new state of file descriptors
+and/or memory mappings.
++
+[-r]:::
+opened of mapped for reading. This is also in _MODE_.
++
+[-w]:::
+opened of mapped for writing. This is also in _MODE_.
++
+[-x]:::
+mapped for executing the code. This is also in _MODE_.
++
+[-D]:::
+opened file is deleted from  the file system. See also _DELETED._.
 
 == FILTER EXPRESSION
 
