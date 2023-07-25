@@ -70,7 +70,7 @@ and *-p* option, e.g. -p 1, may print the same output but using *-p*
 option is much more efficient because *-p* option works at a much earlier
 stage of processing than the *-Q* option.
 
-*-i*[4|6], *--inet*[=4|6]::
+*-i*[4|6], *--inet*[=4|=6]::
 List only IPv4 sockets and/or IPv6 sockets.
 
 *-Q*, *--filter* _expr_::
@@ -109,6 +109,9 @@ only for *lsfd* developers.
 
 *--dump-counters*::
 Dump the definition of counters used in *--summary* output.
+
+*-H*, *--list-columns*::
+List available columns that you can specify at *--output* option.
 
 include::man-common/help-version.adoc[]
 
@@ -235,13 +238,6 @@ Access mode (rwx).
 
 NAME <``string``>::
 Cooked version of KNAME. It is mostly same as KNAME.
-
-____
-Note that `(deleted)` markers are removed from this column.
-Refer to _KNAME_, _DELETED_, or _XMODE_ to know the
-readability of the file from the file system.
-____
-
 +
 Some files have special formats and information sources:
 +
@@ -306,6 +302,12 @@ state=_SOCK.STATE_[ path=_UNIX.PATH_]
 +
 UNIX:::
 state=_SOCK.STATE_[ path=_UNIX.PATH_] type=_SOCK.TYPE_
+
+____
+Note that `(deleted)` markers are removed from this column.
+Refer to _KNAME_, _DELETED_, or _XMODE_ to know the
+readability of the file from the file system.
+____
 
 NETLINK.GROUPS <``number``>::
 Netlink multicast groups.
@@ -479,7 +481,7 @@ User of the process.
 
 XMODE <``string``>::
 Extended version of _MODE_. This column may grow; new letters may be
-added to _XMODE_ when *lsfd* supports a new state of file descriptors
+appended to _XMODE_ when *lsfd* supports a new state of file descriptors
 and/or memory mappings.
 +
 [-r]:::
@@ -492,7 +494,17 @@ opened of mapped for writing. This is also in _MODE_.
 mapped for executing the code. This is also in _MODE_.
 +
 [-D]:::
-opened file is deleted from  the file system. See also _DELETED._.
+deleted from  the file system. See also _DELETED._.
++
+[-Ll]:::
+locked or leased. _l_ represents a read, a shared lock or a read lease.
+_L_ represents a write or an exclusive lock or a write lease. If both
+read/shared and write/exclusive locks or leases are taken by a file
+descriptor, _L_ is used as the flag.
++
+[-m]:::
+Multiplexed. If the file descriptor is targeted by a eventpoll file,
+this bit flag is set.
 
 == FILTER EXPRESSION
 
@@ -737,6 +749,7 @@ mailto:kzak@redhat.com[Karel Zak]
 
 == SEE ALSO
 
+*lslocks*(8)
 *lsof*(8)
 *pidof*(1)
 *proc*(5)

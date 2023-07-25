@@ -33,17 +33,29 @@ Don't print headings.
 Specify which output columns to print. See the *OUTPUT COLUMNS*
 section for details of available columns.
 
+*--output-all*::
+Output all columns.
+
 *-r*, *--raw*::
 Use raw output format.
 
 *-r*, *--time* _clock_
 Show current time of one specific clocks.
 
+*--no-discover-dynamic*
+Do not try to discover dynamic clocks.
+
+*-d*, *--dynamic-clock* _path_
+Also display specified dynamic clock.
+
 include::man-common/help-version.adoc[]
 
 == OUTPUT COLUMNS
 
 Each column has a type. Types are surround by < and >.
+
+TYPE <``string``>::
+Clock type.
 
 ID <``number``>::
 Numeric clock ID.
@@ -60,8 +72,17 @@ Current clock timestamp as returned by *clock_gettime()*.
 ISO_TIME <``string``>::
 ISO8601 formatted version of *TIME*.
 
-RESOLUTION <``number``>::
+RESOL_RAW <``number``>::
 Clock resolution as returned by *clock_getres()*.
+
+RESOL <``number``>::
+Human readable version of *RESOL_RAW*.
+
+REL_TIME <``string``>::
+*TIME* time formatted as time range.
+
+NS_OFFSET <``number``>::
+Offset of the current namespace to the parent namespace as read from */proc/self/timens_offsets*.
 
 
 == AUTHORS

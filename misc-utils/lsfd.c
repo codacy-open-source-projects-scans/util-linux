@@ -353,7 +353,7 @@ static const struct colinfo infos[] = {
 				   N_("user of the process") },
 	[COL_XMODE]            = { "XMODE",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
-				   N_("access mode and more (rwx)") },
+				   N_("extended version of MDOE (rwxD[Ll]m)") },
 };
 
 static const int default_columns[] = {
@@ -700,6 +700,7 @@ static struct proc *new_process(pid_t pid, struct proc *leader)
 
 	INIT_LIST_HEAD(&proc->files);
 	INIT_LIST_HEAD(&proc->procs);
+	INIT_LIST_HEAD(&proc->eventpolls);
 
 	proc->kthread = 0;
 	return proc;
@@ -1577,45 +1578,62 @@ static void collect_processes(struct lsfd_control *ctl, const pid_t pids[], int 
 	ul_unref_path(pc);
 }
 
-static void __attribute__((__noreturn__)) usage(void)
+static void __attribute__((__noreturn__)) list_colunms(FILE *out)
 {
-	FILE *out = stdout;
-	size_t i;
-
-	fputs(USAGE_HEADER, out);
-	fprintf(out, _(" %s [options]\n"), program_invocation_short_name);
-
-	fputs(USAGE_OPTIONS, out);
-	fputs(_(" -l,      --threads           list in threads level\n"), out);
-	fputs(_(" -J,      --json              use JSON output format\n"), out);
-	fputs(_(" -n,      --noheadings        don't print headings\n"), out);
-	fputs(_(" -o,      --output <list>     output columns\n"), out);
-	fputs(_(" -r,      --raw               use raw output format\n"), out);
-	fputs(_(" -u,      --notruncate        don't truncate text in columns\n"), out);
-	fputs(_(" -p,      --pid  <pid(s)>     collect information only specified processes\n"), out);
-	fputs(_(" -i[4|6], --inet[=4|6]        list only IPv4 and/or IPv6 sockets\n"), out);
-	fputs(_(" -Q,      --filter <expr>     apply display filter\n"), out);
-	fputs(_("          --debug-filter      dump the internal data structure of filter and exit\n"), out);
-	fputs(_(" -C,      --counter <name>:<expr>\n"
-		"                              define custom counter for --summary output\n"), out);
-	fputs(_("          --dump-counters     dump counter definitions\n"), out);
-	fputs(_("          --summary[=<when>]  print summary information (only, append, or never)\n"), out);
-
-	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(30));
-
 	fprintf(out, USAGE_COLUMNS);
-
-	for (i = 0; i < ARRAY_SIZE(infos); i++)
-		fprintf(out, " %16s  %-10s%s\n", infos[i].name,
+	for (size_t i = 0; i < ARRAY_SIZE(infos); i++)
+		fprintf(out, " %20s  %-10s%s\n", infos[i].name,
 			infos[i].json_type == SCOLS_JSON_STRING?  "<string>":
 			infos[i].json_type == SCOLS_JSON_ARRAY_STRING?  "<string>":
 			infos[i].json_type == SCOLS_JSON_ARRAY_NUMBER?  "<string>":
 			infos[i].json_type == SCOLS_JSON_NUMBER?  "<number>":
 			"<boolean>",
 			_(infos[i].help));
+	exit(EXIT_SUCCESS);
+}
 
-	printf(USAGE_MAN_TAIL("lsfd(1)"));
+static void print_columns(FILE *out, const char *prefix, const int cols[], size_t n_cols)
+{
+	fprintf(out, "%15s: ", prefix);
+	for (size_t i = 0; i < n_cols; i++) {
+		if (i)
+			fputc(',', out);
+		fputs(infos[cols[i]].name, out);
+	}
+	fputc('\n', out);
+}
+
+static void __attribute__((__noreturn__)) usage(void)
+{
+	FILE *out = stdout;
+
+	fputs(USAGE_HEADER, out);
+	fprintf(out, _(" %s [options]\n"), program_invocation_short_name);
+
+	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -l, --threads                list in threads level\n"), out);
+	fputs(_(" -J, --json                   use JSON output format\n"), out);
+	fputs(_(" -n, --noheadings             don't print headings\n"), out);
+	fputs(_(" -o, --output <list>          output columns\n"), out);
+	fputs(_(" -r, --raw                    use raw output format\n"), out);
+	fputs(_(" -u, --notruncate             don't truncate text in columns\n"), out);
+	fputs(_(" -p, --pid  <pid(s)>          collect information only specified processes\n"), out);
+	fputs(_(" -i[4|6], --inet[=4|=6]       list only IPv4 and/or IPv6 sockets\n"), out);
+	fputs(_(" -Q, --filter <expr>          apply display filter\n"), out);
+	fputs(_("     --debug-filter           dump the internal data structure of filter and exit\n"), out);
+	fputs(_(" -C, --counter <name>:<expr>  define custom counter for --summary output\n"), out);
+	fputs(_("     --dump-counters          dump counter definitions\n"), out);
+	fputs(_("     --summary[=<when>]       print summary information (only, append, or never)\n"), out);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_(" -H, --list-columns           list the available columns\n"), out);
+	fprintf(out, USAGE_HELP_OPTIONS(30));
+
+	fputs(USAGE_DEFAULT_COLUMNS, out);
+	print_columns(out, _("Default"), default_columns, ARRAY_SIZE(default_columns));
+	print_columns(out, _("With --threads"), default_threads_columns, ARRAY_SIZE(default_threads_columns));
+
+	fprintf(out, USAGE_MAN_TAIL("lsfd(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -1847,6 +1865,23 @@ static void attach_xinfos(struct list_head *procs)
 	}
 }
 
+static void set_multiplexed_flags(struct list_head *procs)
+{
+	struct list_head *p;
+	list_for_each (p, procs) {
+		struct proc *proc = list_entry(p, struct proc, procs);
+		struct list_head *f;
+		list_for_each (f, &proc->files) {
+			struct file *file = list_entry(f, struct file, files);
+			if (is_opened_file(file) && !file->multiplexed) {
+				int fd = file->association;
+				if (is_multiplexed_by_eventpoll(fd, &proc->eventpolls))
+					file->multiplexed = 1;
+			}
+		}
+	}
+}
+
 /* Filter expressions for implementing -i option.
  *
  * To list up the protocol names, use the following command line
@@ -1909,6 +1944,7 @@ int main(int argc, char *argv[])
 		{ "summary",    optional_argument, NULL,  OPT_SUMMARY },
 		{ "counter",    required_argument, NULL, 'C' },
 		{ "dump-counters",no_argument, NULL, OPT_DUMP_COUNTERS },
+		{ "list-columns",no_argument, NULL, 'H' },
 		{ NULL, 0, NULL, 0 },
 	};
 
@@ -1917,7 +1953,7 @@ int main(int argc, char *argv[])
 	textdomain(PACKAGE);
 	close_stdout_atexit();
 
-	while ((c = getopt_long(argc, argv, "no:JrVhluQ:p:i::C:s", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "no:JrVhluQ:p:i::C:sH", longopts, NULL)) != -1) {
 		switch (c) {
 		case 'n':
 			ctl.noheadings = 1;
@@ -1989,6 +2025,8 @@ int main(int argc, char *argv[])
 			print_version(EXIT_SUCCESS);
 		case 'h':
 			usage();
+		case 'H':
+			list_colunms(stdout);
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}
@@ -2078,6 +2116,9 @@ int main(int argc, char *argv[])
 	free(pids);
 
 	attach_xinfos(&ctl.procs);
+	if (scols_table_get_column_by_name(ctl.tb, "XMODE"))
+		set_multiplexed_flags(&ctl.procs);
+
 
 	convert(&ctl.procs, &ctl);
 
