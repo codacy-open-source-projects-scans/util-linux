@@ -46,8 +46,6 @@ static int kcmp(pid_t pid1, pid_t pid2, int type,
 #define PF_KTHREAD		0x00200000	/* I am a kernel thread */
 
 #include "c.h"
-#include "nls.h"
-#include "xalloc.h"
 #include "list.h"
 #include "closestream.h"
 #include "strutils.h"
@@ -55,8 +53,6 @@ static int kcmp(pid_t pid1, pid_t pid2, int type,
 #include "fileutils.h"
 #include "idcache.h"
 #include "pathnames.h"
-
-#include "libsmartcols.h"
 
 #include "lsfd.h"
 #include "lsfd-filter.h"
@@ -129,6 +125,15 @@ static const struct colinfo infos[] = {
 	[COL_BLKDRV]           = { "BLKDRV",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("block device driver name resolved by /proc/devices") },
+	[COL_BPF_PROG_ID]      = { "BPF-PROG.ID",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("bpf program id associated with the fd") },
+	[COL_BPF_PROG_TYPE]    = { "BPF-PROG.TYPE",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
+				   N_("bpf program type (decoded)") },
+	[COL_BPF_PROG_TYPE_RAW]= { "BPF-PROG.TYPE.RAW",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("bpf program type (raw)") },
 	[COL_CHRDRV]           = { "CHRDRV",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("character device driver name resolved by /proc/devices") },

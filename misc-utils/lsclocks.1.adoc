@@ -47,6 +47,18 @@ Do not try to discover dynamic clocks.
 
 *-d*, *--dynamic-clock* _path_
 Also display specified dynamic clock.
+Can be specified multiple times.
+
+*--no-discover-rtc*
+Do not try to discover RTCs.
+
+*-x*, *--rtc* _path_
+Also display specified RTC.
+Can be specified multiple times.
+
+*-c*, *--cpu-clock* _pid_
+Also display CPU clock of specified process.
+Can be specified multiple times.
 
 include::man-common/help-version.adoc[]
 

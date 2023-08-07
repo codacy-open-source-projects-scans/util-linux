@@ -29,9 +29,12 @@
 #include <dirent.h>
 #include <inttypes.h>
 
+#include "libsmartcols.h"
 #include "list.h"
+#include "nls.h"
 #include "path.h"
 #include "strutils.h"
+#include "xalloc.h"
 
 /*
  * column IDs
@@ -40,6 +43,9 @@ enum {
 	COL_AINODECLASS,
 	COL_ASSOC,
 	COL_BLKDRV,
+	COL_BPF_PROG_ID,
+	COL_BPF_PROG_TYPE,
+	COL_BPF_PROG_TYPE_RAW,
 	COL_CHRDRV,
 	COL_COMMAND,
 	COL_DELETED,

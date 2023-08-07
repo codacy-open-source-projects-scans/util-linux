@@ -541,6 +541,11 @@ static int do_mount(struct libmnt_context *cxt, const char *try_type)
 	if (!rc)
 		rc = mnt_context_call_hooks(cxt, MNT_STAGE_MOUNT);
 
+	if (rc == 0 && mnt_context_is_fake(cxt)) {
+		DBG(CXT, ul_debugobj(cxt, "FAKE (-f) set status=0"));
+		cxt->syscall_status = 0;
+	}
+
 	if (org_type && rc != 0)
 		__mnt_fs_set_fstype_ptr(cxt->fs, org_type);
 	org_type  = NULL;
@@ -669,6 +674,7 @@ static int prepare_target(struct libmnt_context *cxt)
 	const char *tgt, *prefix;
 	int rc = 0;
 	struct libmnt_ns *ns_old;
+	struct stat st;
 
 	assert(cxt);
 	assert(cxt->fs);
@@ -708,7 +714,10 @@ static int prepare_target(struct libmnt_context *cxt)
 		return -MNT_ERR_NAMESPACE;
 
 	/* canonicalize the path */
-	if (rc == 0) {
+	if (rc == 0 &&
+	    !(cxt->optlist && mnt_optlist_is_bind(cxt->optlist)
+	      && mnt_safe_lstat(tgt, &st) == 0 && S_ISLNK(st.st_mode))) {
+
 		struct libmnt_cache *cache = mnt_context_get_cache(cxt);
 
 		if (cache) {
@@ -1571,10 +1580,13 @@ int mnt_context_get_mount_excode(
 		if (!buf)
 			break;
 		if (geteuid() == 0) {
-			if (mnt_safe_stat(tgt, &st) || !S_ISDIR(st.st_mode))
-				snprintf(buf, bufsz, _("mount point is not a directory"));
-			else
+
+			if (mnt_safe_stat(tgt, &st) == 0
+			    && ((mflags & MS_BIND && S_ISREG(st.st_mode))
+				|| S_ISDIR(st.st_mode)))
 				snprintf(buf, bufsz, _("permission denied"));
+			else
+				snprintf(buf, bufsz, _("mount point is not a directory"));
 		} else
 			snprintf(buf, bufsz, _("must be superuser to use mount"));
 		break;

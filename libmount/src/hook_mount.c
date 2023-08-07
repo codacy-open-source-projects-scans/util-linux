@@ -294,6 +294,7 @@ static int hook_create_mount(struct libmnt_context *cxt,
 		/* cleanup after fail (libmount may only try the FS type) */
 		close_sysapi_fds(api);
 
+#if defined(HAVE_STRUCT_STATX) && defined(HAVE_STRUCT_STATX_STX_MNT_ID)
 	if (!rc && cxt->fs) {
 		struct statx st;
 
@@ -306,6 +307,7 @@ static int hook_create_mount(struct libmnt_context *cxt,
 				fs->id = cxt->fs->id;
 		}
 	}
+#endif
 
 done:
 	DBG(HOOK, ul_debugobj(hs, "create FS done [rc=%d, id=%d]", rc, cxt->fs ? cxt->fs->id : -1));
@@ -576,9 +578,6 @@ static int init_sysapi(struct libmnt_context *cxt,
 	if (!api)
 		return -ENOMEM;
 
-	if (mnt_context_is_fake(cxt))
-		goto fake;
-
 	if (path) {
 		api->fd_tree = open_mount_tree(cxt, path, flags);
 		if (api->fd_tree < 0)
@@ -611,10 +610,6 @@ static int init_sysapi(struct libmnt_context *cxt,
 fail:
 	DBG(HOOK, ul_debugobj(hs, "init fs/tree failed [errno=%d %m]", errno));
 	return -errno;
-fake:
-	DBG(CXT, ul_debugobj(cxt, " FAKE (-f)"));
-	cxt->syscall_status = 0;
-	return 0;
 }
 
 static int force_classic_mount(struct libmnt_context *cxt)

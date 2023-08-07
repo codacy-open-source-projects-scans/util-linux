@@ -15,37 +15,34 @@
 # GNU General Public License for more details.
 #
 TS_TOPDIR="${0%/*}/../.."
-TS_DESC="TCP6 sockets"
+TS_DESC="bpf-prog files"
 
 . "$TS_TOPDIR"/functions.sh
 ts_init "$*"
+ts_skip_nonroot
+ts_skip_docker
 
+. "$TS_SELF/lsfd-functions.bash"
 ts_check_test_command "$TS_CMD_LSFD"
 ts_check_test_command "$TS_HELPER_MKFDS"
-ts_check_native_byteorder
-ts_skip_docker
 
 ts_cd "$TS_OUTDIR"
 
 PID=
-FDS=3
-FDC=4
-FDA=5
-EXPR='(TYPE == "TCPv6") and (FD >= 3) and (FD <= 5)'
-
+FD=3
 {
-    coproc MKFDS { "$TS_HELPER_MKFDS" tcp6 $FDS $FDC $FDA \
-				      server-port=56789 \
-				      client-port=45678 ; }
+    coproc MKFDS { "$TS_HELPER_MKFDS" bpf-prog "$FD" prog-type-id=2; }
     if read -r -u "${MKFDS[0]}" PID; then
-	${TS_CMD_LSFD} -n \
-		       -o ASSOC,TYPE,STTYPE,NAME,SOCK.STATE,SOCK.TYPE,SOCK.LISTENING,INET6.LADDR,INET6.RADDR,TCP.LADDR,TCP.LPORT,TCP.RADDR,TCP.RPORT \
-		       -p "${PID}" -Q "${EXPR}"
-	echo 'ASSOC,TYPE,STTYPE,NAME,SOCK.STATE,SOCK.TYPE,SOCK.LISTENING,INET6.LADDR,INET6.RADDR,TCP.LADDR,TCP.LPORT,TCP.RADDR,TCP.RPORT': $?
+	"${TS_CMD_LSFD}" -r -n -oBPF-PROG.TYPE,BPF-PROG.TYPE.RAW -p "${PID}" -Q "(FD == $FD)"
+	echo "BPF-PROG.TYPE,BPF-PROG.TYPE.RAW": $?
 
 	kill -CONT "${PID}"
     fi
     wait "${MKFDS_PID}"
 } > "$TS_OUTPUT" 2>&1
+
+if [ "$?" == "$ENOSYS" ]; then
+    ts_skip "bpf(2) is not available"
+fi
 
 ts_finalize

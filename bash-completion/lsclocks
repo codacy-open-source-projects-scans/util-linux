@@ -26,6 +26,20 @@ _lsclocks_module()
 			COMPREPLY=( $(compgen -W "$clocks" -- "$cur") )
 			return 0
 			;;
+		'-d'|'--dynamic-clock')
+			clocks="$(echo /dev/ptp*)"
+			COMPREPLY=( $(compgen -o filenames -W "$clocks" -- "$cur") )
+			return 0
+			;;
+		'-x'|'--rtc')
+			clocks="$(echo /dev/rtc*)"
+			COMPREPLY=( $(compgen -o filenames -W "$clocks" -- "$cur") )
+			return 0
+			;;
+		'-c'|'--cpu-clock')
+			_pids
+			return 0
+			;;
 		'-h'|'--help'|'-V'|'--version')
 			return 0
 			;;
@@ -38,6 +52,9 @@ _lsclocks_module()
 				--output-all
 				--raw
 				--time
+				--dynamic-clock
+				--rtc
+				--cpu-clock
 				--help
 				--version"
 			COMPREPLY=( $(compgen -W "${OPTS[*]}" -- $cur) )
