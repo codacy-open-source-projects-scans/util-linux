@@ -84,6 +84,11 @@
 # define ADDR_LIMIT_3GB          0x8000000
 #endif
 
+/* fallback for old glibc-headers 2.17 */
+#ifndef PER_LINUX_FDPIC
+# define PER_LINUX_FDPIC	(PER_LINUX | FDPIC_FUNCPTRS)
+#endif
+
 #define ALL_PERSONALITIES \
     X(PER_LINUX) \
     X(PER_LINUX_32BIT) \
@@ -265,6 +270,12 @@ static struct arch_domain *init_arch_domains(void)
 		{PER_LINUX32,	"arm",		"arm"},
 		{PER_LINUX,	"arm64",	"aarch64"},
 		{PER_LINUX,	"aarch64",	"aarch64"},
+#endif
+#if defined(__riscv)
+		{PER_LINUX32,	"riscv32",	"riscv32"},
+		{PER_LINUX32,	"rv32",	"riscv32"},
+		{PER_LINUX,	"riscv64",	"riscv64"},
+		{PER_LINUX,	"rv64",	"riscv64"},
 #endif
 		/* place holder, will be filled up at runtime */
 		{-1,		NULL,		NULL},
