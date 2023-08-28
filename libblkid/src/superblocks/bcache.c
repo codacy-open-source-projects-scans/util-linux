@@ -103,6 +103,15 @@ union bcachefs_sb_csum {
 	uint8_t raw[16];
 } __attribute__((packed));
 
+struct bcachefs_sb_layout {
+	uint8_t		magic[16];
+	uint8_t		layout_type;
+	uint8_t		sb_max_size_bits;
+	uint8_t		nr_superblocks;
+	uint8_t		pad[5];
+	uint64_t	sb_offset[61];
+} __attribute__((packed));
+
 struct bcachefs_super_block {
 	union bcachefs_sb_csum	csum;
 	uint16_t	version;
@@ -124,7 +133,7 @@ struct bcachefs_super_block {
 	uint64_t	flags[8];
 	uint64_t	features[2];
 	uint64_t	compat[2];
-	uint8_t		layout[512];
+	struct bcachefs_sb_layout layout;
 	struct bcachefs_sb_field _start[];
 }  __attribute__((packed));
 
@@ -134,17 +143,19 @@ struct bcachefs_super_block {
 /* magic string len */
 #define BCACHE_SB_MAGIC_LEN (sizeof(BCACHE_SB_MAGIC) - 1)
 /* super block offset */
-#define BCACHE_SB_OFF       0x1000
+#define BCACHE_SB_OFF       0x1000U
 /* supper block offset in kB */
 #define BCACHE_SB_KBOFF     (BCACHE_SB_OFF >> 10)
 /* magic string offset within super block */
 #define BCACHE_SB_MAGIC_OFF offsetof(struct bcache_super_block, magic)
 /* start of checksummed data within superblock */
-#define BCACHE_SB_CSUMMED_START 8
+#define BCACHE_SB_CSUMMED_START 8U
 /* granularity of offset and length fields within superblock */
-#define BCACHEFS_SECTOR_SIZE   512
+#define BCACHEFS_SECTOR_SIZE   512U
+/* maximum superblock size shift */
+#define BCACHEFS_SB_MAX_SIZE_SHIFT   0x10U
 /* maximum superblock size */
-#define BCACHEFS_SB_MAX_SIZE   4096
+#define BCACHEFS_SB_MAX_SIZE   (1U << BCACHEFS_SB_MAX_SIZE_SHIFT)
 /* fields offset within super block */
 #define BCACHEFS_SB_FIELDS_OFF offsetof(struct bcachefs_super_block, _start)
 /* tag value for members field */
@@ -316,7 +327,14 @@ static int probe_bcachefs(blkid_probe pr, const struct blkid_idmag *mag)
 		return BLKID_PROBE_NONE;
 
 	sb_size = BCACHEFS_SB_FIELDS_OFF + BYTES(bcs);
+
 	if (sb_size > BCACHEFS_SB_MAX_SIZE)
+		return BLKID_PROBE_NONE;
+
+	if (bcs->layout.sb_max_size_bits > BCACHEFS_SB_MAX_SIZE_SHIFT)
+		return BLKID_PROBE_NONE;
+
+	if (sb_size > (BCACHEFS_SECTOR_SIZE << bcs->layout.sb_max_size_bits))
 		return BLKID_PROBE_NONE;
 
 	sb = blkid_probe_get_sb_buffer(pr, mag, sb_size);
