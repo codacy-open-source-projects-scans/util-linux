@@ -258,8 +258,10 @@ static const struct id_part fujitsu_part[] = {
 };
 
 static const struct id_part hisi_part[] = {
-    { 0xd01, "Kunpeng-920" },	/* aka tsv110 */
+    { 0xd01, "TaiShan-v110" },	/* used in Kunpeng-920 SoC */
+    { 0xd02, "TaiShan-v120" },	/* used in Kirin 990A and 9000S SoCs */
     { 0xd40, "Cortex-A76" },	/* HiSilicon uses this ID though advertises A76 */
+    { 0xd41, "Cortex-A77" },	/* HiSilicon uses this ID though advertises A77 */
     { -1, "unknown" },
 };
 
@@ -274,6 +276,7 @@ static const struct id_part ft_part[] = {
     { 0x661, "FTC661" },
     { 0x662, "FTC662" },
     { 0x663, "FTC663" },
+    { 0x862, "FTC862" },
     { -1, "unknown" },
 };
 

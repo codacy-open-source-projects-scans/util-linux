@@ -79,7 +79,7 @@ have_mountfd_api = cc.sizeof('struct mount_attr', prefix : '#include <linux/moun
 conf.set('HAVE_STRUCT_MOUNT_ATTR', have_mountfd_api ? 1 : false)
 conf.set('HAVE_MOUNTFD_API', have_mountfd_api ? 1 : false)
 
-have_struct_statx = cc.sizeof('struct statx', prefix : '#include <linux/stat.h>') > 0
+have_struct_statx = cc.sizeof('struct statx', prefix : '#include <sys/stat.h>') > 0
 conf.set('HAVE_STRUCT_STATX', have_struct_statx ? 1 : false)
 
 build_libmount = not get_option('build-libmount').disabled()
@@ -177,7 +177,6 @@ headers = '''
         linux/nsfs.h
         linux/mount.h
         linux/pr.h
-        linux/stat.h
         linux/securebits.h
         linux/tiocl.h
         linux/version.h
@@ -640,7 +639,7 @@ have = cc.has_member('struct stat', 'st_mtim.tv_nsec',
 conf.set('HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC', have ? 1 : false)
 
 have = cc.has_member('struct statx', 'stx_mnt_id',
-                     prefix : '#include <linux/stat.h>')
+                     prefix : '#include <sys/stat.h>')
 conf.set('HAVE_STRUCT_STATX_STX_MNT_ID', have ? 1 : false)
 
 # replacement for AC_STRUCT_TIMEZONE
@@ -877,6 +876,8 @@ compiler_flags = [
   '-Wunused-parameter',
   '-Wunused-result',
   '-Wunused-variable',
+  '-Wvla',
+  '-Walloca',
 ]
 foreach compiler_flag : compiler_flags
   if cc.has_argument(compiler_flag)
@@ -1369,6 +1370,20 @@ if not is_disabler(exe)
   exes += exe
   manadocs += ['sys-utils/renice.1.adoc']
   bashcompletions += ['renice']
+endif
+
+exe = executable(
+  'setpgid',
+  setpgid_sources,
+  include_directories: includes,
+  link_with : [lib_common,
+               lib_smartcols],
+  install_dir : usrbin_exec_dir,
+  install : true)
+if opt and not is_disabler(exe)
+  exes += exe
+  manadocs += ['sys-utils/setpgid.1.adoc']
+  bashcompletions += ['setpgid']
 endif
 
 exe = executable(
@@ -3288,6 +3303,14 @@ endif
 ############################################################
 
 exe = executable(
+  'test_cap',
+  'tests/helpers/test_cap.c',
+  include_directories : includes,
+  dependencies : [lib_cap_ng],
+  build_by_default: program_tests)
+exes += exe
+
+exe = executable(
   'test_mbsencode',
   'tests/helpers/test_mbsencode.c',
   include_directories : includes,
@@ -3371,6 +3394,8 @@ if LINUX
   exe = executable(
     'test_mkfds',
     'tests/helpers/test_mkfds.c',
+    'tests/helpers/test_mkfds.h',
+    'tests/helpers/test_mkfds_ppoll.c',
     include_directories : includes,
     dependencies : mq_libs,
     build_by_default: program_tests)

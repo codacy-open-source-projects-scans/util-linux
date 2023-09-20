@@ -156,6 +156,7 @@ blkid_probe blkid_new_probe(void)
 		pr->chains[i].enabled = chains_drvs[i]->dflt_enabled;
 	}
 	INIT_LIST_HEAD(&pr->buffers);
+	INIT_LIST_HEAD(&pr->prunable_buffers);
 	INIT_LIST_HEAD(&pr->values);
 	INIT_LIST_HEAD(&pr->hints);
 	return pr;
@@ -544,6 +545,16 @@ int __blkid_probe_filter_types(blkid_probe pr, int chain, int flag, char *names[
 	return 0;
 }
 
+static void remove_buffer(struct blkid_bufinfo *bf)
+{
+	list_del(&bf->bufs);
+
+	DBG(BUFFER, ul_debug(" remove buffer: [off=%"PRIu64", len=%"PRIu64"]",
+				bf->off, bf->len));
+	munmap(bf->data, bf->len);
+	free(bf);
+}
+
 static struct blkid_bufinfo *read_buffer(blkid_probe pr, uint64_t real_off, uint64_t len)
 {
 	ssize_t ret;
@@ -585,8 +596,7 @@ static struct blkid_bufinfo *read_buffer(blkid_probe pr, uint64_t real_off, uint
 	ret = read(pr->fd, bf->data, len);
 	if (ret != (ssize_t) len) {
 		DBG(LOWPROBE, ul_debug("\tread failed: %m"));
-		munmap(bf->data, bf->len);
-		free(bf);
+		remove_buffer(bf);
 
 		/* I/O errors on CDROMs are non-fatal to work with hybrid
 		 * audio+data disks */
@@ -635,6 +645,39 @@ static struct blkid_bufinfo *get_cached_buffer(blkid_probe pr, uint64_t off, uin
 		}
 	}
 	return NULL;
+}
+
+/*
+ * Mark smaller buffers that can be satisfied by bf as prunable
+ */
+static void mark_prunable_buffers(blkid_probe pr, const struct blkid_bufinfo *bf)
+{
+	struct list_head *p, *next;
+
+	list_for_each_safe(p, next, &pr->buffers) {
+		struct blkid_bufinfo *x =
+				list_entry(p, struct blkid_bufinfo, bufs);
+
+		if (bf->off <= x->off && bf->off + bf->len >= x->off + x->len) {
+			list_del(&x->bufs);
+			list_add(&x->bufs, &pr->prunable_buffers);
+		}
+	}
+}
+
+/*
+ * Remove buffers that are marked as prunable
+ */
+void blkid_probe_prune_buffers(blkid_probe pr)
+{
+	struct list_head *p, *next;
+
+	list_for_each_safe(p, next, &pr->prunable_buffers) {
+		struct blkid_bufinfo *x =
+				list_entry(p, struct blkid_bufinfo, bufs);
+
+		remove_buffer(x);
+	}
 }
 
 /*
@@ -737,6 +780,7 @@ const unsigned char *blkid_probe_get_buffer(blkid_probe pr, uint64_t off, uint64
 		if (!bf)
 			return NULL;
 
+		mark_prunable_buffers(pr, bf);
 		list_add_tail(&bf->bufs, &pr->buffers);
 	}
 
@@ -766,6 +810,8 @@ int blkid_probe_reset_buffers(blkid_probe pr)
 
 	pr->flags &= ~BLKID_FL_MODIF_BUFF;
 
+	blkid_probe_prune_buffers(pr);
+
 	if (list_empty(&pr->buffers))
 		return 0;
 
@@ -776,12 +822,10 @@ int blkid_probe_reset_buffers(blkid_probe pr)
 						struct blkid_bufinfo, bufs);
 		ct++;
 		len += bf->len;
-		list_del(&bf->bufs);
 
 		DBG(BUFFER, ul_debug(" remove buffer: [off=%"PRIu64", len=%"PRIu64"]",
 		                     bf->off, bf->len));
-		munmap(bf->data, bf->len);
-		free(bf);
+		remove_buffer(bf);
 	}
 
 	DBG(LOWPROBE, ul_debug(" buffers summary: %"PRIu64" bytes by %"PRIu64" read() calls",

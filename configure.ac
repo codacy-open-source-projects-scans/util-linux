@@ -156,6 +156,8 @@ UL_WARN_ADD([-Wunused-but-set-variable])
 UL_WARN_ADD([-Wunused-parameter])
 UL_WARN_ADD([-Wunused-result])
 UL_WARN_ADD([-Wunused-variable])
+UL_WARN_ADD([-Wvla])
+UL_WARN_ADD([-Walloca])
 
 AC_ARG_ENABLE([werror],
   AS_HELP_STRING([--enable-werror], [make all compiler warnings into errors]),
@@ -326,7 +328,6 @@ AC_CHECK_HEADERS([ \
 	linux/nsfs.h \
 	linux/pr.h \
 	linux/raw.h \
-	linux/stat.h \
 	linux/securebits.h \
 	linux/tiocl.h \
 	linux/version.h \
@@ -518,7 +519,6 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 ])
 
 AC_CHECK_TYPES([struct mount_attr], [], [], [[#include <linux/mount.h>]])
-AC_CHECK_TYPES([struct statx], [], [], [[#include <linux/stat.h>]])
 AC_CHECK_TYPES([enum fsconfig_command], [], [], [[#include <linux/mount.h>]])
 
 AC_CHECK_MEMBERS([struct termios.c_line],,,
@@ -527,8 +527,9 @@ AC_CHECK_MEMBERS([struct termios.c_line],,,
 AC_CHECK_MEMBERS([struct stat.st_mtim.tv_nsec],,,
     [[#include <sys/stat.h>]])
 
+AC_CHECK_TYPES([struct statx], [], [], [[#include <sys/stat.h>]])
 AC_CHECK_MEMBERS([struct statx.stx_mnt_id],,,
-    [[#include <linux/stat.h>]])
+    [[#include <sys/stat.h>]])
 
 AC_CHECK_DECLS([_NL_TIME_WEEK_1STDAY],[],[],[[#include <langinfo.h>]])
 
@@ -1629,7 +1630,7 @@ AS_IF([test "x$have_futimens" = xyes && test "x$have_inotify_init1" = xyes ], [
 
 
 AC_ARG_ENABLE([plymouth_support],
-  AS_HELP_STRING([--disable-plymouth_support], [do not care about plymouth in sylogin(8) and agetty(8)]),
+  AS_HELP_STRING([--disable-plymouth_support], [do not care about plymouth in sulogin(8) and agetty(8)]),
   [], [enable_plymouth_support=check]
 )
 UL_BUILD_INIT([plymouth_support])
@@ -1639,7 +1640,7 @@ UL_REQUIRES_HAVE([plymouth_support], [sock_nonblock], [SOCK_NONBLOCK flag])
 UL_REQUIRES_HAVE([plymouth_support], [so_passcred], [SO_PASSCRED flag])
 AM_CONDITIONAL([USE_PLYMOUTH_SUPPORT], [test "x$build_plymouth_support" = xyes])
 AS_IF([test "x$build_plymouth_support" = xyes ], [
-    AC_DEFINE([USE_PLYMOUTH_SUPPORT], [1], [Enable plymouth support feature for sulogin and aggety])
+    AC_DEFINE([USE_PLYMOUTH_SUPPORT], [1], [Enable plymouth support feature for sulogin and agetty])
 ])
 
 
@@ -1907,7 +1908,8 @@ AS_IF([test "x$build_enosys" = xyes], [
 ])
 AM_CONDITIONAL([BUILD_ENOSYS], [test "x$build_enosys" = xyes])
 
-UL_BUILD_INIT([lsclocks], [yes])
+UL_BUILD_INIT([lsclocks], [check])
+UL_REQUIRES_LINUX([lsclocks])
 AM_CONDITIONAL([BUILD_LSCLOCKS], [test "x$build_lsclocks" = xyes])
 
 UL_BUILD_INIT([getopt], [yes])
@@ -2076,6 +2078,9 @@ UL_REQUIRES_LINUX([rfkill])
 UL_REQUIRES_BUILD([rfkill], [libsmartcols])
 AM_CONDITIONAL([BUILD_RFKILL], [test "x$build_rfkill" = xyes])
 
+
+UL_BUILD_INIT([setpgid], [yes])
+AM_CONDITIONAL([BUILD_SETPGID], [test "x$build_setpgid" = xyes])
 
 UL_BUILD_INIT([setsid], [yes])
 AM_CONDITIONAL([BUILD_SETSID], [test "x$build_setsid" = xyes])
