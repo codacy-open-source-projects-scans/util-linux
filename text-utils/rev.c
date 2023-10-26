@@ -79,8 +79,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("Reverse lines characterwise.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	printf(USAGE_HELP_OPTIONS(16));
-	printf(USAGE_MAN_TAIL("rev(1)"));
+	fprintf(out, USAGE_HELP_OPTIONS(16));
+	fprintf(out, USAGE_MAN_TAIL("rev(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -157,7 +157,7 @@ int main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	buf = xmalloc(bufsiz * sizeof(wchar_t));
+	buf = xreallocarray(NULL, bufsiz, sizeof(wchar_t));
 
 	do {
 		if (*argv) {
@@ -182,7 +182,7 @@ int main(int argc, char *argv[])
 				/* So now we double the buffer size */
 				bufsiz *= 2;
 
-				buf = xrealloc(buf, bufsiz * sizeof(wchar_t));
+				buf = xreallocarray(buf, bufsiz, sizeof(wchar_t));
 
 				/* And fill the rest of the buffer */
 				len += read_line(sep, &buf[len], bufsiz/2, fp);
@@ -202,4 +202,3 @@ int main(int argc, char *argv[])
 	free(buf);
 	return rval;
 }
-

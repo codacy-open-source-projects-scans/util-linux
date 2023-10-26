@@ -165,7 +165,7 @@ static struct replay_log *replay_new_log(struct replay_setup *stp,
 	assert(streams);
 	assert(filename);
 
-	stp->logs = xrealloc(stp->logs, (stp->nlogs + 1) *  sizeof(*log));
+	stp->logs = xreallocarray(stp->logs, stp->nlogs + 1,  sizeof(*log));
 	log = &stp->logs[stp->nlogs];
 	stp->nlogs++;
 
@@ -252,6 +252,8 @@ int replay_associate_log(struct replay_setup *stp,
 
 	if (rc == 0)
 		replay_new_log(stp, streams, filename, f);
+	else if (f)
+		fclose(f);
 
 	DBG(LOG, ul_debug("associate log file '%s', streams '%s' [rc=%d]", filename, streams, rc));
 	return rc;

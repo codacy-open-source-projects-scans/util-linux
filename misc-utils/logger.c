@@ -343,7 +343,7 @@ static int journald_entry(struct logger_ctl *ctl, FILE *fp)
 	int n, lines = 0, vectors = 8, ret = 0, msgline = -1;
 	size_t dummy = 0;
 
-	iovec = xmalloc(vectors * sizeof(struct iovec));
+	iovec = xreallocarray(NULL, vectors, sizeof(struct iovec));
 	while (1) {
 		buf = NULL;
 		sz = getline(&buf, &dummy, fp);
@@ -375,7 +375,7 @@ static int journald_entry(struct logger_ctl *ctl, FILE *fp)
 			vectors *= 2;
 			if (IOV_MAX < vectors)
 				errx(EXIT_FAILURE, _("maximum input lines (%d) exceeded"), IOV_MAX);
-			iovec = xrealloc(iovec, vectors * sizeof(struct iovec));
+			iovec = xreallocarray(iovec, vectors, sizeof(struct iovec));
 		}
 		iovec[lines].iov_base = buf;
 		iovec[lines].iov_len = sz;
@@ -1091,8 +1091,8 @@ static void __attribute__((__noreturn__)) usage(void)
 #endif
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(26));
-	printf(USAGE_MAN_TAIL("logger(1)"));
+	fprintf(out, USAGE_HELP_OPTIONS(26));
+	fprintf(out, USAGE_MAN_TAIL("logger(1)"));
 
 	exit(EXIT_SUCCESS);
 }

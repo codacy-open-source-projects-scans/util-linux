@@ -161,6 +161,23 @@ static int parse_subseconds(const char *t, usec_t *usec)
 	return 0;
 }
 
+static const char *parse_epoch_seconds(const char *t, struct tm *tm)
+{
+	int64_t s;
+	time_t st;
+	int f, c;
+
+	f = sscanf(t, "%"SCNd64"%n", &s, &c);
+	if (f < 1)
+		return NULL;
+	st = s;
+	if ((int64_t) st < s)
+		return NULL;
+	if (!localtime_r(&st, tm))
+		return NULL;
+	return t + c;
+}
+
 static int parse_timestamp_reference(time_t x, const char *t, usec_t *usec)
 {
 	static const struct {
@@ -254,7 +271,7 @@ static int parse_timestamp_reference(time_t x, const char *t, usec_t *usec)
 
 		goto finish;
 	} else if (t[0] == '@') {
-		k = strptime(t + 1, "%s", &tm);
+		k = parse_epoch_seconds(t + 1, &tm);
 		if (k && *k == 0)
 			goto finish;
 		else if (k && parse_subseconds(k, &ret) == 0)
@@ -373,11 +390,13 @@ static int parse_timestamp_reference(time_t x, const char *t, usec_t *usec)
 
 	ret += (usec_t) x * USEC_PER_SEC;
 
+	if (minus > ret)
+		return -ERANGE;
+	if ((ret + plus) < ret)
+		return -ERANGE;
+
 	ret += plus;
-	if (ret > minus)
-		ret -= minus;
-	else
-		ret = 0;
+	ret -= minus;
 
 	*usec = ret;
 
@@ -707,6 +726,7 @@ static int run_unittest_timestamp(void)
 		{ "2012-09-22 16:34:22.012", 1348331662012000 },
 		{ "@1348331662"            , 1348331662000000 },
 		{ "@1348331662.234567"     , 1348331662234567 },
+		{ "@0"                     ,                0 },
 		{ "2012-09-22 16:34"       , 1348331640000000 },
 		{ "2012-09-22"             , 1348272000000000 },
 		{ "16:34:22"               , 1674232462000000 },
@@ -835,6 +855,7 @@ int main(int argc, char *argv[])
 {
 	struct timespec ts = { 0 };
 	char buf[ISO_BUFSIZ];
+	int r;
 
 	if (argc < 2) {
 		fprintf(stderr, "usage: %s [<time> [<usec>]] | [--timestamp <str>] | [--unittest-timestamp]\n", argv[0]);
@@ -851,7 +872,9 @@ int main(int argc, char *argv[])
 	if (strcmp(argv[1], "--timestamp") == 0) {
 		usec_t usec = 0;
 
-		parse_timestamp(argv[2], &usec);
+		r = parse_timestamp(argv[2], &usec);
+		if (r)
+			errx(EXIT_FAILURE, "Can not parse '%s': %s", argv[2], strerror(-r));
 		ts.tv_sec = (time_t) (usec / USEC_PER_SEC);
 		ts.tv_nsec = (usec % USEC_PER_SEC) * NSEC_PER_USEC;
 	} else {

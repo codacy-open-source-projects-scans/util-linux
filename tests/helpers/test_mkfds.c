@@ -894,6 +894,12 @@ static void *make_socketpair(const struct factory *factory, struct fdesc fdescs[
 	int sd[2];
 	struct arg socktype = decode_arg("socktype", factory->params, argc, argv);
 	int isocktype;
+	struct arg halfclose = decode_arg("halfclose", factory->params, argc, argv);
+	bool bhalfclose;
+
+	bhalfclose = ARG_BOOLEAN(halfclose);
+	free_arg(&halfclose);
+
 	if (strcmp(ARG_STRING(socktype), "STREAM") == 0)
 		isocktype = SOCK_STREAM;
 	else if (strcmp(ARG_STRING(socktype), "DGRAM") == 0)
@@ -908,6 +914,15 @@ static void *make_socketpair(const struct factory *factory, struct fdesc fdescs[
 
 	if (socketpair(AF_UNIX, isocktype, 0, sd) < 0)
 		err(EXIT_FAILURE, "failed to make socket pair");
+
+	if (bhalfclose) {
+		if (shutdown(sd[0], SHUT_RD) < 0)
+			err(EXIT_FAILURE,
+			    "failed to shutdown the read end of the 1st socket");
+		if (shutdown(sd[1], SHUT_WR) < 0)
+			err(EXIT_FAILURE,
+			    "failed to shutdown the write end of the 2nd socket");
+	}
 
 	for (int i = 0; i < 2; i++) {
 		if (sd[i] != fdescs[i].fd) {
@@ -2406,8 +2421,8 @@ static void free_mqueue(const struct factory * factory _U_, void *data)
 	}
 }
 
-static void *make_mqueue(const struct factory *factory _U_, struct fdesc fdescs[],
-			 int argc _U_, char ** argv _U_)
+static void *make_mqueue(const struct factory *factory, struct fdesc fdescs[],
+			 int argc, char ** argv)
 {
 	struct mqueue_data *mqueue_data;
 	struct arg path = decode_arg("path", factory->params, argc, argv);
@@ -2567,7 +2582,7 @@ static void free_sysvshm(const struct factory *factory _U_, void *data)
 	shmctl(sysvshm_data->id, IPC_RMID, NULL);
 }
 
-static void *make_eventpoll(const struct factory *factory _U_, struct fdesc fdescs[] _U_,
+static void *make_eventpoll(const struct factory *factory _U_, struct fdesc fdescs[],
 			    int argc _U_, char ** argv _U_)
 {
 	int efd;
@@ -2846,11 +2861,14 @@ static void free_cdev_tun(const struct factory * factory _U_, void *data)
 	free(data);
 }
 
-static void *make_bpf_prog(const struct factory *factory _U_, struct fdesc fdescs[],
-			   int argc _U_, char ** argv _U_)
+static void *make_bpf_prog(const struct factory *factory, struct fdesc fdescs[],
+			   int argc, char ** argv)
 {
 	struct arg prog_type_id = decode_arg("prog-type-id", factory->params, argc, argv);
 	int iprog_type_id = ARG_INTEGER(prog_type_id);
+
+	struct arg name = decode_arg("name", factory->params, argc, argv);
+	const char *sname = ARG_STRING(name);
 
 	int bfd;
 	union bpf_attr attr;
@@ -2866,14 +2884,17 @@ static void *make_bpf_prog(const struct factory *factory _U_, struct fdesc fdesc
 		},
 	};
 
-
 	memset(&attr, 0, sizeof(attr));
 	attr.prog_type = iprog_type_id;
 	attr.insns = (uint64_t)(unsigned long)insns;
 	attr.insn_cnt = ARRAY_SIZE(insns);
 	attr.license = (int64_t)(unsigned long)"GPL";
+	strncpy(attr.prog_name, sname, sizeof(attr.prog_name) - 1);
 
-	bfd = syscall(__NR_bpf, BPF_PROG_LOAD, &attr, sizeof(attr));
+	free_arg(&name);
+	free_arg(&prog_type_id);
+
+	bfd = syscall(SYS_bpf, BPF_PROG_LOAD, &attr, sizeof(attr));
 	if (bfd < 0)
 		err((errno == ENOSYS? EXIT_ENOSYS: EXIT_FAILURE),
 		    "failed in bpf(BPF_PROG_LOAD)");
@@ -2949,6 +2970,52 @@ static void *make_some_pipes(const struct factory *factory _U_, struct fdesc fde
 		}
 
 	}
+
+	return NULL;
+}
+
+static void *make_bpf_map(const struct factory *factory, struct fdesc fdescs[],
+			  int argc, char ** argv)
+{
+	struct arg map_type_id = decode_arg("map-type-id", factory->params, argc, argv);
+	int imap_type_id = ARG_INTEGER(map_type_id);
+
+	struct arg name = decode_arg("name", factory->params, argc, argv);
+	const char *sname = ARG_STRING(name);
+
+	int bfd;
+	union bpf_attr attr = {
+		.map_type = imap_type_id,
+		.key_size = 4,
+		.value_size = 4,
+		.max_entries = 10,
+	};
+
+	strncpy(attr.map_name, sname, sizeof(attr.map_name) - 1);
+
+	free_arg(&name);
+	free_arg(&map_type_id);
+
+	bfd = syscall(SYS_bpf, BPF_MAP_CREATE, &attr, sizeof(attr));
+	if (bfd < 0)
+		err((errno == ENOSYS? EXIT_ENOSYS: EXIT_FAILURE),
+		    "failed in bpf(BPF_MAP_CREATE)");
+
+	if (bfd != fdescs[0].fd) {
+		if (dup2(bfd, fdescs[0].fd) < 0) {
+			int e = errno;
+			close(bfd);
+			errno = e;
+			err(EXIT_FAILURE, "failed to dup %d -> %d", bfd, fdescs[0].fd);
+		}
+		close(bfd);
+	}
+
+	fdescs[0] = (struct fdesc){
+		.fd    = fdescs[0].fd,
+		.close = close_fdesc,
+		.data  = NULL
+	};
 
 	return NULL;
 }
@@ -3107,6 +3174,12 @@ static const struct factory factories[] = {
 				.type = PTYPE_STRING,
 				.desc = "STREAM, DGRAM, or SEQPACKET",
 				.defv.string = "STREAM",
+			},
+			{
+				.name = "halfclose",
+				.type = PTYPE_BOOLEAN,
+				.desc = "Shutdown the read end of the 1st socket, the write end of the 2nd socket",
+				.defv.boolean = false,
 			},
 			PARAM_END
 		},
@@ -3701,6 +3774,13 @@ static const struct factory factories[] = {
 				.desc = "program type by id",
 				.defv.integer = 1,
 			},
+			{
+				.name = "name",
+				.type = PTYPE_STRING,
+				.desc = "name assigned to bpf prog object",
+				.defv.string = "mkfds_bpf_prog",
+			},
+			PARAM_END
 		}
 	},
 	{
@@ -3714,6 +3794,30 @@ static const struct factory factories[] = {
 			PARAM_END
 		}
 	},
+	{
+		.name = "bpf-map",
+		.desc = "make bpf-map",
+		.priv = true,
+		.N    = 1,
+		.EX_N = 0,
+		.make = make_bpf_map,
+		.params = (struct parameter []) {
+			{
+				.name = "map-type-id",
+				.type = PTYPE_INTEGER,
+				.desc = "map type by id",
+				.defv.integer = 1,
+			},
+			{
+				.name = "name",
+				.type = PTYPE_STRING,
+				.desc = "name assigned to the bpf map object",
+				.defv.string = "mkfds_bpf_map",
+			},
+			PARAM_END
+		}
+	},
+
 };
 
 static int count_parameters(const struct factory *factory)

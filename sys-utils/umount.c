@@ -107,8 +107,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -N, --namespace <ns>    perform umount in another namespace\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	printf(USAGE_HELP_OPTIONS(25));
-	printf(USAGE_MAN_TAIL("umount(8)"));
+	fprintf(out, USAGE_HELP_OPTIONS(25));
+	fprintf(out, USAGE_MAN_TAIL("umount(8)"));
 
 	exit(MNT_EX_SUCCESS);
 }
@@ -355,7 +355,7 @@ static int umount_recursive(struct libmnt_context *cxt, const char *spec)
 	/* it's always real mountpoint, don't assume that the target maybe a device */
 	mnt_context_disable_swapmatch(cxt, 1);
 
-	fs = mnt_table_find_target(tb, spec, MNT_ITER_BACKWARD);
+	fs = mnt_table_find_target(tb, spec, MNT_ITER_FORWARD);
 	if (fs)
 		rc = umount_do_recurse(cxt, tb, fs);
 	else {
@@ -656,4 +656,3 @@ int main(int argc, char **argv)
 
 	return (rc < 256) ? rc : 255;
 }
-

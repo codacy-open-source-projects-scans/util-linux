@@ -1010,6 +1010,34 @@ int strappend(char **a, const char *b)
 	return 0;
 }
 
+/* the hybrid version of strfconcat and strappend. */
+int strfappend(char **a, const char *format, ...)
+{
+	va_list ap;
+	int res;
+
+	va_start(ap, format);
+	res = strvfappend(a, format, ap);
+	va_end(ap);
+
+	return res;
+}
+
+extern int strvfappend(char **a, const char *format, va_list ap)
+{
+	char *val;
+	int sz;
+	int res;
+
+	sz = vasprintf(&val, format, ap);
+	if (sz < 0)
+		return -errno;
+
+	res = strappend(a, val);
+	free(val);
+	return res;
+}
+
 static size_t strcspn_escaped(const char *s, const char *reject)
 {
         int escaped = 0;
@@ -1385,6 +1413,15 @@ int main(int argc, char *argv[])
 	} else if (argc == 4 && strcmp(argv[1], "--strchr-escaped") == 0) {
 		printf("\"%s\" --> \"%s\"\n", argv[2], ul_strchr_escaped(argv[2], *argv[3]));
 		return EXIT_SUCCESS;
+
+	} else if (argc == 2 && strcmp(argv[1], "--next-string") == 0) {
+		char *buf = "abc\0Y\0\0xyz\0X";
+		char *end = buf + 12;
+		char *p = buf;
+
+		do {
+			printf("str: '%s'\n", p);
+		} while ((p = ul_next_string(p, end)));
 
 	} else {
 		fprintf(stderr, "usage: %1$s --size <number>[suffix]\n"

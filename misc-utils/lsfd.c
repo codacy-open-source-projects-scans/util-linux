@@ -128,6 +128,18 @@ static const struct colinfo infos[] = {
 	[COL_BLKDRV]           = { "BLKDRV",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("block device driver name resolved by /proc/devices") },
+	[COL_BPF_MAP_ID]       = { "BPF-MAP.ID",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("bpf map id associated with the fd") },
+	[COL_BPF_MAP_TYPE]     = { "BPF-MAP.TYPE",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
+				   N_("bpf map type (decoded)") },
+	[COL_BPF_MAP_TYPE_RAW]= { "BPF-MAP.TYPE.RAW",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("bpf map type (raw)") },
+	[COL_BPF_NAME]         = { "BPF.NAME",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
+				   N_("bpf object name") },
 	[COL_BPF_PROG_ID]      = { "BPF-PROG.ID",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
 				   N_("bpf program id associated with the fd") },
@@ -284,12 +296,15 @@ static const struct colinfo infos[] = {
 	[COL_SOCK_PROTONAME]   = { "SOCK.PROTONAME",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("protocol name") },
+	[COL_SOCK_SHUTDOWN]    = { "SOCK.SHUTDOWN",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
+				   N_("shutdown state of socket ([-r?][-w?])") },
 	[COL_SOCK_STATE]       = { "SOCK.STATE",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
-				   N_("State of socket") },
+				   N_("state of socket") },
 	[COL_SOCK_TYPE]        = { "SOCK.TYPE",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
-				   N_("Type of socket") },
+				   N_("type of socket") },
 	[COL_SOURCE]           = { "SOURCE",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("file system, partition, or device containing file") },
@@ -598,8 +613,8 @@ static void add_mnt_ns(ino_t id)
 		nmax = (nspaces + 16) / 16 * 16;
 	if (nmax <= nspaces + 1) {
 		nmax += 16;
-		mnt_namespaces = xrealloc(mnt_namespaces,
-					sizeof(ino_t) * nmax);
+		mnt_namespaces = xreallocarray(mnt_namespaces,
+					       nmax, sizeof(ino_t));
 	}
 	mnt_namespaces[nspaces++] = id;
 }
@@ -1687,7 +1702,7 @@ static void parse_pids(const char *str, pid_t **pids, int *count)
 		errx(EXIT_FAILURE, _("out of range value for pid specification: %ld"), v);
 
 	(*count)++;
-	*pids = xrealloc(*pids, (*count) * sizeof(**pids));
+	*pids = xreallocarray(*pids, *count, sizeof(**pids));
 	(*pids)[*count - 1] = (pid_t)v;
 
 	while (next && *next != '\0'
@@ -1749,7 +1764,7 @@ static void collect_processes(struct lsfd_control *ctl, const pid_t pids[], int 
 
 static void __attribute__((__noreturn__)) list_colunms(FILE *out)
 {
-	fprintf(out, USAGE_COLUMNS);
+	fputs(USAGE_COLUMNS, out);
 	for (size_t i = 0; i < ARRAY_SIZE(infos); i++)
 		fprintf(out, " %20s  %-10s%s\n", infos[i].name,
 			infos[i].json_type == SCOLS_JSON_STRING?  "<string>":
@@ -2278,11 +2293,15 @@ int main(int argc, char *argv[])
 	if (scols_table_get_column_by_name(ctl.tb, "XMODE"))
 		ctl.show_xmode = 1;
 
-	/* collect data */
+	/* collect data
+	 *
+	 * The call initialize_ipc_table() must come before
+	 * initialize_classes.
+	 */
 	initialize_nodevs();
+	initialize_ipc_table();
 	initialize_classes();
 	initialize_devdrvs();
-	initialize_ipc_table();
 
 	collect_processes(&ctl, pids, n_pids);
 	free(pids);

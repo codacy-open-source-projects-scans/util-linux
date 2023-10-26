@@ -80,6 +80,7 @@ struct libscols_symbols {
  */
 struct libscols_cell {
 	char	*data;
+	size_t	datasiz;
 	char	*color;
 	void    *userdata;
 	int	flags;
@@ -117,21 +118,21 @@ struct libscols_column {
 	char	*color;		/* default column color */
 	char	*safechars;	/* do not encode this bytes */
 
-	char	*pending_data;
-	size_t	pending_data_sz;
-	char	*pending_data_buf;
-
 	int (*cmpfunc)(struct libscols_cell *,
 		       struct libscols_cell *,
 		       void *);			/* cells comparison function */
 	void *cmpfunc_data;
 
-	size_t (*wrap_chunksize)(const struct libscols_column *,
-			const char *, void *);
-	char *(*wrap_nextchunk)(const struct libscols_column *,
-			char *, void *);
+	/* multi-line cell data wrapping */
+	char *(*wrap_nextchunk)(const struct libscols_column *, char *, void *);
 	void *wrapfunc_data;
 
+	size_t	wrap_datasz;
+	size_t  wrap_datamax;
+	char	*wrap_data;
+	char	*wrap_cur;
+	char    *wrap_next;
+	struct libscols_cell	*wrap_cell;
 
 	struct libscols_cell	header;		/* column name with color etc. */
 	char	*shellvar;			/* raw colum name in shell compatible format */
@@ -247,6 +248,10 @@ struct libscols_table {
 
 	const char *cur_color;	/* current active color when printing */
 
+	struct libscols_cell *cur_cell;		/* currently used cell */
+	struct libscols_line *cur_line;		/* currently used line */
+	struct libscols_column *cur_column;	/* currently used column */
+
 	/* flags */
 	unsigned int	ascii		:1,	/* don't use unicode */
 			colors_wanted	:1,	/* enable colors */
@@ -299,6 +304,18 @@ int scols_line_next_group_child(struct libscols_line *ln,
                           struct libscols_iter *itr,
                           struct libscols_line **chld);
 
+/*
+ * column.c
+ */
+void scols_column_reset_wrap(struct libscols_column *cl);
+int scols_column_next_wrap(     struct libscols_column *cl,
+                                struct libscols_cell *ce,
+                                char **data);
+int scols_column_greatest_wrap( struct libscols_column *cl,
+                                struct libscols_cell *ce,
+                                char **data);
+int scols_column_has_pending_wrap(struct libscols_column *cl);
+int scols_column_move_wrap(struct libscols_column *cl, size_t bytes);
 
 /*
  * table.c
@@ -306,6 +323,13 @@ int scols_line_next_group_child(struct libscols_line *ln,
 int scols_table_next_group(struct libscols_table *tb,
                           struct libscols_iter *itr,
                           struct libscols_group **gr);
+int scols_table_set_cursor(struct libscols_table *tb,
+                           struct libscols_line *ln,
+                           struct libscols_column *cl,
+                           struct libscols_cell *ce);
+
+#define scols_table_reset_cursor(_t)	scols_table_set_cursor((_t), NULL, NULL, NULL)
+
 
 /*
  * grouping.c
@@ -339,10 +363,9 @@ extern int __scols_calculate(struct libscols_table *tb, struct ul_buffer *buf);
 /*
  * print.c
  */
-extern int __cell_to_buffer(struct libscols_table *tb,
-                          struct libscols_line *ln,
-                          struct libscols_column *cl,
-                          struct ul_buffer *buf);
+int __cursor_to_buffer(struct libscols_table *tb,
+                    struct ul_buffer *buf,
+		    int cal);
 
 void __scols_cleanup_printing(struct libscols_table *tb, struct ul_buffer *buf);
 int __scols_initialize_printing(struct libscols_table *tb, struct ul_buffer *buf);

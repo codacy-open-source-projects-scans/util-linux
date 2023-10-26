@@ -18,6 +18,7 @@
 #include "strutils.h"
 #include "xalloc.h"
 #include "optutils.h"
+#include "mangle.h"
 
 #include "libsmartcols.h"
 
@@ -35,6 +36,7 @@ static const struct column_flag flags[] = {
 	{ "hidden",	SCOLS_FL_HIDDEN },
 	{ "wrap",	SCOLS_FL_WRAP },
 	{ "wrapnl",	SCOLS_FL_WRAP },
+	{ "wrapzero",	SCOLS_FL_WRAP },
 	{ "none",	0 }
 };
 
@@ -99,10 +101,16 @@ static struct libscols_column *parse_column(FILE *f)
 				goto fail;
 			if (strcmp(line, "wrapnl") == 0) {
 				scols_column_set_wrapfunc(cl,
-						scols_wrapnl_chunksize,
+						NULL,
 						scols_wrapnl_nextchunk,
 						NULL);
 				scols_column_set_safechars(cl, "\n");
+
+			} else if (strcmp(line, "wrapzero") == 0) {
+				scols_column_set_wrapfunc(cl,
+						NULL,
+						scols_wrapzero_nextchunk,
+						NULL);
 			}
 			break;
 		}
@@ -129,25 +137,36 @@ static int parse_column_data(FILE *f, struct libscols_table *tb, int col)
 {
 	size_t len = 0, nlines = 0;
 	int i;
-	char *str = NULL;
+	char *str = NULL, *p;
 
 	while ((i = getline(&str, &len, f)) != -1) {
-
 		struct libscols_line *ln;
-		char *p = strrchr(str, '\n');
-		if (p)
-			*p = '\0';
-
-		while ((p = strrchr(str, '\\')) && *(p + 1) == 'n') {
-			*p = '\n';
-			memmove(p + 1, p + 2, i - (p + 2 - str));
-		}
+		int rc = 0;
 
 		ln = scols_table_get_line(tb, nlines++);
 		if (!ln)
 			break;
 
-		if (*str && scols_line_set_data(ln, col, str) != 0)
+		p = strrchr(str, '\n');
+		if (p)
+			*p = '\0';
+		if (!*str)
+			continue;
+
+		/* convert \x?? to real bytes */
+		if (strstr(str, "\\x")) {
+			struct libscols_cell *ce = scols_line_get_cell(ln, col);
+			size_t sz = len + 1;
+			char *buf = xcalloc(1, sz);
+
+			sz = unhexmangle_to_buffer(str, buf, sz);
+			if (sz)
+				rc = scols_cell_refer_memory(ce, buf, sz);
+			else
+				free(buf);
+		} else
+			rc = scols_line_set_data(ln, col, str);
+		if (rc)
 			err(EXIT_FAILURE, "failed to add output data");
 	}
 

@@ -377,6 +377,9 @@ conf.set('HAVE_CRYPT_ACTIVATE_BY_SIGNED_KEY', have ? 1 : false)
 lib_cap_ng = dependency(
   'libcap-ng',
   required : get_option('build-setpriv'))
+if not lib_cap_ng.found()
+  lib_cap_ng = disabler()
+endif
 
 lib_selinux = dependency(
   'libselinux',
@@ -731,7 +734,8 @@ int main(void) {
 have = cc.compiles(code, name : 'using __progname')
 conf.set('HAVE___PROGNAME', have ? 1 : false)
 
-have = conf.get('HAVE_PTY_H') != false and conf.get('HAVE_SYS_SIGNALFD_H') != false
+have = conf.get('HAVE_PTY_H').to_string() == '1' \
+       and conf.get('HAVE_SYS_SIGNALFD_H').to_string() == '1'
 conf.set('HAVE_PTY', have ? 1 : false)
 
 have_opal_get_status= cc.has_header_symbol('linux/sed-opal.h', 'IOC_OPAL_GET_STATUS')
@@ -802,6 +806,8 @@ conf.set('USE_HWCLOCK_CMOS', use_hwclock_cmos ? 1 : false)
 conf.set('HAVE_TLS', get_option('use-tls') ? 1 : false)
 conf.set('PG_BELL', get_option('pg-bell') ? 1 : false)
 conf.set('USE_COLORS_BY_DEFAULT', get_option('colors-default') ? 1 : false)
+
+is_glibc = cc.has_header_symbol('limits.h', '__GLIBC__')
 
 ############################################################
 
@@ -1120,16 +1126,18 @@ endif
 
 ############################################################
 
-exe = executable(
-  'col',
-  col_sources,
-  include_directories : includes,
-  link_with : lib_common,
-  install_dir : usrbin_exec_dir,
-  install : true)
-exes += exe
-manadocs += ['text-utils/col.1.adoc']
-bashcompletions += ['col']
+if is_glibc
+  exe = executable(
+    'col',
+    col_sources,
+    include_directories : includes,
+    link_with : lib_common,
+    install_dir : usrbin_exec_dir,
+    install : true)
+  exes += exe
+  manadocs += ['text-utils/col.1.adoc']
+  bashcompletions += ['col']
+endif
 
 exe = executable(
   'colcrt',
@@ -2617,12 +2625,16 @@ if not is_disabler(exe)
   bashcompletions += ['lsblk']
 endif
 
+mq_libs = []
+mq_libs += cc.find_library('rt', required : true)
+
 exe = executable(
   'lsfd',
   lsfd_sources,
   include_directories : includes,
   link_with : [lib_common,
                lib_smartcols],
+  dependencies : mq_libs,
   install_dir : usrbin_exec_dir,
   install : true)
 if not is_disabler(exe)
@@ -2910,7 +2922,7 @@ if not is_disabler(exe)
   bashcompletions += ['fadvise']
 endif
 
-if LINUX and conf.get('HAVE_PIDFD_OPEN') != false
+if LINUX and conf.get('HAVE_PIDFD_OPEN').to_string() == '1'
   exe = executable(
     'waitpid',
     waitpid_sources,
@@ -3072,7 +3084,8 @@ exe = executable(
   build_by_default: program_tests)
 exes += exe
 
-if conf.get('HAVE_OPENAT') != false and conf.get('HAVE_DIRFD') != false
+if conf.get('HAVE_OPENAT').to_string() == '1' \
+   and conf.get('HAVE_DIRFD').to_string() == '1'
   exe = executable(
     'test_procfs',
     'lib/procfs.c',
@@ -3094,7 +3107,7 @@ if conf.get('HAVE_OPENAT') != false and conf.get('HAVE_DIRFD') != false
   exes += exe
 endif
 
-if conf.get('HAVE_PTY') != false
+if conf.get('HAVE_PTY').to_string() == '1'
   exe = executable(
     'test_pty',
     pty_session_c,
@@ -3308,7 +3321,9 @@ exe = executable(
   include_directories : includes,
   dependencies : [lib_cap_ng],
   build_by_default: program_tests)
-exes += exe
+if not is_disabler(exe)
+  exes += exe
+endif
 
 exe = executable(
   'test_mbsencode',
@@ -3387,9 +3402,6 @@ exe = executable(
   build_by_default: program_tests)
 exes += exe
 
-mq_libs = []
-mq_libs += cc.find_library('rt', required : true)
-
 if LINUX
   exe = executable(
     'test_mkfds',
@@ -3411,7 +3423,7 @@ exes += exe
 
 ############################################################
 
-if conf.get('HAVE_OPENAT') != false
+if conf.get('HAVE_OPENAT').to_string() == '1'
   exe = executable(
     'sample-scols-tree',
     'libsmartcols/samples/tree.c',
