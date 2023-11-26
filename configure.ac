@@ -124,6 +124,11 @@ AC_PROG_CC
 AM_PROG_CC_C_O
 AC_PROG_MKDIR_P
 AC_PROG_YACC
+
+# Don't use autotools integrated LEX/YACC support for libsmartcols
+AC_PATH_PROG([FLEX], [flex])
+AC_PATH_PROG([BISON], [bison])
+
 AC_CANONICAL_HOST
 AC_C_CONST
 AC_C_VOLATILE
@@ -177,9 +182,6 @@ AC_SUBST([BSD_WARN_CFLAGS])
 
 UL_WARN_ADD([-Wno-cast-function-type], [PYTHON_WARN_CFLAGS])
 AC_SUBST([PYTHON_WARN_CFLAGS])
-
-UL_WARN_ADD([-Wno-unused-parameter], [NO_UNUSED_WARN_CFLAGS])
-AC_SUBST([NO_UNUSED_WARN_CFLAGS])
 
 
 AC_ARG_ENABLE([asan],

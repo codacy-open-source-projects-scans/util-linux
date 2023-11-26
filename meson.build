@@ -838,14 +838,14 @@ conf.set('ONLY_LISTED_SHELLS', have ? 1 : false)
 have = get_option('use-tty-group')
 conf.set('USE_TTY_GROUP', have ? 1 : false)
 
+bison = find_program('bison')
+flex = find_program('flex')
+
 build_hwclock = not get_option('build-hwclock').disabled()
-bison = find_program('bison', required: build_hwclock)
 bison_gen = generator(
   bison,
   output : ['@BASENAME@.tab.c', '@BASENAME@.tab.h'],
   arguments : ['@INPUT@', '--defines=@OUTPUT1@', '--output=@OUTPUT0@'])
-
-
 
 meson_make_symlink = meson.current_source_dir() + '/tools/meson-make-symlink.sh'
 meson_make_manpage_stub = meson.current_source_dir() + '/tools/meson-make-manpage-stub.sh'
@@ -2616,6 +2616,7 @@ exe = executable(
   link_with : [lib_common,
                lib_blkid,
                lib_mount,
+               lib_tcolors,
                lib_smartcols],
   dependencies : lib_udev,
   install : true)
@@ -3220,8 +3221,7 @@ endif
 
 ############################################################
 
-libfdisk_tests_cflags = ['-DTEST_PROGRAM',
-                         '-Wno-unused']
+libfdisk_tests_cflags = ['-DTEST_PROGRAM']
 libfdisk_tests_ldadd = [lib_fdisk_static, lib_uuid, lib_blkid]
 
 exe = executable(
@@ -3290,13 +3290,11 @@ if not is_disabler(exe)
   exes += exe
 endif
 
-sample_fdisk_cflags = ['-Wno-unused']
 sample_fdisk_ldadd = [lib_common, lib_fdisk]
 
 exe = executable(
   'sample-fdisk-mkpart',
   'libfdisk/samples/mkpart.c',
-  c_args : sample_fdisk_cflags,
   include_directories : lib_fdisk_includes,
   link_with : sample_fdisk_ldadd)
 if not is_disabler(exe)
@@ -3306,7 +3304,6 @@ endif
 exe = executable(
   'sample-fdisk-mkpart-fullspec',
   'libfdisk/samples/mkpart-fullspec.c',
-  c_args : sample_fdisk_cflags,
   include_directories : lib_fdisk_includes,
   link_with : sample_fdisk_ldadd)
 if not is_disabler(exe)
