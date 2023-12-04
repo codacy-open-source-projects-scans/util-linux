@@ -45,6 +45,7 @@
 
 #include "mountP.h"
 #include "fileutils.h"	/* statx() fallback */
+#include "strutils.h"
 #include "mount-api-utils.h"
 #include "linux_version.h"
 
@@ -149,12 +150,30 @@ static inline int fsconfig_set_value(
 			const char *name, const char *value)
 {
 	int rc;
+	char *s = NULL;
 
-	DBG(HOOK, ul_debugobj(hs, "  fsconfig(name=%s,value=%s)", name,
+	/* "\," is a way to use comma in values, let's remove \ escape */
+	if (value && strstr(value, "\\,")) {
+		char *x, *p;
+
+		s = strdup(value);
+		if (!s)
+			return -EINVAL;
+		for (x = p = s; *x; p++, x++) {
+			if (*x == '\\' && *(x + 1) == ',')
+				x++;
+			*p = *x;
+		}
+		*p = '\0';
+		value = s;
+	}
+
+	DBG(HOOK, ul_debugobj(hs, "  fsconfig(name=\"%s\" value=\"%s\")", name,
 				value ? : ""));
-	if (value)
+	if (value) {
 		rc = fsconfig(fd, FSCONFIG_SET_STRING, name, value, 0);
-	else
+		free(s);
+	} else
 		rc = fsconfig(fd, FSCONFIG_SET_FLAG, name, NULL, 0);
 
 	set_syscall_status(cxt, "fsconfig", rc == 0);
