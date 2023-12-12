@@ -1,4 +1,13 @@
-
+/*
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * Copyright (C) 2020 Karel Zak <kzak@redhat.com>
+ */
 #include <sys/utsname.h>
 #include <sys/personality.h>
 
@@ -643,11 +652,11 @@ struct lscpu_arch *lscpu_read_architecture(struct lscpu_cxt *cxt)
 
 		snprintf(buf, sizeof(buf), " %s ", ct->flags);
 		if (strstr(buf, " lm "))
-			ar->bit32 = 1, ar->bit64 = 1;			/* x86_64 */
+			ar->bit32 = ar->bit64 = 1;			/* x86_64 */
 		if (strstr(buf, " zarch "))
-			ar->bit32 = 1, ar->bit64 = 1;			/* s390x */
+			ar->bit32 = ar->bit64 = 1;			/* s390x */
 		if (strstr(buf, " sun4v ") || strstr(buf, " sun4u "))
-			ar->bit32 = 1, ar->bit64 = 1;			/* sparc64 */
+			ar->bit32 = ar->bit64 = 1;			/* sparc64 */
 	}
 
 	if (ct && ct->isa) {
