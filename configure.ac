@@ -325,6 +325,7 @@ AC_CHECK_HEADERS([ \
 	linux/falloc.h \
 	linux/fd.h \
 	linux/fiemap.h \
+	linux/landlock.h \
 	linux/kcmp.h \
 	linux/net_namespace.h \
 	linux/nsfs.h \
@@ -588,6 +589,9 @@ AC_CHECK_FUNCS([ \
 	getttynam \
 	inotify_init \
 	jrand48 \
+	landlock_create_ruleset \
+	landlock_add_rule \
+	landlock_restrict_self \
 	lchown \
 	lgetxattr \
 	llistxattr \
@@ -607,6 +611,7 @@ AC_CHECK_FUNCS([ \
 	prctl \
 	qsort_r \
 	reallocarray \
+	renameat2 \
 	rpmatch \
 	scandirat \
 	sched_setattr \
@@ -646,6 +651,7 @@ AC_CHECK_FUNCS([reboot], [have_reboot=yes],[have_reboot=no])
 AC_CHECK_FUNCS([updwtmpx updwtmpx], [have_gnu_utmpx=yes], [have_gnu_utmpx=no])
 
 AM_CONDITIONAL([HAVE_OPENAT], [test "x$have_openat" = xyes])
+AM_CONDITIONAL([HAVE_LINUX_LANDLOCK_H], [test "x$ac_cv_header_linux_landlock_h" = xyes])
 
 have_setns_syscall="yes"
 UL_CHECK_SYSCALL([setns])
@@ -656,7 +662,6 @@ AS_IF([test "x$ul_cv_syscall_setns" = xno], [
 UL_CHECK_SYSCALL([pidfd_open])
 UL_CHECK_SYSCALL([pidfd_send_signal])
 UL_CHECK_SYSCALL([close_range])
-
 UL_CHECK_SYSCALL([fsconfig])
 UL_CHECK_SYSCALL([fsmount])
 UL_CHECK_SYSCALL([fsopen])
@@ -2104,6 +2109,15 @@ dnl reboot() with multiple arguments is yet only found in glibc versions
 dnl earlier than 2.x.
 UL_REQUIRES_HAVE([ctrlaltdel], [reboot], [reboot function])
 AM_CONDITIONAL([BUILD_CTRLALTDEL], [test "x$build_ctrlaltdel" = xyes])
+
+AC_ARG_ENABLE([exch],
+  AS_HELP_STRING([--disable-exch], [do not build exch]),
+  [], [UL_DEFAULT_ENABLE([exch], [check])]
+)
+UL_BUILD_INIT([exch])
+UL_REQUIRES_LINUX([exch])
+UL_REQUIRES_SYSCALL_CHECK([exch], [UL_CHECK_SYSCALL([renameat2])])
+AM_CONDITIONAL([BUILD_EXCH], [test "x$build_exch" = xyes])
 
 UL_BUILD_INIT([fincore], [check])
 UL_REQUIRES_LINUX([fincore])
