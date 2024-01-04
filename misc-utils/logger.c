@@ -248,7 +248,7 @@ static int unix_socket(struct logger_ctl *ctl, const char *path, int *socket_typ
 		errx(EXIT_FAILURE, _("openlog %s: pathname too long"), path);
 
 	s_addr.sun_family = AF_UNIX;
-	strcpy(s_addr.sun_path, path);
+	strncpy(s_addr.sun_path, path, sizeof(s_addr.sun_path));
 
 	for (i = 2; i; i--) {
 		int st = -1;
@@ -451,7 +451,7 @@ static void write_output(struct logger_ctl *ctl, const char *const msg)
 	if (!ctl->noact && !is_connected(ctl))
 		logger_reopen(ctl);
 
-	/* 1) octen count */
+	/* 1) octet count */
 	if (ctl->octet_count) {
 		size_t len = xasprintf(&octet, "%zu ", strlen(ctl->hdr) + strlen(msg));
 		iovec_add_string(iov, iovlen, octet, len);
