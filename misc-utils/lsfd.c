@@ -37,12 +37,36 @@
 #include <sys/uio.h>
 #include <linux/sched.h>
 #include <sys/syscall.h>
-#include <linux/kcmp.h>
+
+#ifdef HAVE_LINUX_KCMP_H
+#  include <linux/kcmp.h>
 static int kcmp(pid_t pid1, pid_t pid2, int type,
 		unsigned long idx1, unsigned long idx2)
 {
 	return syscall(SYS_kcmp, pid1, pid2, type, idx1, idx2);
 }
+#else
+#  ifndef KCMP_FS
+#    define KCMP_FS 0
+#  endif
+#  ifndef KCMP_VM
+#    define KCMP_VM 0
+#  endif
+#  ifndef KCMP_FILES
+#    define KCMP_FILES 0
+#  endif
+static int kcmp(pid_t pid1 __attribute__((__unused__)),
+		pid_t pid2 __attribute__((__unused__)),
+		int type __attribute__((__unused__)),
+		unsigned long idx1 __attribute__((__unused__)),
+		unsigned long idx2 __attribute__((__unused__)))
+{
+	/* lsfd uses kcmp only for optimization. If the platform doesn't provide
+	 * kcmp, just returning an error is acceptable. */
+	errno = ENOSYS;
+	return -1;
+}
+#endif
 
 /* See proc(5).
  * Defined in linux/include/linux/sched.h private header file. */
@@ -973,7 +997,7 @@ static void collect_execve_file(struct path_cxt *pc, struct proc *proc,
 static void collect_fs_files(struct path_cxt *pc, struct proc *proc,
 			     bool sockets_only)
 {
-	enum association assocs[] = { ASSOC_EXE, ASSOC_CWD, ASSOC_ROOT };
+	enum association assocs[] = { ASSOC_CWD, ASSOC_ROOT };
 	const char *names[] = {
 		[ASSOC_CWD]  = "cwd",
 		[ASSOC_ROOT] = "root",
@@ -1530,7 +1554,7 @@ static void mark_poll_fds_as_multiplexed(char *buf,
 	}
 
  out:
-	free (local.iov_base);
+	free(local.iov_base);
 }
 
 static void mark_select_fds_as_multiplexed(char *buf,
