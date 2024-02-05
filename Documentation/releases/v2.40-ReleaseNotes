@@ -19,7 +19,7 @@ libsmartcols:
     for output, reducing resource usage and improving performance. Currently,
     this feature is employed in lsfd and lsblk. Example:
 
-	lsblk --filter 'NAME !~ "sd[ab]"'q
+	lsblk --filter 'NAME !~ "sd[ab]"'
 
     The library now supports counters (based on filters). For instance:
 
@@ -45,6 +45,12 @@ libsmartcols:
 
 * A new command, lsclocks, is introduced to display system clocks (realtime,
   monotonic, boottime, etc.).
+
+* A new small command, enosys, is introduced to make syscalls fail with ENOSYS.
+  The command is based on prctl( SECCOMP_MODE_FILTER ) syscall.
+
+* A new command, exch, is introduced to atomically exchanges paths between
+  two files. The command is based on renameat2( RENAME_EXCHANGE ) syscall.
 
 * login(1) now supports systemd service credentials. 'login.noauth' is now
   supported.
