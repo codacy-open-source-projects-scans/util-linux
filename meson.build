@@ -62,6 +62,7 @@ conf.set('bindir', bindir)
 conf.set('sbindir', sbindir)
 conf.set('runstatedir', runstatedir)
 conf.set('sysconfdir', sysconfdir)
+conf.set('usrbin_execdir', usrbin_exec_dir)
 conf.set('usrsbin_execdir', usrsbin_exec_dir)
 conf.set('docdir', docdir)
 conf.set_quoted('_PATH_SYSCONFSTATICDIR', sysconfstaticdir)
@@ -83,6 +84,10 @@ summary('libuuid', build_libuuid ? 'enabled' : 'disabled', section : 'components
 build_liblastlog2 = not get_option('build-liblastlog2').disabled()
 conf.set('HAVE_LIBLASTLOG2', build_liblastlog2 ? 1 : false)
 summary('liblastlog2', build_liblastlog2 ? 'enabled' : 'disabled', section : 'components')
+
+login_lastlogin = get_option('login-lastlogin')
+conf.set('USE_LOGIN_LASTLOG', login_lastlogin ? 1 : false)
+summary('login-lastlogin', login_lastlogin ? 'enabled' : 'disabled', section : 'components')
 
 have_mountfd_api = cc.sizeof('struct mount_attr', prefix : '#include <linux/mount.h>') > 0
 conf.set('HAVE_STRUCT_MOUNT_ATTR', have_mountfd_api ? 1 : false)
@@ -364,7 +369,8 @@ lib_cryptsetup = dependency(
   required : get_option('cryptsetup'))
 conf.set('HAVE_CRYPTSETUP', lib_cryptsetup.found() ? 1 : false)
 
-if not get_option('cryptsetup').disabled() and get_option('cryptsetup-dlopen').enabled()
+cryptsetup_dlopen = not get_option('cryptsetup').disabled() and get_option('cryptsetup-dlopen').enabled()
+if cryptsetup_dlopen
   if meson.version().version_compare('>= 0.62.0')
     lib_dl = dependency('dl')
   else
@@ -1101,7 +1107,8 @@ exe = executable(
   include_directories : includes,
   link_with : [lib_common,
                lib_smartcols,
-               logindefs_c],
+               logindefs_c] +
+               (build_liblastlog2 ? [lib_lastlog2] : []),
   dependencies : [lib_selinux,
                   lib_systemd],
   install_dir : usrbin_exec_dir,
@@ -2098,7 +2105,7 @@ exe = executable(
   dependencies: [lib_selinux],
   install_dir : sbindir,
   install : true)
-if opt and not is_disabler(exe)
+if not is_disabler(exe)
   exes += exe
   manadocs += ['disk-utils/mkswap.8.adoc']
   bashcompletions += ['mkswap']
@@ -2113,7 +2120,7 @@ exe = executable(
                lib_uuid],
   install_dir : sbindir,
   install : true)
-if opt and not is_disabler(exe)
+if not is_disabler(exe)
   exes += exe
   manadocs += ['disk-utils/swaplabel.8.adoc']
   bashcompletions += ['swaplabel']
@@ -2221,6 +2228,7 @@ exe = executable(
 if opt and not is_disabler(exe)
   exes += exe
   manadocs += ['disk-utils/fdformat.8.adoc']
+  bashcompletions += ['fdformat']
 endif
 
 exe = executable(
