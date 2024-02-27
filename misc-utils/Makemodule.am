@@ -1,3 +1,10 @@
+errnos.h: $(top_srcdir)/tools/all_errnos
+	@echo '  GEN      $@'
+	@$(top_srcdir)/tools/all_errnos $(CC) $(CFLAGS)
+
+-include errnos.h.deps
+CLEANFILES += errnos.h errnos.h.deps
+
 if BUILD_CAL
 usrbin_exec_PROGRAMS += cal
 MANPAGES += misc-utils/cal.1
@@ -275,13 +282,6 @@ if BUILD_LSFD
 
 misc-utils/lsfd-file.c: errnos.h
 
-errnos.h: $(top_srcdir)/tools/all_errnos
-	@echo '  GEN      $@'
-	@$(top_srcdir)/tools/all_errnos $(CC) $(CFLAGS)
-
--include errnos.h.deps
-CLEANFILES += errnos.h errnos.h.deps
-
 bin_PROGRAMS += lsfd
 MANPAGES += misc-utils/lsfd.1
 dist_noinst_DATA += misc-utils/lsfd.1.adoc
@@ -330,7 +330,7 @@ endif
 
 if BUILD_ENOSYS
 
-misc-utils/enosys.c: syscalls.h
+misc-utils/enosys.c: syscalls.h errnos.h
 
 syscalls.h: $(top_srcdir)/tools/all_syscalls
 	@echo '  GEN      $@'
