@@ -10,6 +10,8 @@ project('util-linux', 'c',
 fs = import('fs')
 pkgconfig = import('pkgconfig')
 
+# soname versions; This never change because we use symbols versioing. There is also
+# API version (LIB*_VERSION macros) and it follow package version.
 libblkid_version = '1.1.0'
 libblkid_date = '01-Jun-2021'
 libuuid_version = '1.3.0'
@@ -28,6 +30,7 @@ sysconfstaticdir = join_paths(prefixdir, 'lib')
 docdir = join_paths(prefixdir, get_option('datadir'), 'doc', 'util-linux')
 mandir = join_paths(prefixdir, get_option('mandir'))
 runstatedir = '/run'
+localstatedir = '/var'
 execprefixdir = prefixdir
 sysconfdir = join_paths(prefixdir, get_option('sysconfdir'))
 usrbin_exec_dir = join_paths(execprefixdir, bindir)
@@ -55,18 +58,20 @@ endif
 
 pc_version = '.'.join(pc_version)
 
-conf.set_quoted('LIBBLKID_VERSION', libblkid_version)
+conf.set_quoted('LIBBLKID_VERSION', pc_version)
 conf.set_quoted('LIBBLKID_DATE', libblkid_date)
 
 conf.set('bindir', bindir)
 conf.set('sbindir', sbindir)
 conf.set('runstatedir', runstatedir)
+conf.set('localstatedir', localstatedir)
 conf.set('sysconfdir', sysconfdir)
 conf.set('usrbin_execdir', usrbin_exec_dir)
 conf.set('usrsbin_execdir', usrsbin_exec_dir)
 conf.set('docdir', docdir)
 conf.set_quoted('_PATH_SYSCONFSTATICDIR', sysconfstaticdir)
 conf.set_quoted('_PATH_RUNSTATEDIR', runstatedir)
+conf.set_quoted('_PATH_LOCALSTATEDIR', localstatedir)
 conf.set_quoted('CONFIG_ADJTIME_PATH', '/etc/adjtime')
 conf.set_quoted('ADJTIME_PATH', '/etc/adjtime') # yes, both are used :(
 
