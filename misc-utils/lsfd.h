@@ -28,13 +28,28 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <inttypes.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
+#include "debug.h"
 #include "libsmartcols.h"
 #include "list.h"
 #include "nls.h"
 #include "path.h"
 #include "strutils.h"
 #include "xalloc.h"
+
+/*
+ * debug
+ */
+UL_DEBUG_DECLARE_MASK(lsfd);
+
+#define LSFD_DEBUG_INIT	     (1 << 1)
+#define LSFD_DEBUG_ENDPOINTS (1 << 2)
+#define LSFD_DEBUG_ALL       0xFFFF
+
+#define DBG(m, x)       __UL_DBG(lsfd, LSFD_DEBUG_, m, x)
 
 /*
  * column IDs
@@ -220,7 +235,7 @@ struct file_class {
 
 extern const struct file_class abst_class, readlink_error_class, stat_error_class,
 	file_class, cdev_class, bdev_class, sock_class, unkn_class, fifo_class,
-	nsfs_file_class, mqueue_file_class;
+	nsfs_file_class, mqueue_file_class, pidfs_file_class;
 
 /*
  * IPC
@@ -298,5 +313,10 @@ bool is_mqueue_dev(dev_t dev);
  * Eventpoll
  */
 bool is_multiplexed_by_eventpoll(int fd, struct list_head *eventpolls);
+
+/*
+ * Pidfs
+ */
+bool is_pidfs_dev(dev_t dev);
 
 #endif /* UTIL_LINUX_LSFD_H */
