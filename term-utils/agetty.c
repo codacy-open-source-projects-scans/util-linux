@@ -1196,7 +1196,8 @@ static void open_tty(const char *tty, struct termios *tp, struct options *op)
 #endif
 	}
 
-	op->term = get_terminal_default_type(op->tty, !(op->flags & F_VCONSOLE));
+	if (!op->term)
+		op->term = get_terminal_default_type(op->tty, !(op->flags & F_VCONSOLE));
 	if (!op->term)
 		log_err(_("failed to allocate memory: %m"));
 
@@ -1843,9 +1844,9 @@ static int issuefile_read_stream(
 		ie->output = open_memstream(&ie->mem, &ie->mem_sz);
 	}
 
-	while ((c = getc(f)) != EOF) {
+	while ((c = fgetc(f)) != EOF) {
 		if (c == '\\')
-			output_special_char(ie, getc(f), op, tp, f);
+			output_special_char(ie, fgetc(f), op, tp, f);
 		else
 			putc(c, ie->output);
 	}

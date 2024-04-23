@@ -21,7 +21,7 @@ libsmartcols_version = '1.1.0'
 libfdisk_version = '1.1.0'
 
 prefixdir = get_option('prefix')
-if not prefixdir.startswith('/')
+if not fs.is_absolute(prefixdir)
         error('Prefix is not absolute: "@0@"'.format(prefixdir))
 endif
 bindir = join_paths(prefixdir, get_option('bindir'))
@@ -78,7 +78,7 @@ conf.set_quoted('ADJTIME_PATH', '/etc/adjtime') # yes, both are used :(
 conf.set_quoted('_PATH_VENDORDIR', vendordir)
 conf.set('USE_VENDORDIR', vendordir == '' ? false : 1)
 
-build_libblkid = not get_option('build-libblkid').require(get_option('build-libmount').allowed()).disabled()
+build_libblkid = get_option('build-libblkid').allowed()
 conf.set('HAVE_LIBBLKID', build_libblkid ? 1 : false)
 summary('libblkid', build_libblkid ? 'enabled' : 'disabled', section : 'components')
 
@@ -102,7 +102,12 @@ conf.set('HAVE_MOUNTFD_API', have_mountfd_api ? 1 : false)
 have_struct_statx = cc.sizeof('struct statx', prefix : '#include <sys/stat.h>') > 0
 conf.set('HAVE_STRUCT_STATX', have_struct_statx ? 1 : false)
 
-build_libmount = get_option('build-libmount').require(get_option('build-libblkid').allowed()).allowed()
+have_sys_vfs_header = cc.has_header('sys/vfs.h')
+
+build_libmount = get_option('build-libmount').require(
+  get_option('build-libblkid').allowed() \
+  and have_sys_vfs_header \
+).allowed()
 
 conf.set('HAVE_LIBMOUNT', build_libmount ? 1 : false)
 conf.set('USE_LIBMOUNT_SUPPORT_NAMESPACES', 1)
@@ -246,6 +251,7 @@ lib_m = cc.find_library('m')
 
 lib_tinfo = dependency(
   'tinfo',
+  disabler : true,
   required : get_option('tinfo'))
 
 lib_ncursesw = dependency(
@@ -260,6 +266,7 @@ if lib_ncursesw.found()
 else
   lib_ncurses = dependency(
     'ncurses',
+    disabler : true,
     required : get_option('ncurses'))
   headers += ['ncurses.h',
               'term.h']
@@ -292,6 +299,7 @@ endforeach
 
 lib_z = dependency(
   'zlib',
+  disabler : true,
   required : get_option('zlib'))
 
 lib_readline = dependency(
@@ -896,6 +904,7 @@ conf.set('USE_TTY_GROUP', have ? 1 : false)
 
 bison = find_program('bison')
 flex = find_program('flex')
+sed = find_program('sed')
 
 build_hwclock = not get_option('build-hwclock').disabled()
 bison_gen = generator(
@@ -974,6 +983,7 @@ subdir('disk-utils')
 subdir('misc-utils')
 subdir('text-utils')
 subdir('term-utils')
+subdir('lsfd-cmd')
 subdir('po')
 
 includes = [dir_include,
@@ -1377,29 +1387,39 @@ exe = executable(
 exes += exe
 manadocs += ['sys-utils/choom.1.adoc']
 
+has_seminfo_type = cc.has_type('struct seminfo', args : '-D_GNU_SOURCE', prefix : '#include <sys/sem.h>')
+
+opt = get_option('build-ipcmk').require(has_seminfo_type).allowed()
 exe = executable(
   'ipcmk',
   ipcmk_sources,
   include_directories : includes,
   link_with : [lib_common],
   install_dir : usrbin_exec_dir,
-  install : true)
-exes += exe
-manadocs += ['sys-utils/ipcmk.1.adoc']
-bashcompletions += ['ipcmk']
+  install : opt,
+  build_by_default : opt)
+if opt and not is_disabler(exe)
+  exes += exe
+  manadocs += ['sys-utils/ipcmk.1.adoc']
+  bashcompletions += ['ipcmk']
+endif
 
+opt = get_option('build-ipcrm').require(has_seminfo_type).allowed()
 exe = executable(
   'ipcrm',
   ipcrm_sources,
   include_directories : includes,
   link_with : [lib_common],
   install_dir : usrbin_exec_dir,
-  install : true)
-exes += exe
-manadocs += ['sys-utils/ipcrm.1.adoc']
-bashcompletions += ['ipcrm']
+  install : opt,
+  build_by_default : opt)
+if opt and not is_disabler(exe)
+  exes += exe
+  manadocs += ['sys-utils/ipcrm.1.adoc']
+  bashcompletions += ['ipcrm']
+endif
 
-opt = not get_option('build-ipcs').disabled()
+opt = not get_option('build-ipcs').require(has_seminfo_type).disabled()
 exe = executable(
   'ipcs',
   ipcs_sources,
@@ -1501,7 +1521,7 @@ if opt and not is_disabler(exe)
   bashcompletions += ['tunelp']
 endif
 
-opt = not get_option('build-fstrim').disabled()
+opt = get_option('build-fstrim').require(have_sys_vfs_header).allowed()
 exe = executable(
   'fstrim',
   fstrim_sources,
@@ -1515,16 +1535,18 @@ if opt and not is_disabler(exe)
   exes += exe
   manadocs += ['sys-utils/fstrim.8.adoc']
   bashcompletions += ['fstrim']
-endif  
+endif
 
+opt = get_option('build-dmesg').require(cc.has_header('sys/klog.h')).allowed()
 exe = executable(
   'dmesg',
   dmesg_sources,
   include_directories : includes,
   link_with : [lib_common,
                lib_tcolors],
-  install : true)
-if not is_disabler(exe)
+  install : opt,
+  build_by_default : opt)
+if opt and not is_disabler(exe)
   exes += exe
   manadocs += ['sys-utils/dmesg.1.adoc']
   bashcompletions += ['dmesg']
@@ -2768,7 +2790,8 @@ endif
 errnos_h = custom_target('errnos.h',
   input : 'tools/all_errnos',
   output : 'errnos.h',
-  command : ['tools/all_errnos', cc.cmd_array(), get_option('c_args')],
+  command : ['tools/all_errnos', sed.full_path(),
+             cc.cmd_array(), get_option('c_args')],
 )
 
 opt = not get_option('build-lsfd').require(lib_rt.found()).disabled()
@@ -2784,7 +2807,7 @@ exe = executable(
   build_by_default : opt)
 if opt and not is_disabler(exe)
   exes += exe
-  manadocs += ['misc-utils/lsfd.1.adoc']
+  manadocs += ['lsfd-cmd/lsfd.1.adoc']
 endif
 
 exe = executable(
@@ -3085,7 +3108,8 @@ endif
 syscalls_h = custom_target('syscalls.h',
   input : 'tools/all_syscalls',
   output : 'syscalls.h',
-  command : ['tools/all_syscalls', cc.cmd_array(), get_option('c_args')],
+  command : ['tools/all_syscalls', sed.full_path(),
+             cc.cmd_array(), get_option('c_args')],
 )
 
 if cc.compiles(fs.read('include/audit-arch.h'), name : 'has AUDIT_ARCH_NATIVE')

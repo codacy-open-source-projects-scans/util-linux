@@ -221,7 +221,6 @@ static char *get_filename_sz(ino_t inode, pid_t lock_pid, size_t *size)
 	struct stat sb;
 	struct dirent *dp;
 	DIR *dirp;
-	size_t sz;
 	int fd;
 	char path[PATH_MAX] = { 0 },
 	     sym[PATH_MAX] = { 0 }, *ret = NULL;
@@ -241,7 +240,7 @@ static char *get_filename_sz(ino_t inode, pid_t lock_pid, size_t *size)
 	if (!(dirp = opendir(path)))
 		return NULL;
 
-	if ((sz = strlen(path)) >= (sizeof(path) - 2))
+	if (strlen(path) >= (sizeof(path) - 2))
 		goto out;
 
 	if ((fd = dirfd(dirp)) < 0 )
@@ -490,12 +489,11 @@ static int get_pid_locks(void *locks, void (*add_lock)(void *, struct lock *), s
 	return rc;
 }
 
-static int get_pids_locks(void *locks, void (*add_lock)(void *, struct lock *))
+static void get_pids_locks(void *locks, void (*add_lock)(void *, struct lock *))
 {
 	DIR *dir;
 	struct dirent *d;
 	struct path_cxt *pc = NULL;
-	int rc = 0;
 
 	pc = ul_new_path(NULL);
 	if (!pc)
@@ -513,10 +511,8 @@ static int get_pids_locks(void *locks, void (*add_lock)(void *, struct lock *))
 		if (procfs_dirent_get_pid(d, &pid) != 0)
 			continue;
 
-		if (procfs_process_init_path(pc, pid) != 0) {
-			rc = -1;
-			break;
-		}
+		if (procfs_process_init_path(pc, pid) != 0)
+			continue;
 
 		if (procfs_process_get_cmdname(pc, buf, sizeof(buf)) <= 0)
 			continue;
@@ -528,7 +524,7 @@ static int get_pids_locks(void *locks, void (*add_lock)(void *, struct lock *))
 	closedir(dir);
 	ul_unref_path(pc);
 
-	return rc;
+	return;
 }
 
 static int get_proc_locks(void *locks, void (*add_lock)(void *, struct lock *), void *fallback)

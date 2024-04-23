@@ -127,6 +127,8 @@ option('build-irqtop', type : 'feature',
        description : 'build irqtop')
 option('build-chmem', type : 'feature',
        description : 'build chmem')
+option('build-ipcmk', type : 'feature',
+       description : 'build ipcmk')
 option('build-ipcrm', type : 'feature',
        description : 'build ipcrm')
 option('build-ipcs', type : 'feature',
@@ -137,6 +139,8 @@ option('build-tunelp', type : 'feature',
        description : 'build tunelp')
 option('build-fstrim', type : 'feature',
        description : 'build fstrim')
+option('build-dmesg', type : 'feature',
+       description : 'build dmesg')
 option('build-kill', type : 'feature',
        description : 'build kill')
 option('build-last', type : 'feature',

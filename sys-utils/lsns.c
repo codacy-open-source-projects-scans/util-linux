@@ -70,7 +70,7 @@ UL_DEBUG_DEFINE_MASKNAMES(lsns) = UL_DEBUG_EMPTY_MASKNAMES;
 
 #define lsns_ioctl(fildes, request, ...) __extension__ ({ \
 	int ret = ioctl(fildes, request, ##__VA_ARGS__); \
-	if (ret == -1 && errno == ENOTTY) \
+	if (ret == -1 && (errno == ENOTTY || errno == ENOSYS))	\
 		warnx("Unsupported ioctl %s", #request); \
 	ret; })
 
@@ -305,6 +305,7 @@ static int get_ns_ino(struct path_cxt *pc, const char *nsname, ino_t *ino, ino_t
 
 	snprintf(path, sizeof(path), "ns/%s", nsname);
 
+	*ino = 0;
 	if (ul_path_stat(pc, &st, 0, path) != 0)
 		return -errno;
 	*ino = st.st_ino;
@@ -319,7 +320,11 @@ static int get_ns_ino(struct path_cxt *pc, const char *nsname, ino_t *ino, ino_t
 		return -errno;
 	if (strcmp(nsname, "pid") == 0 || strcmp(nsname, "user") == 0) {
 		if ((pfd = lsns_ioctl(fd, NS_GET_PARENT)) < 0) {
-			if (errno == EPERM)
+			if (errno == EPERM
+			    /* On the test platforms, "build (qemu-user, s390x)" and
+			     * "build (qemu-user, riscv64)", the ioctl reported ENOSYS.
+			     */
+			    || errno == ENOSYS)
 				goto user;
 			close(fd);
 			return -errno;
@@ -334,7 +339,11 @@ static int get_ns_ino(struct path_cxt *pc, const char *nsname, ino_t *ino, ino_t
 	}
  user:
 	if ((ofd = lsns_ioctl(fd, NS_GET_USERNS)) < 0) {
-		if (errno == EPERM)
+		if (errno == EPERM
+		    /* On the test platforms, "build (qemu-user, s390x)" and
+		     * "build (qemu-user, riscv64)", the ioctl reported ENOSYS.
+		     */
+		    || errno == ENOSYS)
 			goto out;
 		close(fd);
 		return -errno;
@@ -543,10 +552,14 @@ static int read_process(struct lsns *ls, struct path_cxt *pc)
 	if (procfs_process_get_uid(pc, &p->uid) == 0)
 		add_uid(uid_cache, p->uid);
 
-	if ((rc = procfs_process_get_stat(pc, buf, sizeof(buf))) < 0)
+	if ((rc = procfs_process_get_stat(pc, buf, sizeof(buf))) < 0) {
+		DBG(PROC, ul_debug("failed in procfs_process_get_stat() (rc: %d)", rc));
 		goto done;
-	if ((rc = parse_proc_stat(buf, &p->pid, &p->state, &p->ppid)) < 0)
+	}
+	if ((rc = parse_proc_stat(buf, &p->pid, &p->state, &p->ppid)) < 0) {
+		DBG(PROC, ul_debug("failed in parse_proc_stat() (rc: %d)", rc));
 		goto done;
+	}
 	rc = 0;
 
 	for (i = 0; i < ARRAY_SIZE(p->ns_ids); i++) {
@@ -557,9 +570,11 @@ static int read_process(struct lsns *ls, struct path_cxt *pc)
 
 		rc = get_ns_ino(pc, ns_names[i], &p->ns_ids[i],
 				&p->ns_pids[i], &p->ns_oids[i]);
-		if (rc && rc != -EACCES && rc != -ENOENT)
+		if (rc && rc != -EACCES && rc != -ENOENT) {
+			DBG(PROC, ul_debug("failed in get_ns_ino (rc: %d)", rc));
 			goto done;
-		if (i == LSNS_ID_NET)
+		}
+		if (p->ns_ids[i] && i == LSNS_ID_NET)
 			p->netnsid = get_netnsid(pc, p->ns_ids[i]);
 		rc = 0;
 	}
@@ -602,13 +617,25 @@ static int read_processes(struct lsns *ls)
 		DBG(PROC, ul_debug("reading %d", (int) pid));
 		rc = procfs_process_init_path(pc, pid);
 		if (rc < 0) {
-			DBG(PROC, ul_debug("failed in reading /proc/%d", (int) pid));
+			DBG(PROC, ul_debug("failed in initializing path_cxt for /proc/%d (rc: %d)", (int) pid, rc));
+			/* This failure is acceptable. If a process ($pid) owning
+			 * a namespace is gone while running this lsns process,
+			 * procfs_process_init_path(pc, $pid) may fail.
+			 *
+			 * We must reset this `rc' here. If this `d' is the last
+			 * dentry in `dir', this read_processes() invocation
+			 * returns this `rc'. In the caller context, the
+			 * non-zero value returned from read_processes() makes
+			 * lsns prints nothing. We should avoid the behavior. */
+			rc = 0;
 			continue;
 		}
 
 		rc = read_process(ls, pc);
-		if (rc && rc != -EACCES && rc != -ENOENT)
+		if (rc && rc != -EACCES && rc != -ENOENT) {
+			DBG(PROC, ul_debug("failed in read_process() (pid: %d, rc: %d)", (int) pid, rc));
 			break;
+		}
 		rc = 0;
 	}
 
@@ -807,6 +834,9 @@ static void interpolate_missing_namespaces(struct lsns *ls, struct lsns_namespac
 	char buf[BUFSIZ];
 	int fd_orphan, fd_missing;
 	struct stat st;
+
+	if (!orphan->proc)
+		return;
 
 	orphan->related_ns[rela] = get_namespace(ls, orphan->related_id[rela]);
 	if (orphan->related_ns[rela])
@@ -1423,6 +1453,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("     --output-all       output all columns\n"), out);
 	fputs(_(" -P, --persistent       namespaces without processes\n"), out);
 	fputs(_(" -p, --task <pid>       print process namespaces\n"), out);
+	fputs(_(" -Q, --filter <expr>    apply display filter\n"), out);
 	fputs(_(" -r, --raw              use the raw output format\n"), out);
 	fputs(_(" -u, --notruncate       don't truncate text in columns\n"), out);
 	fputs(_(" -W, --nowrap           don't use multi-line representation\n"), out);

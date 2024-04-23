@@ -12,7 +12,7 @@
 #include "filter-parser.h"
 #include "filter-scanner.h"
 
-void yyerror(yyscan_t *locp, struct libscols_filter *fltr, char const *msg);
+void yyerror(yyscan_t *locp, struct libscols_filter *fltr, char const *fmt, ...);
 
 %}
 
@@ -55,6 +55,7 @@ void yyerror(yyscan_t *locp, struct libscols_filter *fltr, char const *msg);
 %left T_OR T_AND
 %left T_EQ T_NE T_LT T_LE T_GT T_GE T_REG T_NREG T_TRUE T_FALSE T_NEG
 
+%token T_INVALID_NUMBER
 
 %destructor {
 		/* This destruct is called on error. The root node will be deallocated
@@ -111,7 +112,10 @@ param:
 		bool x = false;
 		$$ = filter_new_param(fltr, SCOLS_DATA_BOOLEAN, 0, (void *) &x);
 	}
-
+	| T_INVALID_NUMBER {		/* YYerror token is unsupported in old Bisons */
+		ignore_result( $$ );	/* supress "unset value" warning */
+		YYERROR;		/* yyerror() already called by lex() */
+	}
 ;
 
 
@@ -119,16 +123,23 @@ param:
 
 void yyerror (yyscan_t *locp __attribute__((__unused__)),
 	      struct libscols_filter *fltr,
-	      char const *msg)
+	      char const *fmt, ...)
 {
-	if (msg && fltr) {
+	if (fmt && fltr) {
 		char *p;
+		va_list ap;
+		int e;
 
-		if (fltr->errmsg)
+		if (fltr->errmsg) {
 			free(fltr->errmsg);
+			fltr->errmsg = NULL;
+		}
 
-		fltr->errmsg = strdup(msg);
-		if (!fltr->errmsg)
+		va_start(ap, fmt);
+		e = vasprintf(&fltr->errmsg, fmt, ap);
+		va_end(ap);
+
+		if (e < 0 || !fltr->errmsg)
 			return;
 
 		p = strstr(fltr->errmsg, "T_");
