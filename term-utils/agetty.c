@@ -1877,6 +1877,7 @@ static int issue_is_changed(struct issue *ie)
 		free(ie->mem_old);
 		ie->mem_old = ie->mem;
 		ie->mem = NULL;
+		ie->mem_sz = 0;
 		return 0;
 	}
 
@@ -1903,7 +1904,7 @@ static void print_issue_file(struct issue *ie,
 		}
 	}
 
-	if (ie->mem_sz)
+	if (ie->mem_sz && ie->mem)
 		write_all(STDOUT_FILENO, ie->mem, ie->mem_sz);
 
 	if (ie->do_tcrestore) {
@@ -3027,4 +3028,5 @@ static void load_credentials(struct options *op) {
 			op->autolog = str;
 		}
 	}
+	closedir(dir);
 }

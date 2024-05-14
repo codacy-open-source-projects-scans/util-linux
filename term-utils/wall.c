@@ -136,10 +136,17 @@ static gid_t get_group_gid(const char *group)
 
 static struct group_workspace *init_group_workspace(const char *group)
 {
-	struct group_workspace *buf = xmalloc(sizeof(struct group_workspace));
+	struct group_workspace *buf;
+	long n;
+
+	n = sysconf(_SC_NGROUPS_MAX);
+	if (n < 0 || n > INT_MAX - 1)
+		return NULL;
+
+	buf = xmalloc(sizeof(struct group_workspace));
+	buf->ngroups = n + 1;	/* room for the primary gid */
 
 	buf->requested_group = get_group_gid(group);
-	buf->ngroups = sysconf(_SC_NGROUPS_MAX) + 1;  /* room for the primary gid */
 	buf->groups = xcalloc(buf->ngroups, sizeof(*buf->groups));
 
 	return buf;
@@ -324,10 +331,10 @@ static char *makemsg(char *fname, char **mvec, int mvecsz,
 
 	if (print_banner == TRUE) {
 		char *hostname = xgethostname();
-		char *whom, *where, date[CTIME_BUFSIZ];
+		char *whombuf, *whom, *where, date[CTIME_BUFSIZ];
 		time_t now;
 
-		whom = xgetlogin();
+		whombuf = whom = xgetlogin();
 		if (!whom) {
 			whom = "<someone>";
 			warn(_("cannot get passwd uid"));
@@ -358,6 +365,7 @@ static char *makemsg(char *fname, char **mvec, int mvecsz,
 				whom, hostname, where, date);
 		fprintf(fs, "%-*.*s\007\007\r\n", TERM_WIDTH, TERM_WIDTH, lbuf);
 		free(hostname);
+		free(whombuf);
 	}
 	fprintf(fs, "%*s\r\n", TERM_WIDTH, " ");
 
