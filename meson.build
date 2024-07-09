@@ -3049,6 +3049,7 @@ exe = executable(
   'rename',
   rename_sources,
   include_directories : includes,
+  link_with : [lib_common],
   install_dir : usrbin_exec_dir,
   install : opt,
   build_by_default : opt)
@@ -3767,6 +3768,16 @@ exe = executable(
   'libsmartcols/samples/grouping-overlay.c',
   include_directories : includes,
   link_with : [lib_smartcols, lib_common])
+if not is_disabler(exe)
+  exes += exe
+endif
+
+exe = executable(
+  'sample-mount-overwrite',
+  'libmount/samples/overwrite.c',
+  include_directories : includes,
+  dependencies : [mount_dep],
+  link_with : [lib_common])
 if not is_disabler(exe)
   exes += exe
 endif
