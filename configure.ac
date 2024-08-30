@@ -120,8 +120,8 @@ AS_CASE([$libdir],
 )
 AC_SUBST([usrlib_execdir])
 
-usrsecurelib_execdir='${usrlib_execdir}/security'
-AC_SUBST([usrsecurelib_execdir])
+securelib_execdir='${libdir}/security'
+AC_SUBST([securelib_execdir])
 
 # static configuration maintained by packages (e.g. /usr/lib)
 AC_ARG_VAR([SYSCONFSTATICDIR],
@@ -564,6 +564,10 @@ AC_CHECK_DECL([strsignal],
 	[AC_DEFINE([HAVE_STRSIGNAL_DECL], [1],
 		[Define to 1 if have strsignal function prototype])],
 )
+
+AC_CHECK_DECL([BPF_OBJ_NAME_LEN],
+	      [have_bpf_obj_name_len=yes], [have_bpf_obj_name_len=no],
+	      [#include <linux/bpf.h>])
 
 AC_CHECK_DECL([TIOCGLCKTRMIOS],
 	      [have_tiocglcktrmios=yes], [have_tiocglcktrmios=no],
@@ -1857,6 +1861,7 @@ UL_BUILD_INIT([lsfd])
 UL_REQUIRES_LINUX([lsfd])
 UL_REQUIRES_BUILD([lsfd], [libsmartcols])
 UL_REQUIRES_HAVE([lsfd], [linux_bpf_h], [linux/bpf.h header file])
+UL_REQUIRES_HAVE([lsfd], [bpf_obj_name_len], [BPF_OBJ_NAME_LEN macro in linux/bpf.h])
 AM_CONDITIONAL([BUILD_LSFD], [test "x$build_lsfd" = xyes])
 
 AC_ARG_ENABLE([lslogins],
@@ -2796,7 +2801,7 @@ verbatim_extra_dependency='
 # otherwise the libtool relink step will fail to find libmount.la and
 # will try -lmount which is possibly not available.
 install-pylibmountexecLTLIBRARIES: install-usrlib_execLTLIBRARIES
-install-usrsecurelib_execLTLIBRARIES: install-usrlib_execLTLIBRARIES
+install-securelib_execLTLIBRARIES: install-usrlib_execLTLIBRARIES
 
 '
 AC_SUBST([verbatim_extra_dependency])
