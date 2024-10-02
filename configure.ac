@@ -628,6 +628,7 @@ AC_CHECK_FUNCS([ \
 	ntp_gettime \
 	open_tree \
 	personality \
+	pidfd_getfd \
 	pidfd_open \
 	pidfd_send_signal \
 	posix_fadvise \
@@ -682,6 +683,7 @@ AS_IF([test "x$ul_cv_syscall_setns" = xno], [
    have_setns_syscall="no"
 ])
 
+UL_CHECK_SYSCALL([pidfd_getfd])
 UL_CHECK_SYSCALL([pidfd_open])
 UL_CHECK_SYSCALL([pidfd_send_signal])
 UL_CHECK_SYSCALL([close_range])
@@ -881,7 +883,7 @@ AM_CONDITIONAL([HAVE_MANPAGES], [test "x$have_manpages" = xyes])
 
 
 AC_ARG_ENABLE([poman],
-  AS_HELP_STRING([--disable-poman], [generate translated man pages]),
+  AS_HELP_STRING([--disable-poman], [do not generate translated man pages]),
   [], [UL_DEFAULT_ENABLE([poman], [check])]
 )
 UL_BUILD_INIT([poman])
@@ -1835,7 +1837,11 @@ AC_CHECK_FUNCS([swapon])
 AC_CHECK_FUNCS([swapoff])
 
 
-UL_BUILD_INIT([lsblk], [check])
+AC_ARG_ENABLE([lsblk],
+  AS_HELP_STRING([--disable-lsblk], [do not build lsblk]),
+  [], [UL_DEFAULT_ENABLE([lsblk], [check])]
+)
+UL_BUILD_INIT([lsblk])
 UL_REQUIRES_LINUX([lsblk])
 UL_REQUIRES_BUILD([lsblk], [libblkid])
 UL_REQUIRES_BUILD([lsblk], [libmount])
@@ -2161,7 +2167,11 @@ UL_BUILD_INIT([readprofile], [check])
 UL_REQUIRES_LINUX([readprofile])
 AM_CONDITIONAL([BUILD_READPROFILE], [test "x$build_readprofile" = xyes])
 
-UL_BUILD_INIT([dmesg], [check])
+AC_ARG_ENABLE([dmesg],
+  AS_HELP_STRING([--disable-dmesg], [do not build dmesg]),
+  [], [UL_DEFAULT_ENABLE([dmesg], [check])]
+)
+UL_BUILD_INIT([dmesg])
 UL_REQUIRES_LINUX([dmesg])
 AM_CONDITIONAL([BUILD_DMESG], [test "x$build_dmesg" = xyes])
 
