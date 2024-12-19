@@ -939,7 +939,7 @@ static const struct anon_ops anon_inotify_ops = {
  * Generally, we use "-" as the word separators in lsfd's output.
  * However, about bpf*, we use "_" because bpftool uses "_".
  */
-static const char *bpf_prog_type_table[] = {
+static const char *const bpf_prog_type_table[] = {
 	[0] = "unspec",		   /* BPF_PROG_TYPE_UNSPEC*/
 	[1] = "socket_filter",	   /* BPF_PROG_TYPE_SOCKET_FILTER*/
 	[2] = "kprobe",		   /* BPF_PROG_TYPE_KPROBE*/
@@ -972,12 +972,15 @@ static const char *bpf_prog_type_table[] = {
 	[29] = "lsm",		 /* BPF_PROG_TYPE_LSM*/
 	[30] = "sk_lookup",	 /* BPF_PROG_TYPE_SK_LOOKUP*/
 	[31] = "syscall",	 /* BPF_PROG_TYPE_SYSCALL*/
+	[32] = "netfilter",	 /* BPF_PROG_TYPE_NETFILTER */
 };
 
 struct anon_bpf_prog_data {
 	int type;
 	int id;
 	char name[BPF_OBJ_NAME_LEN + 1];
+#define BPF_TAG_SIZE_AS_STRING (BPF_TAG_SIZE * 2)
+	char tag[BPF_TAG_SIZE_AS_STRING + 1];
 };
 
 static bool anon_bpf_prog_probe(const char *str)
@@ -1005,6 +1008,9 @@ static bool anon_bpf_prog_fill_column(struct proc *proc  __attribute__((__unused
 	switch(column_id) {
 	case COL_BPF_PROG_ID:
 		xasprintf(str, "%d", data->id);
+		return true;
+	case COL_BPF_PROG_TAG:
+		*str = xstrdup(data->tag);
 		return true;
 	case COL_BPF_PROG_TYPE_RAW:
 		xasprintf(str, "%d", data->type);
@@ -1036,6 +1042,9 @@ static char *anon_bpf_prog_get_name(struct unkn *unkn)
 	else
 		xasprintf(&str, "id=%d type=UNKNOWN(%d)", data->id, data->type);
 
+	if (data->tag[0] != '\0')
+		xstrfappend(&str, " tag=%s", data->tag);
+
 	if (*data->name)
 		xstrfappend(&str, " name=%s", data->name);
 
@@ -1049,6 +1058,7 @@ static void anon_bpf_prog_init(struct unkn *unkn)
 	data->type = -1;
 	data->id = -1;
 	data->name[0] = '\0';
+	data->tag[0] = '\0';
 	unkn->anon_data = data;
 }
 
@@ -1106,6 +1116,13 @@ static int anon_bpf_prog_handle_fdinfo(struct unkn *unkn, const char *key, const
 		return 1;
 	}
 
+	if (strcmp(key, "prog_tag") == 0) {
+		char *dst = ((struct anon_bpf_prog_data *)unkn->anon_data)->tag;
+		strncpy(dst, value, BPF_TAG_SIZE_AS_STRING);
+		dst[BPF_TAG_SIZE_AS_STRING] = '\0';
+		return 1;
+	}
+
 	return 0;
 }
 
@@ -1122,7 +1139,7 @@ static const struct anon_ops anon_bpf_prog_ops = {
 /*
  * bpf-map
  */
-static const char *bpf_map_type_table[] = {
+static const char *const bpf_map_type_table[] = {
 	[0] = "unspec",		  /* BPF_MAP_TYPE_UNSPEC */
 	[1] = "hash",		  /* BPF_MAP_TYPE_HASH */
 	[2] = "array",		  /* BPF_MAP_TYPE_ARRAY */
@@ -1156,6 +1173,7 @@ static const char *bpf_map_type_table[] = {
 	[30] = "bloom-filter",	/* BPF_MAP_TYPE_BLOOM_FILTER */
 	[31] = "user-ringbuf",	/* BPF_MAP_TYPE_USER_RINGBUF */
 	[32] = "cgrp-storage",	/* BPF_MAP_TYPE_CGRP_STORAGE */
+	[33] = "arena",		/* BPF_MAP_TYPE_ARENA */
 };
 
 struct anon_bpf_map_data {
@@ -1183,7 +1201,7 @@ static bool anon_bpf_map_fill_column(struct proc *proc  __attribute__((__unused_
 				     size_t column_index __attribute__((__unused__)),
 				     char **str)
 {
-	struct anon_bpf_prog_data *data = (struct anon_bpf_prog_data *)unkn->anon_data;
+	struct anon_bpf_map_data *data = (struct anon_bpf_map_data *)unkn->anon_data;
 	const char *t;
 
 	switch(column_id) {
@@ -1314,7 +1332,7 @@ static const struct anon_ops anon_generic_ops = {
 	.handle_fdinfo = NULL,
 };
 
-static const struct anon_ops *anon_ops[] = {
+static const struct anon_ops *const anon_ops[] = {
 	&anon_pidfd_ops,
 	&anon_eventfd_ops,
 	&anon_eventpoll_ops,

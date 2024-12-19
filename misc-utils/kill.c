@@ -92,16 +92,15 @@ struct kill_control {
 #ifdef UL_HAVE_PIDFD
 	struct list_head follow_ups;
 #endif
-	unsigned int
-		check_all:1,
-		do_kill:1,
-		do_pid:1,
-		require_handler:1,
-		use_sigval:1,
+	bool	check_all,
+		do_kill,
+		do_pid,
+		require_handler,
+		use_sigval,
 #ifdef UL_HAVE_PIDFD
-		timeout:1,
+		timeout,
 #endif
-		verbose:1;
+		verbose;
 };
 
 static void print_signal_name(int signum, bool newline)
@@ -293,7 +292,7 @@ static void __attribute__((__noreturn__)) usage(void)
 
 static void __attribute__((__noreturn__)) print_kill_version(void)
 {
-	static const char *features[] = {
+	static const char *const features[] = {
 #ifdef HAVE_SIGQUEUE
 		"sigqueue",
 #endif

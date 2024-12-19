@@ -12,6 +12,8 @@
 #ifndef UTIL_LINUX_H_IRQ_COMMON
 #define UTIL_LINUX_H_IRQ_COMMON
 
+#include <stdbool.h>
+
 #include "c.h"
 #include "nls.h"
 #include "cpuset.h"
@@ -58,10 +60,9 @@ struct irq_output {
 
 	irq_cmp_t *sort_cmp_func;
 
-	unsigned int
-		json:1,		/* JSON output */
-		pairs:1,	/* export, NAME="value" aoutput */
-		no_headings:1;	/* don't print header */
+	bool	json,		/* JSON output */
+		pairs,		/* export, NAME="value" aoutput */
+		no_headings;	/* don't print header */
 };
 
 int irq_column_name_to_id(char const *const name, size_t const namesz);
@@ -76,6 +77,7 @@ struct libscols_table *get_scols_table(struct irq_output *out,
                                               struct irq_stat *prev,
                                               struct irq_stat **xstat,
                                               int softirq,
+                                              uintmax_t threshold,
                                               size_t setsize,
                                               cpu_set_t *cpuset);
 

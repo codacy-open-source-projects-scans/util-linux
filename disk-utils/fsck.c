@@ -75,14 +75,14 @@
 
 #define FSCK_RUNTIME_DIRNAME	"/run/fsck"
 
-static const char *ignored_types[] = {
+static const char *const ignored_types[] = {
 	"ignore",
 	"iso9660",
 	"sw",
 	NULL
 };
 
-static const char *really_wanted[] = {
+static const char *const really_wanted[] = {
 	"minix",
 	"ext2",
 	"ext3",
@@ -99,9 +99,9 @@ struct fsck_fs_data
 {
 	const char	*device;
 	dev_t		disk;
-	unsigned int	stacked:1,
-			done:1,
-			eval_device:1;
+	bool		stacked,
+			done,
+			eval_device;
 };
 
 /*
@@ -1097,7 +1097,7 @@ static int device_exists(const char *device)
 
 static int fs_ignored_type(struct libmnt_fs *fs)
 {
-	const char **ip, *type;
+	const char *const*ip, *type;
 
 	if (!mnt_fs_is_regularfs(fs))
 		return 1;

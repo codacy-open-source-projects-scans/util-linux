@@ -18,6 +18,7 @@
 #include <closestream.h>
 #include <xalloc.h>
 #include <getopt.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
@@ -53,7 +54,7 @@ struct memory_block {
 	int		node;
 	int		nr_zones;
 	int		zones[MAX_NR_ZONES];
-	unsigned int	removable:1;
+	bool		removable;
 };
 
 struct lsmem {
@@ -95,7 +96,7 @@ enum {
 	COL_ZONES,
 };
 
-static char *zone_names[] = {
+static const char *const zone_names[] = {
 	[ZONE_DMA]	= "DMA",
 	[ZONE_DMA32]	= "DMA32",
 	[ZONE_NORMAL]	= "Normal",

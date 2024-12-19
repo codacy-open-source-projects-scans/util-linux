@@ -263,16 +263,20 @@ AC_PATH_PROG([XSLTPROC], [xsltproc])
 
 linux_os=no
 bsd_os=no
+gnu_os=no
 AS_CASE([${host_os}],
   [*linux*],
      [linux_os=yes],
   [*darwin*],
      [darwin_os=yes],
   [*bsd*],
-     [bsd_os=yes])
+     [bsd_os=yes],
+  [gnu*],
+     [gnu_os=yes])
 AM_CONDITIONAL([LINUX], [test "x$linux_os" = xyes])
 AM_CONDITIONAL([DARWIN], [test "x$darwin_os" = xyes])
 AM_CONDITIONAL([BSD], [test "x$bsd_os" = xyes])
+AM_CONDITIONAL([HURD], [test "x$gnu_os" = xyes])
 
 AS_IF([test  "x$darwin_os" = xyes], [
   AC_DEFINE([_DARWIN_C_SOURCE], [1], [Enable MAP_ANON in sys/mman.h on Mac OS X])
@@ -567,6 +571,9 @@ AC_CHECK_DECL([strsignal],
 
 AC_CHECK_DECL([BPF_OBJ_NAME_LEN],
 	      [have_bpf_obj_name_len=yes], [have_bpf_obj_name_len=no],
+	      [#include <linux/bpf.h>])
+AC_CHECK_DECL([BPF_TAG_SIZE],
+	      [have_bpf_tag_size=yes], [have_bpf_tag_size=no],
 	      [#include <linux/bpf.h>])
 
 AC_CHECK_DECL([TIOCGLCKTRMIOS],
@@ -1868,6 +1875,7 @@ UL_REQUIRES_LINUX([lsfd])
 UL_REQUIRES_BUILD([lsfd], [libsmartcols])
 UL_REQUIRES_HAVE([lsfd], [linux_bpf_h], [linux/bpf.h header file])
 UL_REQUIRES_HAVE([lsfd], [bpf_obj_name_len], [BPF_OBJ_NAME_LEN macro in linux/bpf.h])
+UL_REQUIRES_HAVE([lsfd], [bpf_tag_size], [BPF_TAG_SIZE macro in linux/bpf.h])
 AM_CONDITIONAL([BUILD_LSFD], [test "x$build_lsfd" = xyes])
 
 AC_ARG_ENABLE([lslogins],
@@ -2250,6 +2258,9 @@ UL_BUILD_INIT([scriptlive])
 UL_REQUIRES_HAVE([scriptlive], [pty], [openpty function (libutil)])
 AM_CONDITIONAL([BUILD_SCRIPTLIVE], [test "x$build_scriptlive" = xyes])
 
+
+UL_BUILD_INIT([bits], [yes])
+AM_CONDITIONAL([BUILD_BITS], [test "x$build_bits" = xyes])
 
 UL_BUILD_INIT([col], [check])
 UL_REQUIRES_COMPILE([col], [#include <limits.h>], [__GLIBC__], [building for glibc])
@@ -2716,8 +2727,15 @@ AC_ARG_WITH([econf],
 
 have_econf=no
 AS_IF([test "x$with_econf" != xno], [
-  PKG_CHECK_MODULES([ECONF], [libeconf], [have_econf=yes], [have_econf=no])
-    AS_CASE([$with_econf:$have_econf],
+  PKG_CHECK_MODULES([ECONF], [libeconf],
+     [have_econf=yes
+      AC_CHECK_LIB([econf], [econf_readConfig], [
+	  AC_DEFINE([HAVE_ECONF_READCONFIG], [1], [Define if econf_readConfig exist in -leconf])
+	  ])
+     ],
+     [have_econf=no]
+  )
+  AS_CASE([$with_econf:$have_econf],
     [yes:no],
       [AC_MSG_ERROR([libeconf expected but libeconf not found])],
     [*:yes],
@@ -2902,6 +2920,14 @@ AC_ARG_ENABLE([makeinstall-setuid],
   [], [enable_makeinstall_setuid=yes]
 )
 AM_CONDITIONAL([MAKEINSTALL_DO_SETUID], [test "x$enable_makeinstall_setuid" = xyes])
+
+
+AC_ARG_ENABLE([makeinstall-tty-setgid],
+	      AS_HELP_STRING([--disable-makeinstall-tty-setgid], [do not setgid for wall, and write during "make install"]),
+  [], [enable_makeinstall_tty_setgid=yes]
+)
+AM_CONDITIONAL([MAKEINSTALL_DO_TTY_SETGID], [test "x$enable_makeinstall_tty_setgid" = xyes])
+
 
 
 AC_ARG_ENABLE([colors-default],

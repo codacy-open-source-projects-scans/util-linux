@@ -75,7 +75,7 @@ enum rtc_modes {	/* manual page --mode option explains these. */
 
 };
 
-static const char *rtcwake_mode_string[] = {
+static const char *const rtcwake_mode_string[] = {
 	[OFF_MODE] = "off",
 	[NO_MODE] = "no",
 	[ON_MODE] = "on",
@@ -96,8 +96,8 @@ struct rtcwake_control {
 	enum clock_modes clock_mode;	/* hwclock timezone */
 	time_t sys_time;		/* system time */
 	time_t rtc_time;		/* hardware time */
-	unsigned int verbose:1,		/* verbose messaging */
-		     dryrun:1;		/* do not set alarm, suspend system, etc */
+	bool	verbose,		/* verbose messaging */
+		dryrun;			/* do not set alarm, suspend system, etc */
 };
 
 static void __attribute__((__noreturn__)) usage(void)

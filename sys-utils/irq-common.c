@@ -492,12 +492,13 @@ struct libscols_table *get_scols_cpus_table(struct irq_output *out,
 
 	for (i = 0, j = 0; i < curr->nr_active_cpu; i++) {
 		struct irq_cpu *cpu = &curr->cpus[i];
-		char *str;
+		double usage;
 
 		if (!cpu_in_list(i, setsize, cpuset))
 			continue;
-		xasprintf(&str, "%0.1f", (double)((long double) cpu->total / (long double) curr->total_irq * 100.0));
-		if (str && scols_line_refer_data(ln, ++j, str) != 0)
+
+		usage = (long double) cpu->total / (long double) curr->total_irq * 100.0;
+		if (scols_line_sprintf(ln, ++j, "%0.1f", usage) != 0)
 			goto err;
 	}
 
@@ -509,14 +510,14 @@ struct libscols_table *get_scols_cpus_table(struct irq_output *out,
 
 	for (i = 0, j = 0; i < curr->nr_active_cpu; i++) {
 		struct irq_cpu *cpu = &curr->cpus[i];
-		char *str;
+		double usage;
 
 		if (!cpu_in_list(i, setsize, cpuset))
 			continue;
 		if (!curr->delta_irq)
 			continue;
-		xasprintf(&str, "%0.1f", (double)((long double) cpu->delta / (long double) curr->delta_irq * 100.0));
-		if (str && scols_line_refer_data(ln, ++j, str) != 0)
+		usage = (long double) cpu->delta / (long double) curr->delta_irq * 100.0;
+		if (scols_line_sprintf(ln, ++j, "%0.1f", usage) != 0)
 			goto err;
 	}
 
@@ -530,6 +531,7 @@ struct libscols_table *get_scols_table(struct irq_output *out,
 					      struct irq_stat *prev,
 					      struct irq_stat **xstat,
 					      int softirq,
+					      uintmax_t threshold,
 					      size_t setsize,
 					      cpu_set_t *cpuset)
 {
@@ -568,7 +570,8 @@ struct libscols_table *get_scols_table(struct irq_output *out,
 	}
 
 	for (i = 0; i < stat->nr_irq; i++)
-		add_scols_line(out, &result[i], table);
+		if ((uintmax_t) result[i].total >= threshold)
+			add_scols_line(out, &result[i], table);
 
 	free(result);
 

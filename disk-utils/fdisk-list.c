@@ -250,7 +250,7 @@ int list_freespace_get_table(struct fdisk_context *cxt,
 	char *strsz;
 	int rc = 0, ct = 0;
 
-	static const char *colnames[] = { N_("Start"), N_("End"), N_("Sectors"), N_("Size") };
+	static const char *const colnames[] = { N_("Start"), N_("End"), N_("Sectors"), N_("Size") };
 	static const int colids[] = { FDISK_FIELD_START, FDISK_FIELD_END, FDISK_FIELD_SECTORS, FDISK_FIELD_SIZE };
 
 	rc = fdisk_get_freespaces(cxt, &tb);
@@ -309,9 +309,7 @@ int list_freespace_get_table(struct fdisk_context *cxt,
 			char *data = NULL;
 
 			if (tb0 && i == 0) {
-				xasprintf(&data, "%d", ct + 1);
-
-				if (scols_line_refer_data(ln, i, data)) {
+				if (scols_line_sprintf(ln, i, "%d", ct + 1)) {
 					fdisk_warn(cxt, _("failed to add output data"));
 					rc = -ENOMEM;
 					goto done;

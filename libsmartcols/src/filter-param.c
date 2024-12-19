@@ -24,15 +24,15 @@ struct filter_param {
 	char *holder_name;
 	regex_t *re;
 
-	unsigned int fetched :1,	/* holder requested */
-		     empty : 1;
+	bool fetched,	/* holder requested */
+	     empty;
 };
 
 static int cast_param(int type, struct filter_param *n);
 
 static inline const char *datatype2str(int type)
 {
-	static const char *types[] = {
+	static const char *const types[] = {
 		[SCOLS_DATA_NONE] = "none",
 		[SCOLS_DATA_STRING] = "string",
 		[SCOLS_DATA_U64] = "u64",

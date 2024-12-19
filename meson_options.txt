@@ -75,6 +75,8 @@ option('build-script', type : 'feature',
        description : 'build script')
 option('build-scriptutils', type : 'feature',
        description : 'build scriptutils')
+option('build-bits', type : 'feature',
+       description : 'build bits')
 option('build-col', type : 'feature',
        description : 'build col')
 option('build-colcrt', type : 'feature',
@@ -251,6 +253,8 @@ option('build-bash-completion', type : 'feature',
        description : 'install bash completion files')
 option('build-pylibmount', type : 'feature',
        description : 'build pylibmount')
+option('build-hexdump', type : 'feature',
+       description : 'build hexdump')
 
 # static programs
 
@@ -301,9 +305,10 @@ option('vendordir',
 
 option('pamlibdir', type : 'string',
        description : 'directory for PAM modules')
-option('lastlog-compat-symlink', type : 'boolean',
-       value : false,
-       description : 'create lastlog compat symlink')
 option('login-lastlogin', type : 'boolean',
        value : false,
        description : 'program login writes lastlog entries')
+
+option('tty-setgid', type : 'boolean',
+       value : true,
+       description : 'setgid tty group for wall and write programs')

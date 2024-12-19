@@ -100,7 +100,7 @@ enum {
 	ACT_LIST_OLD
 };
 
-static char *rfkill_actions[] = {
+static const char *const rfkill_actions[] = {
 	[ACT_LIST]	= "list",
 	[ACT_HELP]	= "help",
 	[ACT_EVENT]	= "event",
@@ -142,10 +142,9 @@ static size_t ncolumns;
 
 struct control {
 	struct libscols_table *tb;
-	unsigned int
-		json:1,
-		no_headings:1,
-		raw:1;
+	bool	json,
+		no_headings,
+		raw;
 };
 
 static int column_name_to_id(const char *name, size_t namesz)

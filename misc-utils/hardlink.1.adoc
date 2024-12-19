@@ -18,7 +18,7 @@ hardlink - link multiple copies of a file
 
 == SYNOPSIS
 
-*hardlink* [options] [_directory_|_file_]...
+*hardlink* [options] _directory_|_file_...
 
 == DESCRIPTION
 
@@ -76,6 +76,12 @@ Among equal files, keep the file with the lowest link count.
 *-n*, *--dry-run*::
 Do not act, just print what would happen.
 
+*-l*, *--list-duplicates*::
+Don't link anything, but list the absolute path of every duplicate file, one per line, preceded by a unique 16-byte discriminator and a tab.
+
+*-z*, *--zero*::
+Separate lines with a NUL instead of a newline in *-l* mode.
+
 *-o*, *--ignore-owner*::
 Link and compare files even if their owner information (user and group) differs. Results may be unpredictable.
 
@@ -107,7 +113,13 @@ Link and compare files even if their time of modification is different. This is 
 Verbose output, explain to the user what is being done. If specified once, every hardlinked file is displayed. If specified twice, it also shows every comparison.
 
 *-x*, *--exclude* _regex_::
-A regular expression which excludes files from being compared and linked.
+A regular expression that excludes files from being compared and linked. This option can be used multiple times.
+
+*--exclude-subtree* _regex_::
+A regular expression that excludes entire directories from being compared and linked. This option can also be used multiple times.
+
+*--mount*::
+Do not traverse directories on different filesystems (remain within the same filesystem).
 
 *-X*, *--respect-xattrs*::
 Only try to link files with the same extended attributes.

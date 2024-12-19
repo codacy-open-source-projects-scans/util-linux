@@ -655,7 +655,7 @@ static void login_options_to_argv(char *argv[], int *argc,
 
 static void output_version(void)
 {
-	static const char *features[] = {
+	static const char *const features[] = {
 #ifdef DEBUGGING
 		"debug",
 #endif
@@ -1933,8 +1933,6 @@ static void eval_issue_file(struct issue *ie,
 			    struct options *op,
 			    struct termios *tp)
 {
-	int has_file = 0;
-
 #ifdef AGETTY_RELOAD
 	netlink_groups = 0;
 #endif
@@ -1973,22 +1971,13 @@ static void eval_issue_file(struct issue *ie,
 	if (access(_PATH_ISSUE, F_OK|R_OK) == 0) {
 		issuefile_read(ie, _PATH_ISSUE, op, tp);
 		issuedir_read(ie, _PATH_ISSUEDIR, op, tp);
-		goto done;
 	}
 
-	/* Fallback @runstatedir (usually /run) -- the file is not required to
-	 * read the dir.
-	 */
-	if (issuefile_read(ie, _PATH_RUNSTATEDIR "/" _PATH_ISSUE_FILENAME, op, tp) == 0)
-		has_file++;
-	if (issuedir_read(ie, _PATH_RUNSTATEDIR "/" _PATH_ISSUE_DIRNAME, op, tp) == 0)
-		has_file++;
-	if (has_file)
-		goto done;
+	/* Fallback @runstatedir (usually /run) */
+	issuefile_read(ie, _PATH_RUNSTATEDIR "/" _PATH_ISSUE_FILENAME, op, tp);
+	issuedir_read(ie, _PATH_RUNSTATEDIR "/" _PATH_ISSUE_DIRNAME, op, tp);
 
-	/* Fallback @sysconfstaticdir (usually /usr/lib) -- the file is not
-	 * required to read the dir
-	 */
+	/* Fallback @sysconfstaticdir (usually /usr/lib)*/
 	issuefile_read(ie, _PATH_SYSCONFSTATICDIR "/" _PATH_ISSUE_FILENAME, op, tp);
 	issuedir_read(ie, _PATH_SYSCONFSTATICDIR "/" _PATH_ISSUE_DIRNAME, op, tp);
 
@@ -2146,7 +2135,7 @@ static char *get_logname(struct issue *ie, struct options *op, struct termios *t
 	char c;			/* input character, full eight bits */
 	char ascval;		/* low 7 bits of input character */
 	int eightbit;
-	static char *erase[] = {	/* backspace-space-backspace */
+	static const char *const erase[] = {	/* backspace-space-backspace */
 		"\010\040\010",		/* space parity */
 		"\010\040\010",		/* odd parity */
 		"\210\240\210",		/* even parity */

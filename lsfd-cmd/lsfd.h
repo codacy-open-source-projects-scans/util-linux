@@ -63,6 +63,7 @@ enum {
 	COL_BPF_MAP_TYPE_RAW,
 	COL_BPF_NAME,
 	COL_BPF_PROG_ID,
+	COL_BPF_PROG_TAG,
 	COL_BPF_PROG_TYPE,
 	COL_BPF_PROG_TYPE_RAW,
 	COL_CHRDRV,
@@ -206,10 +207,10 @@ struct file {
 	unsigned int sys_flags;
 	unsigned int mnt_id;
 
-	uint8_t locked_read:1,
-		locked_write:1,
-		multiplexed:1,
-		is_error:1;
+	bool	locked_read,
+		locked_write,
+		multiplexed,
+		is_error;
 };
 
 #define is_opened_file(_f) ((_f)->association >= 0)

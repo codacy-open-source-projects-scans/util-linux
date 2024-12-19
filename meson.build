@@ -431,6 +431,11 @@ lib_econf = dependency(
   required : get_option('econf'))
 conf.set('HAVE_LIBECONF', lib_econf.found() ? 1 : false)
 
+have = cc.has_function(
+  'econf_readConfig',
+  dependencies : lib_econf)
+conf.set('HAVE_ECONF_READCONFIG', have ? 1 : false)
+
 lib_audit = dependency(
   'audit',
   required : get_option('audit'))
@@ -1199,6 +1204,20 @@ endif
 
 ############################################################
 
+opt = not get_option('build-bits').disabled()
+exe = executable(
+  'bits',
+  bits_sources,
+  include_directories : includes,
+  link_with : lib_common,
+  install_dir : usrbin_exec_dir,
+  install : true)
+if opt and not is_disabler(exe)
+exes += exe
+manadocs += ['text-utils/bits.1.adoc']
+bashcompletions += ['bits']
+endif
+
 opt = not get_option('build-col').require(is_glibc).disabled()
 exe = executable(
   'col',
@@ -1345,18 +1364,21 @@ if opt and not is_disabler(exe)
   bashcompletions += ['more']
 endif
 
-exe = executable(
-  'hexdump',
-  hexdump_sources,
-  include_directories : includes,
-  link_with : [lib_common,
-               lib_tcolors],
-  install_dir : usrbin_exec_dir,
-  install : true)
+if not get_option('build-hexdump').disabled()
+  exe = executable(
+    'hexdump',
+    hexdump_sources,
+    include_directories : includes,
+    link_with : [lib_common,
+                 lib_tcolors],
+    install_dir : usrbin_exec_dir)
+else
+  exe = disabler()
+endif
 if not is_disabler(exe)
-  exes += exe
-  manadocs += ['text-utils/hexdump.1.adoc']
-  bashcompletions += ['hexdump']
+    exes += exe
+    manadocs += ['text-utils/hexdump.1.adoc']
+    bashcompletions += ['hexdump']
 endif
 
 opt = not get_option('build-lsmem').disabled()
@@ -2313,7 +2335,7 @@ exe2 = executable(
   install_dir : sbindir,
   install : opt,
   build_by_default : opt)
-if not is_disabler(exe)
+if opt and not is_disabler(exe)
   exes += [exe, exe2]
   manadocs += ['disk-utils/mkfs.cramfs.8.adoc','disk-utils/fsck.cramfs.8.adoc']
   bashcompletions += ['mkfs.cramfs', 'fsck.cramfs']
@@ -2661,6 +2683,13 @@ if opt
   bashcompletions += ['mesg']
 endif
 
+tty_setgid = get_option('tty-setgid')
+if tty_setgid
+  tty_install_mode = [ 'rwxr-sr-x', 'root', 'tty' ]
+else
+  tty_install_mode = [ false, false, false ]
+endif
+
 opt = not get_option('build-wall').disabled()
 exe = executable(
   'wall',
@@ -2669,7 +2698,7 @@ exe = executable(
   link_with : [lib_common],
   dependencies : [lib_systemd],
   install_dir : usrbin_exec_dir,
-  install_mode : [ 'rwxr-sr-x', 'root', 'tty' ],
+  install_mode : tty_install_mode,
   install : opt,
   build_by_default : opt)
 if opt
@@ -2689,7 +2718,7 @@ exe = executable(
   link_with : [lib_common],
   dependencies : [lib_systemd],
   install_dir : usrbin_exec_dir,
-  install_mode : [ 'rwxr-sr-x', 'root', 'tty' ],
+  install_mode : tty_install_mode,
   install : opt,
   build_by_default : opt)
 if opt
@@ -2712,7 +2741,7 @@ exe = executable(
                   lib_selinux],
   install : opt,
   build_by_default : opt)
-if not is_disabler(exe)
+if opt and not is_disabler(exe)
   exes += exe
   manadocs += ['login-utils/login.1.adoc']
 endif
@@ -2728,11 +2757,12 @@ exe = executable(
   install_dir : sbindir,
   install : opt,
   build_by_default : opt)
-if not is_disabler(exe)
+if opt and not is_disabler(exe)
   exes += exe
   manadocs += ['login-utils/sulogin.8.adoc']
 endif
 
+opt = not get_option('build-cal').disabled()
 exe = executable(
   'cal',
   cal_sources,
@@ -2741,10 +2771,13 @@ exe = executable(
                lib_tcolors],
   dependencies : [curses_libs],
   install_dir : usrbin_exec_dir,
-  install : true)
-exes += exe
-manadocs += ['misc-utils/cal.1.adoc']
-bashcompletions += ['cal']
+  install : opt,
+  build_by_default : opt)
+if opt and not is_disabler(exe)
+  exes += exe
+  manadocs += ['misc-utils/cal.1.adoc']
+  bashcompletions += ['cal']
+endif
 
 opt = not get_option('build-logger').disabled()
 exe = executable(
@@ -2897,7 +2930,8 @@ errnos_h = custom_target('errnos.h',
 )
 
 opt = not get_option('build-lsfd').require(lib_rt.found()).disabled() \
-      and cc.has_header_symbol('linux/bpf.h', 'BPF_OBJ_NAME_LEN')
+      and cc.has_header_symbol('linux/bpf.h', 'BPF_OBJ_NAME_LEN') \
+      and cc.has_header_symbol('linux/bpf.h', 'BPF_TAG_SIZE')
 exe = executable(
   'lsfd',
   lsfd_sources, errnos_h,
@@ -3889,7 +3923,9 @@ run_target(
 
 
 manadocs += ['lib/terminal-colors.d.5.adoc']
-manadocs += ['libblkid/libblkid.3.adoc']
+if build_libblkid
+  manadocs += ['libblkid/libblkid.3.adoc']
+endif
 
 if build_libuuid
   manadocs += [

@@ -147,6 +147,9 @@ Bpf object name.
 BPF-PROG.ID <``number``>::
 Bpf program ID.
 
+BPF-PROG.TAG <``string``>::
+Bpf program TAG.
+
 BPF-PROG.TYPE <``string``>::
 Decoded name of bpf program type.
 
@@ -273,7 +276,7 @@ bpf-map:::
 id=_BPF-MAP.ID_ type=_BPF-MAP.TYPE_[ name=_BPF.NAME_]
 +
 bpf-prog:::
-id=_BPF-PROG.ID_ type=_BPF-PROG.TYPE_[ name=_BPF.NAME_]
+id=_BPF-PROG.ID_ type=_BPF-PROG.TYPE_ tag= _BPF-PROG.TAG_ [ name=_BPF.NAME_]
 +
 eventpoll:::
 tfds=_EVENTPOLL.TFDS_
@@ -661,6 +664,16 @@ List files opened in a QEMU virtual machine: ::
 List timerfd files expired within 0.5 seconds: ::
 ....
 # lsfd -Q '(TIMERFD.remaining < 0.5) and (TIMERFD.remaining > 0.0)'
+....
+
+List processes communicating via unix stream sockets: ::
+....
+# lsfd  -Q 'TYPE == "UNIX-STREAM" && UNIX.PATH =~ ".+"' -oUNIX.PATH,PID,COMMAND,FD,SOCK.STATE,ENDPOINTS
+....
+
+List processes communicating via a specified unix stream socket: ::
+....
+# lsfd  -Q 'TYPE == "UNIX-STREAM" && UNIX.PATH == "@/tmp/.X11-unix/X0"' -oUNIX.PATH,PID,COMMAND,FD,SOCK.STATE,ENDPOINTS
 ....
 
 == COUNTER EXAMPLES
