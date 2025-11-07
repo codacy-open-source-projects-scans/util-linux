@@ -8,9 +8,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  *
  * Copyright (C) 2004 Robert Love
  * Copyright (C) 2020-2021 Qais Yousef
@@ -122,6 +121,14 @@ static int sched_getattr(pid_t pid, struct sched_attr *attr, unsigned int size, 
  */
 #if defined (__linux__) && !defined(SCHED_DEADLINE) && defined(HAVE_SCHED_SETATTR)
 # define SCHED_DEADLINE 6
+#endif
+
+/* the SCHED_EXT is supported since Linux 6.12
+ * commit id f0e1a0643a59bf1f922fa209cec86a170b784f3f
+ * -- temporary workaround for people with old glibc headers
+ */
+#if defined(__linux__) && !defined(SCHED_EXT)
+# define SCHED_EXT 7
 #endif
 
 #endif /* UTIL_LINUX_SCHED_ATTR_H */

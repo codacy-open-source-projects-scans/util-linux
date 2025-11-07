@@ -22,7 +22,6 @@
  * along with this program; if not, write to the Free Software Foundation,
  * Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
-
 #include <stdio.h>
 #include <sys/types.h>
 #include <inttypes.h>
@@ -40,6 +39,28 @@
 
 #ifdef HAVE_LINUX_KCMP_H
 #  include <linux/kcmp.h>
+#endif
+
+/* See proc(5).
+ * Defined in linux/include/linux/sched.h private header file. */
+#define PF_KTHREAD		0x00200000	/* I am a kernel thread */
+
+#include "c.h"
+#include "cctype.h"
+#include "list.h"
+#include "closestream.h"
+#include "column-list-table.h"
+#include "strutils.h"
+#include "procfs.h"
+#include "fileutils.h"
+#include "idcache.h"
+#include "pathnames.h"
+
+#include "lsfd.h"
+
+/* Make sure this ifdef block comes after all the includes since
+ * c.h is required for the case where the system does not have kcmp.h */
+#ifdef HAVE_LINUX_KCMP_H
 static int kcmp(pid_t pid1, pid_t pid2, int type,
 		unsigned long idx1, unsigned long idx2)
 {
@@ -67,22 +88,6 @@ static int kcmp(pid_t pid1 __attribute__((__unused__)),
 	return -1;
 }
 #endif
-
-/* See proc(5).
- * Defined in linux/include/linux/sched.h private header file. */
-#define PF_KTHREAD		0x00200000	/* I am a kernel thread */
-
-#include "c.h"
-#include "list.h"
-#include "closestream.h"
-#include "column-list-table.h"
-#include "strutils.h"
-#include "procfs.h"
-#include "fileutils.h"
-#include "idcache.h"
-#include "pathnames.h"
-
-#include "lsfd.h"
 
 UL_DEBUG_DEFINE_MASK(lsfd);
 UL_DEBUG_DEFINE_MASKNAMES(lsfd) = UL_DEBUG_EMPTY_MASKNAMES;
@@ -166,6 +171,7 @@ struct colinfo {
 	int flags;
 	int json_type;
 	const char *help;
+	bool hyperlink;
 };
 
 /* columns descriptions */
@@ -259,7 +265,8 @@ static const struct colinfo infos[] = {
 				   N_("list of monitoring inodes (raw, don't decode devices)") },
 	[COL_KNAME]            = { "KNAME",
 				   0.4, SCOLS_FL_TRUNC, SCOLS_JSON_STRING,
-				   N_("name of the file (raw)") },
+				   N_("name of the file (raw)"),
+				   .hyperlink = true },
 	[COL_KTHREAD]          = { "KTHREAD",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_BOOLEAN,
 				   N_("opened by a kernel thread") },
@@ -280,7 +287,8 @@ static const struct colinfo infos[] = {
 				   N_("access mode (rwx)") },
 	[COL_NAME]             = { "NAME",
 				   0.4, SCOLS_FL_TRUNC, SCOLS_JSON_STRING,
-				   N_("name of the file (cooked)") },
+				   N_("name of the file (cooked)"),
+				   .hyperlink = true },
 	[COL_NETLINK_GROUPS]   = { "NETLINK.GROUPS",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
 				   N_("netlink multicast groups") },
@@ -307,7 +315,10 @@ static const struct colinfo infos[] = {
 				   N_("net interface associated with the packet socket") },
 	[COL_PACKET_PROTOCOL]  = { "PACKET.PROTOCOL",
 				   0,   SCOLS_FL_RIGHT,SCOLS_JSON_STRING,
-				   N_("L3 protocol associated with the packet socket") },
+				   N_("L2 protocol name associated with the packet socket (decoded)") },
+	[COL_PACKET_PROTOCOL_RAW]={"PACKET.PROTOCOL.RAW",
+				   0,   SCOLS_FL_RIGHT,SCOLS_JSON_NUMBER,
+				   N_("L2 protocol number associated with the packet socket (raw)") },
 	[COL_PARTITION]        = { "PARTITION",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("block device name resolved by /proc/partition") },
@@ -333,8 +344,11 @@ static const struct colinfo infos[] = {
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
 				   N_("tty index of the counterpart") },
 	[COL_RAW_PROTOCOL]     = { "RAW.PROTOCOL",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
+				   N_("protocol name of the raw socket (decoded)") },
+	[COL_RAW_PROTOCOL_RAW] = { "RAW.PROTOCOL.RAW",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
-				   N_("protocol number of the raw socket") },
+				   N_("protocol number of the raw socket (raw)") },
 	[COL_RDEV]             = { "RDEV",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("device ID (if special file)") },
@@ -425,12 +439,33 @@ static const struct colinfo infos[] = {
 	[COL_UID]              = { "UID",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
 				   N_("user ID number of the process") },
+	[COL_UNIX_IPEER]       = { "UNIX.IPEER",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("inode number for the peer of the UNIX domain socket") },
 	[COL_UNIX_PATH]        = { "UNIX.PATH",
 				   0.4, SCOLS_FL_TRUNC, SCOLS_JSON_STRING,
 				   N_("filesystem pathname for UNIX domain socket") },
 	[COL_USER]             = { "USER",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("user of the process") },
+	[COL_VSOCK_LCID]       = { "VSOCK.LCID",
+				    0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				    N_("local VSOCK context identifier") },
+	[COL_VSOCK_RCID]       = { "VSOCK.RCID",
+				    0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				    N_("remote VSOCK context identifier") },
+	[COL_VSOCK_LPORT]      = { "VSOCK.LPORT",
+				    0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				    N_("local VSOCK port") },
+	[COL_VSOCK_RPORT]      = { "VSOCK.RPORT",
+				    0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				    N_("remote VSOCK port") },
+	[COL_VSOCK_LADDR]       = { "VSOCK.LADDR",
+				    0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
+				    N_("local VSOCK address (CID:PORT)") },
+	[COL_VSOCK_RADDR]       = { "VSOCK.RADDR",
+				    0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
+				    N_("remote VSOCK address (CID:PORT)") },
 	[COL_XMODE]            = { "XMODE",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("extended version of MODE (rwxD[Ll]m)") },
@@ -543,6 +578,7 @@ static const struct counter_spec default_counter_specs[] = {
 struct filler_data {
 	struct proc *proc;
 	struct file *file;
+	bool hyperlink_enabled;
 };
 
 struct lsfd_control {
@@ -558,6 +594,8 @@ struct lsfd_control {
 			show_summary : 1,	/* print summary/counters */
 			sockets_only : 1,	/* display only SOCKETS */
 			show_xmode : 1;		/* XMODE column is enabled. */
+
+	char *uri;
 
 	struct libscols_filter *filter;		/* filter */
 	struct libscols_filter **ct_filters;	/* counters (NULL terminated array) */
@@ -586,7 +624,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -602,18 +640,23 @@ static int get_column_id(int num)
 	return columns[num];
 }
 
-static const struct colinfo *get_column_info(int num)
+static const struct colinfo *get_column_info(int id)
 {
-	return &infos[ get_column_id(num) ];
+	return &infos[ id ];
 }
 
 static struct libscols_column *add_column(struct libscols_table *tb,
-					  const struct colinfo *col, int extra)
+					  int id, int extra, char *uri)
 {
+	const struct colinfo *col;
 	struct libscols_column *cl;
-	int flags = col->flags;
 
-	cl = scols_table_new_column(tb, col->name, col->whint, flags | extra);
+	assert(id < LSFD_N_COLS);
+
+	col = get_column_info(id);
+
+	cl = scols_table_new_column(tb, col->name, col->whint,
+				col->flags | extra);
 	if (cl) {
 		scols_column_set_json_type(cl, col->json_type);
 		if (col->flags & SCOLS_FL_WRAP) {
@@ -623,22 +666,23 @@ static struct libscols_column *add_column(struct libscols_table *tb,
 						  NULL);
 			scols_column_set_safechars(cl, "\n");
 		}
+		if (!(extra & SCOLS_FL_HIDDEN) && uri &&
+		    col->hyperlink)
+			scols_column_set_uri(cl, uri);
 	}
 
 	return cl;
 }
 
-static struct libscols_column *add_column_by_id(struct lsfd_control *ctl,
-						int colid, int extra)
+static struct libscols_column *add_hidden_column(struct lsfd_control *ctl,
+						 int colid)
 {
 	struct libscols_column *cl;
 
 	if (ncolumns >= ARRAY_SIZE(columns))
 		errx(EXIT_FAILURE, _("too many columns are added via filter expression"));
 
-	assert(colid < LSFD_N_COLS);
-
-	cl = add_column(ctl->tb, infos + colid, extra);
+	cl = add_column(ctl->tb, colid, SCOLS_FL_HIDDEN, ctl->uri);
 	if (!cl)
 		err(EXIT_FAILURE, _("failed to allocate output column"));
 	columns[ncolumns++] = colid;
@@ -841,7 +885,7 @@ static struct file *collect_file_symlink(struct path_cxt *pc,
 					 bool sockets_only)
 {
 	char sym[PATH_MAX] = { '\0' };
-	struct stat sb;
+	struct stat sb = { .st_mode = 0 };
 	struct file *f, *prev;
 
 	if (ul_path_readlink(pc, sym, sizeof(sym), name) < 0)
@@ -932,7 +976,7 @@ static void parse_maps_line(struct path_cxt *pc, char *buf, struct proc *proc)
 	uint64_t start, end, offset, ino;
 	unsigned long major, minor;
 	enum association assoc = ASSOC_MEM;
-	struct stat sb;
+	struct stat sb = { .st_mode = 0 };
 	struct file *f, *prev;
 	char *path, modestr[5];
 	dev_t devno;
@@ -971,6 +1015,12 @@ static void parse_maps_line(struct path_cxt *pc, char *buf, struct proc *proc)
 		if (stat(path, &sb) < 0)
 			/* If a file is mapped but deleted from the file system,
 			 * "stat by the file name" may not work. In that case,
+			 */
+			goto try_map_files;
+		if (sb.st_ino != ino || sb.st_dev != devno)
+			/* There are two files having the same absolute file names!
+			 *
+			 * Maybe the file is bind-mount'ed after mapped.
 			 */
 			goto try_map_files;
 		f = new_file(proc, stat2class(&sb), &sb, path, -assoc);
@@ -1441,19 +1491,40 @@ void add_endpoint(struct ipc_endpoint *endpoint, struct ipc *ipc)
 }
 
 
+static bool should_disable_hyperlink(const struct file * file)
+{
+	mode_t ftype = file->stat.st_mode & S_IFMT;
+
+	return (file->name == NULL
+		|| file->stat.st_nlink == 0
+		|| *file->name != '/'
+		|| (ftype != S_IFREG && ftype != S_IFDIR));
+}
+
 static void fill_column(struct proc *proc,
 			struct file *file,
 			struct libscols_line *ln,
 			int column_id,
-			size_t column_index)
+			size_t column_index,
+			bool hyperlink_enabled)
 {
 	const struct file_class *class = file->class;
 
 	while (class) {
 		if (class->fill_column
 		    && class->fill_column(proc, file, ln,
-					  column_id, column_index))
+					  column_id, column_index)) {
+
+			if (hyperlink_enabled
+			    && infos[column_id].hyperlink
+			    && should_disable_hyperlink(file)) {
+				struct libscols_cell *ce = scols_line_get_cell(ln, column_index);
+				if (ce)
+					scols_cell_disable_uri(ce, 1);
+			}
+
 			break;
+		}
 		class = class->super;
 	}
 }
@@ -1466,13 +1537,15 @@ static int filter_filler_cb(
 {
 	struct filler_data *fid = (struct filler_data *) userdata;
 
-	fill_column(fid->proc, fid->file, ln, get_column_id(colnum), colnum);
+	fill_column(fid->proc, fid->file, ln, get_column_id(colnum), colnum,
+		    fid->hyperlink_enabled);
 	return 0;
 }
 
 static void convert_file(struct proc *proc,
 		     struct file *file,
-		     struct libscols_line *ln)
+		     struct libscols_line *ln,
+		     bool hyperlink_enabled)
 
 {
 	size_t i;
@@ -1480,13 +1553,14 @@ static void convert_file(struct proc *proc,
 	for (i = 0; i < ncolumns; i++) {
 		if (scols_line_is_filled(ln, i))
 			continue;
-		fill_column(proc, file, ln, get_column_id(i), i);
+		fill_column(proc, file, ln, get_column_id(i), i, hyperlink_enabled);
 	}
 }
 
 static void convert(struct list_head *procs, struct lsfd_control *ctl)
 {
 	struct list_head *p;
+	bool hyperlink_enabled = (ctl->uri != NULL);
 
 	list_for_each (p, procs) {
 		struct proc *proc = list_entry(p, struct proc, procs);
@@ -1503,7 +1577,8 @@ static void convert(struct list_head *procs, struct lsfd_control *ctl)
 				int status = 0;
 				struct filler_data fid = {
 					.proc = proc,
-					.file = file
+					.file = file,
+					.hyperlink_enabled = hyperlink_enabled,
 				};
 
 				scols_filter_set_filler_cb(ctl->filter,
@@ -1516,7 +1591,7 @@ static void convert(struct list_head *procs, struct lsfd_control *ctl)
 				}
 			}
 
-			convert_file(proc, file, ln);
+			convert_file(proc, file, ln, hyperlink_enabled);
 
 			if (!ctl->ct_filters)
 				continue;
@@ -2108,7 +2183,7 @@ static void collect_processes(struct lsfd_control *ctl, const pid_t pids[], int 
 	ul_unref_path(pc);
 }
 
-static void __attribute__((__noreturn__)) list_colunms(const char *table_name,
+static void __attribute__((__noreturn__)) list_columns(const char *table_name,
 						       FILE *out,
 						       int raw,
 						       int json)
@@ -2151,17 +2226,18 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -o, --output <list>          output columns (see --list-columns)\n"), out);
 	fputs(_(" -r, --raw                    use raw output format\n"), out);
 	fputs(_(" -u, --notruncate             don't truncate text in columns\n"), out);
-	fputs(_(" -p, --pid  <pid(s)>          collect information only specified processes\n"), out);
+	fputs(_(" -p, --pid <list>             collect information only for specified processes\n"), out);
 	fputs(_(" -i[4|6], --inet[=4|=6]       list only IPv4 and/or IPv6 sockets\n"), out);
 	fputs(_(" -Q, --filter <expr>          apply display filter\n"), out);
 	fputs(_("     --debug-filter           dump the internal data structure of filter and exit\n"), out);
 	fputs(_(" -C, --counter <name>:<expr>  define custom counter for --summary output\n"), out);
 	fputs(_("     --dump-counters          dump counter definitions\n"), out);
-	fputs(_("     --summary[=<when>]       print summary information (only, append, or never)\n"), out);
+	fputs(_("     --hyperlink[=<when>]     print paths as hyperlinks (always|never|auto)\n"), out);
+	fputs(_("     --summary[=<mode>]       print summary information (append|only|never)\n"), out);
 	fputs(_("     --_drop-privilege        (testing purpose) do setuid(1) just after starting\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(_(" -H, --list-columns           list the available columns\n"), out);
+	fprintf(out, USAGE_LIST_COLUMNS_OPTION(30));
 	fprintf(out, USAGE_HELP_OPTIONS(30));
 
 	fputs(USAGE_DEFAULT_COLUMNS, out);
@@ -2220,7 +2296,7 @@ static struct libscols_filter *new_filter(const char *expr, bool debug, struct l
 		if (!col) {
 			int id = column_name_to_id(name, strlen(name));
 			if (id >= 0)
-				col = add_column_by_id(ctl, id, SCOLS_FL_HIDDEN);
+				col = add_hidden_column(ctl, id);
 			if (!col) {
 				nerrs++;	/* report all unknown columns */
 				continue;
@@ -2502,6 +2578,7 @@ int main(int argc, char *argv[])
 		OPT_SUMMARY,
 		OPT_DUMP_COUNTERS,
 		OPT_DROP_PRIVILEGE,
+		OPT_HYPERLINK
 	};
 	static const struct option longopts[] = {
 		{ "noheadings", no_argument, NULL, 'n' },
@@ -2521,6 +2598,7 @@ int main(int argc, char *argv[])
 		{ "dump-counters",no_argument, NULL, OPT_DUMP_COUNTERS },
 		{ "list-columns",no_argument, NULL, 'H' },
 		{ "_drop-privilege",no_argument,NULL,OPT_DROP_PRIVILEGE },
+		{ "hyperlink",  optional_argument, NULL, OPT_HYPERLINK },
 		{ NULL, 0, NULL, 0 },
 	};
 
@@ -2558,6 +2636,8 @@ int main(int argc, char *argv[])
 			const char *subexpr = NULL;
 
 			ctl.sockets_only = 1;
+			if (optarg && *optarg == '=')
+				optarg++;
 			if (optarg == NULL)
 				subexpr = inet46_subexpr;
 			else if (strcmp(optarg, "4") == 0)
@@ -2603,6 +2683,10 @@ int main(int argc, char *argv[])
 			if (setuid(1) == -1)
 				err(EXIT_FAILURE, _("failed to drop privilege"));
 			break;
+		case OPT_HYPERLINK:
+			if (hyperlinkwanted(optarg))
+				ctl.uri = xgethosturi(NULL);
+			break;
 		case 'V':
 			print_version(EXIT_SUCCESS);
 		case 'h':
@@ -2616,7 +2700,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (collist)
-		list_colunms("lsfd-columns", stdout, ctl.raw, ctl.json); /* print and exit */
+		list_columns("lsfd-columns", stdout, ctl.raw, ctl.json); /* print and exit */
 
 	if (argv[optind])
 		errtryhelp(EXIT_FAILURE);
@@ -2652,8 +2736,7 @@ int main(int argc, char *argv[])
 
 	/* create output columns */
 	for (i = 0; i < ncolumns; i++) {
-		const struct colinfo *col = get_column_info(i);
-		struct libscols_column *cl = add_column(ctl.tb, col, 0);
+		struct libscols_column *cl = add_column(ctl.tb, get_column_id(i), 0, ctl.uri);
 
 		if (!cl)
 			err(EXIT_FAILURE, _("failed to allocate output column"));

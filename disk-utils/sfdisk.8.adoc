@@ -12,6 +12,8 @@ manual under the conditions for verbatim copying, provided that the
 entire resulting derived work is distributed under the terms of a
 permission notice identical to this one.
 ////
+ifdef::neverdefined[---]
+
 = sfdisk(8)
 :doctype: manpage
 :man manual: System Administration
@@ -148,7 +150,9 @@ Move GPT backup header behind the last partition. Note that UEFI standard requir
 *-a*, *--append*::
 Don't create a new partition table, but only append the specified partitions.
 +
-Note that unused partition maybe be re-used in this case although it is not the last partition in the partition table. See also *-N* to specify entry in the partition table.
+Note that in this case an unused partition may be re-used even though it is
+not the last partition in the partition table. See also *-N* for addressing a
+specific entry in the partition table.
 
 *-b*, *--backup*::
 Back up the current partition table sectors before starting the partitioning. The default backup file name is _~/sfdisk-<device>-<offset>.bak_; to use another name see option *-O*, *--backup-file*. See section *BACKING UP THE PARTITION TABLE* for more details.
@@ -162,8 +166,13 @@ Disable all consistency checking.
 *--Linux*::
 Deprecated and ignored option. Partitioning that is compatible with Linux (and other modern operating systems) is the default.
 
-*--lock*[=_mode_]::
-Use exclusive BSD lock for device or file it operates. The optional argument _mode_ can be *yes*, *no* (or 1 and 0) or *nonblock*. If the _mode_ argument is omitted, it defaults to *yes*. This option overwrites environment variable *$LOCK_BLOCK_DEVICE*. The default is not to use any lock at all, but it's recommended to avoid collisions with *systemd-udevd*(8) or other tools.
+*--lock*[**=**_mode_]::
+Use an exclusive BSD lock for the device or file that is operated upon.
+The optional argument _mode_ can be *yes* (*1*), *no* (*0*), or *nonblock*.
+If the _mode_ argument is omitted, it defaults to *yes*.
+This option overrides the environment variable *$LOCK_BLOCK_DEVICE*.
+The default is to not use any lock at all, but using a lock is recommended
+to avoid collisions with *systemd-udevd*(8) or other tools.
 
 *-n*, *--no-act*::
 Do everything except writing to the device.
@@ -215,7 +224,11 @@ Specify the sector size of the disk. Valid values are 512, 1024, 2048, and 4096.
 Deprecated option. Only the sector unit is supported. This option is not supported when using the *--show-size* command.
 
 *-X*, *--label* _type_::
-Specify the disk label type (e.g., *dos*, *gpt*, ...). If this option is not given, then *sfdisk* defaults to the existing label, but if there is no label on the device yet, then the type defaults to *dos*. The default or the current label may be overwritten by the "label: <name>" script header line. The option *--label* does not force *sfdisk* to create empty disk label (see the *EMPTY DISK LABEL* section below).
+Specify the disk-label type (e.g., *dos*, *gpt*, ...). If this option is not given,
+then *sfdisk* defaults to the type of the existing label, but if there is no label
+on the device yet, then the type defaults to *dos*. This default may be overridden
+by the "label: <name>" script-header line. The option *--label* does not force
+*sfdisk* to create an empty disk label (see the *EMPTY DISK LABEL* section below).
 
 *-Y*, *--label-nested* _type_::
 Force editing of a nested disk label. The primary disk label has to exist already. This option allows editing for example a hybrid/protective MBR on devices with GPT.
@@ -226,11 +239,13 @@ Wipe filesystem, RAID and partition-table signatures from the device, in order t
 *-W*, *--wipe-partitions* _when_::
 Wipe filesystem, RAID and partition-table signatures from a newly created partition, in order to avoid possible collisions. The argument _when_ can be *auto*, *never* or *always*. When this option is not given, the default is *auto*, in which case signatures are wiped only when in interactive mode and after confirmation by user. In all cases detected signatures are reported by warning messages after a new partition is created. See also *wipefs*(8) command.
 
-*-v*, *--version*::
-Display version information and exit.
-
 *-h*, *--help*::
 Display help text and exit.
+
+*-v*, *--version*::
+Display version and exit.
+
+// Do not include::man-common/help-version.adoc[], as -V is not --version.
 
 == INPUT FORMATS
 

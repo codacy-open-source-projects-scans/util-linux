@@ -10,9 +10,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  *
  * Copyright (C) 2004 Robert Love
  * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
@@ -187,8 +186,18 @@ int main(int argc, char **argv)
 			all_tasks = 1;
 			break;
 		case 'p':
+			/*
+			 * strtopid_or_err() is not suitable here; 0 can be
+			 * passed.
+			 */
 			pid = strtos32_or_err(argv[argc - 1],
-					    _("invalid PID argument"));
+					      _("invalid PID argument"));
+			if (pid == 0)
+				pid = getpid();
+			/*
+			 * After this point, pid == 0 means "no pid" and that
+			 * we will exec a command.
+			 */
 			break;
 		case 'c':
 			ts.use_list = 1;

@@ -147,7 +147,7 @@ static bool abst_fill_column(struct proc *proc,
 	case COL_FD:
 		if (!is_opened_file(file))
 			return false;
-		/* FALL THROUGH */
+		FALLTHROUGH;
 	case COL_ASSOC:
 		if (is_opened_file(file))
 			xasprintf(&str, "%d", file->association);
@@ -423,7 +423,7 @@ static bool file_fill_column(struct proc *proc __attribute__((__unused__)),
 				return true;
 			}
 		}
-		/* FALL THROUGH */
+		FALLTHROUGH;
 	case COL_KNAME:
 		if (file->name
 		    && scols_line_set_data(ln, column_index, file->name))

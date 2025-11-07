@@ -14,9 +14,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 
 #include <fcntl.h>
@@ -51,6 +50,7 @@ static void __attribute__((__noreturn__)) usage(void)
 
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -a, --advice <advice> applying advice to the file (default: \"dontneed\")\n"), out);
+	fputs(_(" -d, --fd <num>        applying advice to the file descriptor\n"), out);
 	fputs(_(" -l, --length <num>    length for range operations, in bytes\n"), out);
 	fputs(_(" -o, --offset <num>    offset for range operations, in bytes\n"), out);
 
@@ -112,11 +112,11 @@ int main(int argc, char ** argv)
 			break;
 		case 'l':
 			len = strtosize_or_err(optarg,
-					       _("invalid length argument"));
+					       _("invalid length"));
 			break;
 		case 'o':
 			offset = strtosize_or_err(optarg,
-						  _("invalid offset argument"));
+						  _("invalid offset"));
 			break;
 		case 'V':
 			print_version(EXIT_SUCCESS);

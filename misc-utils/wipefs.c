@@ -14,9 +14,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -40,6 +39,7 @@
 #include "all-io.h"
 #include "match.h"
 #include "c.h"
+#include "cctype.h"
 #include "closestream.h"
 #include "optutils.h"
 #include "blkdev.h"
@@ -126,7 +126,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -710,6 +710,8 @@ main(int argc, char **argv)
 			break;
 		case 'b':
 			if (optarg) {
+				if (*optarg == '=')
+					optarg++;
 				ctl.backup = optarg;
 			} else {
 				ctl.backup = getenv("HOME");
@@ -735,7 +737,7 @@ main(int argc, char **argv)
 			break;
 		case 'o':
 			add_offset(&ctl.offsets, strtosize_or_err(optarg,
-					 _("invalid offset argument")));
+						 _("invalid offset")));
 			break;
 		case 'p':
 			ctl.parsable = 1;

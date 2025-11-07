@@ -21,8 +21,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -598,15 +597,15 @@ static void __attribute__((__noreturn__)) usage(const struct last_control *ctl)
 	fputs(_(" -F, --fulltimes      print full login and logout times and dates\n"), out);
 	fputs(_(" -i, --ip             display IP numbers in numbers-and-dots notation\n"), out);
 	fputs(_(" -n, --limit <number> how many lines to show\n"), out);
+	fputs(_(" -p, --present <time> display who were present at the specified time\n"), out);
 	fputs(_(" -R, --nohostname     don't display the hostname field\n"), out);
 	fputs(_(" -s, --since <time>   display the lines since the specified time\n"), out);
 	fputs(_(" -t, --until <time>   display the lines until the specified time\n"), out);
-	fputs(_(" -T, --tab-separated	use tabs as delimiters\n"), out);
-	fputs(_(" -p, --present <time> display who were present at the specified time\n"), out);
-	fputs(_(" -w, --fullnames      display full user and domain names\n"), out);
-	fputs(_(" -x, --system         display system shutdown entries and run level changes\n"), out);
+	fputs(_(" -T, --tab-separated  use tabs as delimiters\n"), out);
 	fputs(_("     --time-format <format>  show timestamps in the specified <format>:\n"
 		"                               notime|short|full|iso\n"), out);
+	fputs(_(" -w, --fullnames      display full user and domain names\n"), out);
+	fputs(_(" -x, --system         display system shutdown entries and run level changes\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
 	fprintf(out, USAGE_HELP_OPTIONS(22));
@@ -866,7 +865,7 @@ static void process_wtmp_file(const struct last_control *ctl,
 					c = whydown;
 				quit = list(ctl, &ut, lastboot, c);
 			}
-			/* fallthrough */
+			FALLTHROUGH;
 
 		case DEAD_PROCESS:
 			/*
@@ -1054,17 +1053,17 @@ int main(int argc, char **argv)
 			ctl.time_fmt = LAST_TIMEFTM_CTIME;
 			break;
 		case 'p':
-			if (parse_timestamp(optarg, &p) < 0)
+			if (ul_parse_timestamp(optarg, &p) < 0)
 				errx(EXIT_FAILURE, _("invalid time value \"%s\""), optarg);
 			ctl.present = (time_t) (p / 1000000);
 			break;
 		case 's':
-			if (parse_timestamp(optarg, &p) < 0)
+			if (ul_parse_timestamp(optarg, &p) < 0)
 				errx(EXIT_FAILURE, _("invalid time value \"%s\""), optarg);
 			ctl.since = (time_t) (p / 1000000);
 			break;
 		case 't':
-			if (parse_timestamp(optarg, &p) < 0)
+			if (ul_parse_timestamp(optarg, &p) < 0)
 				errx(EXIT_FAILURE, _("invalid time value \"%s\""), optarg);
 			ctl.until = (time_t) (p / 1000000);
 			break;

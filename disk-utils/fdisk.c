@@ -359,7 +359,7 @@ static int ask_offset(struct fdisk_context *cxt,
 			p++;
 		}
 
-		rc = parse_size(p, &num, &pwr);
+		rc = ul_parse_size(p, &num, &pwr);
 		if (rc)
 			continue;
 		DBG(ASK, ul_debug("parsed size: %ju", num));
@@ -652,27 +652,24 @@ static int strtosize_sectors(const char *str, unsigned long sector_size,
 	size_t len = strlen(str);
 	int insec = 0;
 	int rc;
+	char *buf = NULL;
 
 	if (!len)
 		return 0;
 
 	if (str[len - 1] == 'S' || str[len - 1] == 's') {
 		insec = 1;
-		str = strndup(str, len - 1); /* strip trailing 's' */
+		str = buf = strndup(str, len - 1); /* strip trailing 's' */
 		if (!str)
 			return -errno;
 	}
 
 	rc = strtosize(str, res);
-	if (rc)
-		return rc;
-
-	if (insec) {
+	if (rc == 0 && insec)
 		*res *= sector_size;
-		free((void *)str);
-	}
 
-	return 0;
+	free(buf);
+	return rc;
 }
 
 void resize_partition(struct fdisk_context *cxt)
@@ -886,7 +883,7 @@ void discard_sectors(struct fdisk_context *cxt)
 
 	if (fdisk_ask_menu(cxt, _("Type of area to be discarded"),
 			&c, 'p', _("partition sectors"), 'p',
-				 _("free space sectros"), 'f', NULL) != 0)
+				 _("free space sectors"), 'f', NULL) != 0)
 		return;
 
 	switch (c) {
@@ -1059,12 +1056,21 @@ void follow_wipe_mode(struct fdisk_context *cxt)
 		dowipe = 1;	/* always remove old PT */
 
 	fdisk_enable_wipe(cxt, dowipe);
-	if (dowipe)
-		fdisk_warnx(cxt, _(
-			"The device contains '%s' signature and it will be removed by a write command. "
-			"See fdisk(8) man page and --wipe option for more details."),
-			fdisk_get_collision(cxt));
-	else
+
+	if (dowipe) {
+		/* check if collision in first sector */
+		if (fdisk_has_label(cxt) && fdisk_is_collision_area(cxt, 0,
+						fdisk_get_sector_size(cxt)))
+			fdisk_warnx(cxt, _(
+				"The device contains a '%s' signature in the first sector; it will not be wiped "
+				"unless you create a new partition table. Alternatively, use wipefs(8)."),
+					fdisk_get_collision(cxt));
+		else
+			fdisk_warnx(cxt, _(
+				"The device contains '%s' signature and it will be removed by a write command. "
+				"See fdisk(8) man page and --wipe option for more details."),
+					fdisk_get_collision(cxt));
+	} else
 		fdisk_warnx(cxt, _(
 			"The device contains '%s' signature and it may remain on the device. "
 			"It is recommended to wipe the device with wipefs(8) or "
@@ -1242,8 +1248,7 @@ int main(int argc, char **argv)
 		case 'L':
 			colormode = UL_COLORMODE_AUTO;
 			if (optarg)
-				colormode = colormode_or_err(optarg,
-						_("unsupported color mode"));
+				colormode = colormode_or_err(optarg);
 			break;
 		case 'n':
 			noauto_pt = 1;

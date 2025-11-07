@@ -20,12 +20,10 @@
 #include <sys/wait.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
-#include <inttypes.h>
 
 #include "strutils.h"
 #include "all-io.h"
 #include "namespace.h"
-#include "mount-api-utils.h"
 
 #include "mountP.h"
 
@@ -335,6 +333,7 @@ static int hook_mount_post(
 			    (recursive ? AT_RECURSIVE : 0));
 	if (fd_tree < 0) {
 		DBG(HOOK, ul_debugobj(hs, " failed to open tree"));
+		mnt_context_syscall_save_status(cxt, "open_tree", 0);
 		return -MNT_ERR_IDMAP;
 	}
 
@@ -343,7 +342,11 @@ static int hook_mount_post(
 			   AT_EMPTY_PATH | (recursive ? AT_RECURSIVE : 0),
 			   &attr, sizeof(attr));
 	if (rc < 0) {
-		DBG(HOOK, ul_debugobj(hs, " failed to set attributes"));
+		mnt_context_syscall_save_status(cxt, "mount_setattr", 0);
+		if (!mnt_context_read_mesgs(cxt, fd_tree)) {
+			/* TRANSLATORS: Don't translate "e ". It's a message classifier. */
+			mnt_context_sprintf_mesg(cxt, _("e cannot set ID-mapping: %m"));
+		}
 		goto done;
 	}
 
@@ -353,8 +356,13 @@ static int hook_mount_post(
 		umount2(target, MNT_DETACH);
 
 		rc = move_mount(fd_tree, "", -1, target, MOVE_MOUNT_F_EMPTY_PATH);
-		if (rc)
-			DBG(HOOK, ul_debugobj(hs, " failed to set move mount"));
+		if (rc < 0) {
+			mnt_context_syscall_save_status(cxt, "move_mount", 0);
+			if (!mnt_context_read_mesgs(cxt, fd_tree)) {
+				/* TRANSLATORS: Don't translate "e ". It's a message classifier. */
+				mnt_context_sprintf_mesg(cxt, _("e cannot set ID-mapping: %m"));
+			}
+		}
 	}
 done:
 	if (is_private)
@@ -426,15 +434,15 @@ static int hook_prepare_options(
 		idmap_type_t map_type;
 		uint32_t nsid = UINT_MAX, hostid = UINT_MAX, range = UINT_MAX;
 
-		if (startswith(tok, "b:")) {
+		if (ul_startswith(tok, "b:")) {
 			/* b:id-mount:id-host:id-range */
 			map_type = ID_TYPE_UIDGID;
 			tok += 2;
-		} else if (startswith(tok, "g:")) {
+		} else if (ul_startswith(tok, "g:")) {
 			/* g:id-mount:id-host:id-range */
 			map_type = ID_TYPE_GID;
 			tok += 2;
-		} else if (startswith(tok, "u:")) {
+		} else if (ul_startswith(tok, "u:")) {
 			/* u:id-mount:id-host:id-range */
 			map_type = ID_TYPE_UID;
 			tok += 2;

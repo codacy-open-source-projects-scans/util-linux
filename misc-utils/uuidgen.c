@@ -4,8 +4,8 @@
  * Copyright (C) 1999, Andreas Dilger and Theodore Ts'o
  *
  * %Begin-Header%
- * This file may be redistributed under the terms of the GNU Public
- * License.
+ * This file may be redistributed under the terms of the
+ * GNU General Public License.
  * %End-Header%
  */
 
@@ -147,7 +147,7 @@ main (int argc, char *argv[])
 			do_type = UUID_TYPE_DCE_MD5;
 			break;
 		case 'C':
-			count = strtou32_or_err(optarg, _("invalid count argument"));
+			count = strtou32_or_err(optarg, _("invalid count"));
 			break;
 		case 's':
 			do_type = UUID_TYPE_DCE_SHA1;

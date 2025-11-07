@@ -13,9 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 #include <stdio.h>
 #include <unistd.h>
@@ -25,6 +24,7 @@
 #include <dirent.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "nls.h"
 #include "path.h"
 #include "strutils.h"
@@ -84,7 +84,7 @@ static int zone_name_to_id(const char *name)
 	size_t i;
 
 	for (i = 0; i < ARRAY_SIZE(zone_names); i++) {
-		if (!strcasecmp(name, zone_names[i]))
+		if (!c_strcasecmp(name, zone_names[i]))
 			return i;
 	}
 	return -1;
@@ -133,7 +133,7 @@ static int chmem_size(struct chmem_desc *desc, int enable, int zone_id)
 				zn = zone_names[zone_id];
 				if (enable && !strcasestr(line, zn))
 					continue;
-				if (!enable && strncasecmp(line, zn, strlen(zn)) != 0)
+				if (!enable && c_strncasecmp(line, zn, strlen(zn)) != 0)
 					continue;
 			} else if (enable) {
 				/* By default, use zone Movable for online, if valid */
@@ -218,7 +218,7 @@ static int chmem_range(struct chmem_desc *desc, int enable, int zone_id)
 					warnx(_("%s enable failed: Zone mismatch"), str);
 					continue;
 				}
-				if (!enable && strncasecmp(line, zn, strlen(zn)) != 0) {
+				if (!enable && c_strncasecmp(line, zn, strlen(zn)) != 0) {
 					warnx(_("%s disable failed: Zone mismatch"), str);
 					continue;
 				}
@@ -319,14 +319,14 @@ static void parse_parameter(struct chmem_desc *desc, char *param)
 {
 	char **split;
 
-	split = strv_split(param, "-");
-	if (strv_length(split) > 2)
+	split = ul_strv_split(param, "-");
+	if (ul_strv_length(split) > 2)
 		errx(EXIT_FAILURE, _("Invalid parameter: %s"), param);
-	if (strv_length(split) == 1)
+	if (ul_strv_length(split) == 1)
 		parse_single_param(desc, split[0]);
 	else
 		parse_range_param(desc, split[0], split[1]);
-	strv_free(split);
+	ul_strv_free(split);
 	if (desc->start > desc->end)
 		errx(EXIT_FAILURE, _("Invalid range: %s"), param);
 }
@@ -367,7 +367,7 @@ int main(int argc, char **argv)
 	int c, rc;
 
 	static const struct option longopts[] = {
-		{"block",	no_argument,		NULL, 'b'},
+		{"blocks",	no_argument,		NULL, 'b'},
 		{"disable",	no_argument,		NULL, 'd'},
 		{"enable",	no_argument,		NULL, 'e'},
 		{"help",	no_argument,		NULL, 'h'},

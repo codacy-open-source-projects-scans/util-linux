@@ -446,9 +446,11 @@ static int fprintf_utab_fs(FILE *f, struct libmnt_fs *fs)
 	if (!fs || !f)
 		return -EINVAL;
 
-	if (mnt_fs_get_id(fs) > 0) {
+	if (mnt_fs_get_id(fs) > 0)
 		rc = fprintf(f, "ID=%d ", mnt_fs_get_id(fs));
-	}
+	if (mnt_fs_get_uniq_id(fs) > 0)
+		rc = fprintf(f, "UNIQID=%" PRIu64, mnt_fs_get_uniq_id(fs));
+
 	if (rc >= 0) {
 		p = mangle(mnt_fs_get_source(fs));
 		if (p) {
@@ -761,7 +763,7 @@ static int update_modify_target(struct libmnt_update *upd)
 			char *p;
 			const char *e;
 
-			e = startswith(mnt_fs_get_target(fs), upd_source);
+			e = ul_startswith(mnt_fs_get_target(fs), upd_source);
 			if (!e || (*e && *e != '/'))
 				continue;
 			if (*e == '/')

@@ -29,7 +29,7 @@ PACKAGE_VERSION_RELEASE=$(echo $PACKAGE_VERSION | awk -F. '{
 
 dnl libblkid version
 LIBBLKID_VERSION="$PACKAGE_VERSION_MAJOR.$PACKAGE_VERSION_MINOR.$PACKAGE_VERSION_RELEASE"
-LIBBLKID_DATE="24-Jan-2024"
+LIBBLKID_DATE="18-Mar-2025"
 LIBBLKID_LT_MAJOR=1
 LIBBLKID_LT_MINOR=1
 LIBBLKID_LT_MICRO=0
@@ -349,6 +349,7 @@ AC_CHECK_HEADERS([ \
 	linux/nsfs.h \
 	linux/pr.h \
 	linux/raw.h \
+	linux/seccomp.h \
 	linux/securebits.h \
 	linux/tiocl.h \
 	linux/version.h \
@@ -356,6 +357,7 @@ AC_CHECK_HEADERS([ \
 	linux/if_alg.h \
 	locale.h \
 	mntent.h \
+	mqueue.h \
 	net/if_dl.h \
 	net/if.h \
 	netinet/in.h \
@@ -363,10 +365,12 @@ AC_CHECK_HEADERS([ \
 	pty.h \
 	security/pam_appl.h \
 	security/pam_modules.h \
+	semaphore.h \
 	shadow.h \
 	stdint.h \
 	stdio_ext.h \
 	stdlib.h \
+	sys/auxv.h \
 	sys/disk.h \
 	sys/disklabel.h \
 	sys/endian.h \
@@ -375,6 +379,7 @@ AC_CHECK_HEADERS([ \
 	sys/ioctl.h \
 	sys/io.h \
 	sys/mkdev.h \
+	sys/mman.h \
 	sys/mount.h \
 	sys/param.h \
 	sys/pidfd.h \
@@ -512,6 +517,7 @@ have_linux_kcmp_h=$ac_cv_header_linux_kcmp_h
 have_linux_mount_h=$ac_cv_header_linux_mount_h
 have_linux_pr_h=$ac_cv_header_linux_pr_h
 have_linux_raw_h=$ac_cv_header_linux_raw_h
+have_linux_seccomp_h=$ac_cv_header_linux_seccomp_h
 have_linux_securebits_h=$ac_cv_header_linux_securebits_h
 have_linux_version_h=$ac_cv_header_linux_version_h
 have_linux_watchdog_h=$ac_cv_header_linux_watchdog_h
@@ -543,6 +549,8 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 ]])],
 [AC_DEFINE([HAVE_TM_GMTOFF], [1], [Does struct tm have a field tm_gmtoff?])
 ])
+
+AC_CHECK_TYPES([struct fanotify_event_info_header], [], [], [[#include <linux/fanotify.h>]])
 
 AC_CHECK_TYPES([struct mount_attr], [], [], [[#include <linux/mount.h>]])
 AC_CHECK_TYPES([enum fsconfig_command], [], [], [[#include <linux/mount.h>]])
@@ -592,6 +600,10 @@ AC_CHECK_DECL([SO_PASSCRED],
 	      [#include <sys/types.h>
 	       #include <sys/socket.h>])
 
+AC_CHECK_DECLS([VMADDR_CID_LOCAL], [], [], [
+	       #include <sys/socket.h>
+	       #include <linux/vm_sockets.h>])
+
 AC_CHECK_FUNCS([ \
 	cachestat \
 	clearenv \
@@ -609,6 +621,7 @@ AC_CHECK_FUNCS([ \
 	fsopen \
 	fspick \
 	fsync \
+	getauxval \
 	getdomainname \
 	getdtablesize \
 	getexecname \
@@ -713,7 +726,20 @@ AS_IF([test "x$ul_cv_syscall_fsconfig" = xno ||
 	have_mountfd_api="no"
    ],[
         have_mountfd_api="yes"
-	AC_DEFINE([HAVE_MOUNTFD_API], [1], [Define to 1 if you want mount API based on FDs.])
+	AC_DEFINE([HAVE_MOUNTFD_API], [1], [Define to 1 if you want to use mount API based on FDs.])
+   ])
+
+
+UL_CHECK_SYSCALL([statmount])
+UL_CHECK_SYSCALL([listmount])
+
+AS_IF([test "x$ul_cv_syscall_statmount" = xno ||
+       test "x$ul_cv_syscall_listmount" = xno],
+   [
+	have_statmount_api="no"
+   ],[
+	have_statmount_api="yes"
+	AC_DEFINE([HAVE_STATMOUNT_API], [1], [Define to 1 if you want to use statmount API.])
    ])
 
 
@@ -754,6 +780,13 @@ AS_IF([test x"$have_timer" = xno], [
 ])
 
 
+AC_CHECK_LIB([pthread], [pthread_atfork], [
+	PTHREAD_LIBS="-lpthread"
+	AC_DEFINE([HAVE_LIBPTHREAD], [1], [Define if libpthred exist])
+])
+AC_SUBST([PTHREAD_LIBS])
+
+
 AC_CHECK_LIB([rtas], [rtas_get_sysparm], [
 	RTAS_LIBS="-lrtas"
 	AC_DEFINE([HAVE_LIBRTAS], [1], [Define if librtas exists])
@@ -792,6 +825,10 @@ AS_IF([test x"$have_dirfd" = xno], [
 ])
 
 AM_CONDITIONAL([HAVE_DIRFD], [test "x$have_dirfd" = xyes || test "x$have_ddfd" = xyes])
+
+have_fts_open=no
+AC_CHECK_FUNCS([fts_open], [have_fts_open=yes], [have_fts_open=no])
+AM_CONDITIONAL([HAVE_FTS_OPEN], [test "x$have_fts_open" = xyes])
 
 MQ_LIBS=
 AC_CHECK_LIB([rt], [mq_open], [MQ_LIBS="-lrt"])
@@ -960,6 +997,15 @@ AC_CHECK_TYPES([sighandler_t], [], [], [[
 #include <signal.h>
 ]])
 
+# checking sigset_t defined in the kernel header in
+# asm/signal.h. tests/helpers/test_mkfds_ppoll.c expects the RAW sigset_t
+# is defined in the header file.
+# However, a slightly older arch/parisc doesn't export the type.
+# See https://web.git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=487fa28fa8b60417642ac58e8beda6e2509d18f9
+AC_CHECK_TYPES([sigset_t], [], [], [[
+#include <asm/signal.h>
+]])
+
 AC_CHECK_DECLS([CPU_ALLOC], [], [], [[
 #include <sched.h>
 ]])
@@ -1067,6 +1113,16 @@ AC_ARG_WITH([ncursesw],
 )
 have_ncursesw=no
 have_ncursesw_header=no
+
+AS_CASE([$with_ncursesw:$build_widechar],
+  [yes:no],
+    [AC_MSG_ERROR([wide-char support disabled, but wide-char ncurses required])],
+  [auto:no],
+    [
+      AC_MSG_WARN([wide-char support disabled, disabling wide-char ncurses])
+      with_ncursesw=no
+    ]
+)
 AS_IF([test "x$with_ncursesw" != xno], [
   UL_NCURSES_CHECK([ncursesw])
   AS_IF([test "x$have_ncursesw" = xyes], [
@@ -1262,6 +1318,9 @@ AC_SUBST([LIBLASTLOG2_VERSION_INFO])
 AC_DEFINE_UNQUOTED([LIBLASTLOG2_VERSION], ["$LIBLASTLOG2_VERSION"], [liblastlog2 version string])
 AM_CONDITIONAL([BUILD_LIBLASTLOG2], [test "x$build_liblastlog2" = xyes])
 AM_CONDITIONAL([BUILD_LIBLASTLOG2_TESTS], [test "x$build_liblastlog2" = xyes && test "x$enable_static" = xyes])
+AS_IF([test "x$build_liblastlog2" = xyes], [
+  AC_DEFINE([HAVE_LIBLASTLOG2], [1], [Define to 1 if you have the -lblkid.])
+])
 
 
 AC_ARG_ENABLE([pam_lastlog2],
@@ -1665,6 +1724,7 @@ AC_ARG_ENABLE([setpriv],
 )
 UL_BUILD_INIT([setpriv])
 UL_REQUIRES_LINUX([setpriv])
+UL_REQUIRES_HAVE([setpriv], [linux_seccomp_h], [linux/seccomp.h header file])
 UL_REQUIRES_HAVE([setpriv], [linux_securebits_h], [linux/securebits.h header file])
 UL_REQUIRES_HAVE([setpriv], [linux_capability_h], [linux/capability.h header file])
 UL_REQUIRES_HAVE([setpriv], [cap_ng], [libcap-ng library])
@@ -1982,6 +2042,7 @@ AC_ARG_ENABLE([enosys],
 UL_BUILD_INIT([enosys])
 UL_REQUIRES_LINUX([enosys])
 UL_REQUIRES_HAVE([enosys], [linux_audit_h], [linux/audit.h header file])
+UL_REQUIRES_HAVE([enosys], [linux_seccomp_h], [linux/seccomp.h header file])
 AS_IF([test "x$build_enosys" = xyes], [
   AC_MSG_CHECKING([for valid audit arch])
   AC_COMPILE_IFELSE(
@@ -2085,6 +2146,13 @@ UL_BUILD_INIT([chmem])
 UL_REQUIRES_LINUX([chmem])
 AM_CONDITIONAL([BUILD_CHMEM], [test "x$build_chmem" = xyes])
 
+AC_CHECK_FUNCS([shm_open], [], [
+  AC_CHECK_LIB([rt], [shm_open], [POSIXIPC_LIBS="-lrt"])
+])
+AC_CHECK_FUNCS([sem_close], [], [
+  AC_CHECK_LIB([pthread], [sem_close], [POSIXIPC_LIBS="$POSIXIPC_LIBS -lpthread"])
+])
+AC_SUBST([POSIXIPC_LIBS])
 
 AC_ARG_ENABLE([ipcmk],
   AS_HELP_STRING([--disable-ipcmk], [do not build ipcmk]),
@@ -2259,7 +2327,11 @@ UL_REQUIRES_HAVE([scriptlive], [pty], [openpty function (libutil)])
 AM_CONDITIONAL([BUILD_SCRIPTLIVE], [test "x$build_scriptlive" = xyes])
 
 
-UL_BUILD_INIT([bits], [yes])
+AC_ARG_ENABLE([bits],
+  AS_HELP_STRING([--disable-bits], [do not build bits]),
+  [], [UL_DEFAULT_ENABLE([bits], [check])])
+UL_BUILD_INIT([bits])
+UL_REQUIRES_HAVE([bits], [cpu_set_t], [cpu_set_t type])
 AM_CONDITIONAL([BUILD_BITS], [test "x$build_bits" = xyes])
 
 UL_BUILD_INIT([col], [check])
@@ -2681,6 +2753,8 @@ AS_IF([test "x$with_systemd" != xno], [
        AC_DEFINE([HAVE_LIBSYSTEMD], [1], [Define if libsystemd is available])
        AC_DEFINE([USE_SYSTEMD], [1], [Define if systemd support is wanted ])
        AC_CHECK_DECLS([sd_session_get_username], [], [], [#include <systemd/sd-login.h>])
+       AC_CHECK_DECLS([sd_device_new_from_syspath], [], [], [#include <systemd/sd-device.h>])
+       AC_CHECK_DECLS([sd_device_open], [], [], [#include <systemd/sd-device.h>])
   )
 ])
 AM_CONDITIONAL([HAVE_SYSTEMD], [test "x$have_systemd" = xyes])
@@ -2710,6 +2784,20 @@ AC_ARG_WITH([tmpfilesdir],
 ])
 AS_IF([test "x$with_tmpfilesdir" != "xno"], [
   AC_SUBST([tmpfilesdir], [$with_tmpfilesdir])
+])
+
+
+AC_ARG_WITH([sysusersdir],
+  AS_HELP_STRING([--with-sysusersdir=DIR], [directory for sysusers. See sysusers.d(5) for details]),
+  [], [
+  AS_IF([test "x$have_systemd" = xyes], [
+    PKG_CHECK_VAR([with_sysusersdir], [systemd], [sysusersdir],
+      [],
+      [with_sysusersdir=no])
+  ])
+])
+AS_IF([test "x$with_sysusersdir" != "xno"], [
+  AC_SUBST([sysusersdir], [$with_sysusersdir])
 ])
 
 AC_ARG_WITH([smack],
@@ -3037,7 +3125,6 @@ libsmartcols/docs/Makefile
 libsmartcols/docs/version.xml
 libsmartcols/src/libsmartcols.h
 po/Makefile.in
-po-man/Makefile
 ])
 
 AC_OUTPUT

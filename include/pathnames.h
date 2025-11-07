@@ -71,12 +71,6 @@
 # define _PATH_BTMP		"/var/log/btmp"
 #endif
 
-#define _PATH_ISSUE_FILENAME	"issue"
-#define _PATH_ISSUE_DIRNAME	_PATH_ISSUE_FILENAME ".d"
-
-#define _PATH_ISSUE		"/etc/" _PATH_ISSUE_FILENAME
-#define _PATH_ISSUEDIR		"/etc/" _PATH_ISSUE_DIRNAME
-
 #define _PATH_OS_RELEASE_ETC	"/etc/os-release"
 #define _PATH_OS_RELEASE_USR	"/usr/lib/os-release"
 #define _PATH_NUMLOCK_ON	_PATH_RUNSTATEDIR "/numlock-on"
@@ -107,6 +101,7 @@
 #define _PATH_PROC_GIDMAP	"/proc/self/gid_map"
 #define _PATH_PROC_SETGROUPS	"/proc/self/setgroups"
 
+#define _PATH_PROC_NSDIR	"/proc/self/ns"
 #define _PATH_PROC_FDDIR	"/proc/self/fd"
 #define _PATH_PROC_TIMENS_OFF   "/proc/self/timens_offsets"
 
@@ -176,7 +171,7 @@
 #ifdef __ia64__
 # define _PATH_RTC_DEV		"/dev/efirtc"
 #else
-# define _PATH_RTC_DEV		"/dev/rtc0"
+# define _PATH_RTC_DEV		"/dev/rtc"
 #endif
 
 /* raw paths*/
@@ -187,7 +182,7 @@
 
 #define _PATH_PROC_KERNEL	"/proc/sys/kernel"
 
-/* ipc paths */
+/* System V ipc paths */
 #define _PATH_PROC_SYSV_MSG	"/proc/sysvipc/msg"
 #define _PATH_PROC_SYSV_SEM	"/proc/sysvipc/sem"
 #define _PATH_PROC_SYSV_SHM	"/proc/sysvipc/shm"
@@ -207,6 +202,13 @@
 #define _PATH_PROC_SYS_FS	"/proc/sys/fs"
 #define _PATH_PROC_PIPE_MAX_SIZE	_PATH_PROC_SYS_FS "/pipe-max-size"
 #define _PATH_PROC_BINFMT_MISC	_PATH_PROC_SYS_FS "/binfmt_misc"
+
+/* Posix ipc paths */
+#define _PATH_DEV_MQUEUE	"/dev/mqueue"
+#define _PATH_PROC_POSIX_IPC_MSGMAX _PATH_PROC_SYS_FS "/mqueue/msgsize_max"
+#define _PATH_PROC_POSIX_IPC_MSGMNB _PATH_PROC_SYS_FS "/mqueue/msg_max"
+#define _PATH_PROC_POSIX_IPC_MSGMNI _PATH_PROC_SYS_FS "/mqueue/queues_max"
+#define _PATH_DEV_SHM	"/dev/shm"
 
 /* irqtop paths */
 #define _PATH_PROC_INTERRUPTS	"/proc/interrupts"

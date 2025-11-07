@@ -509,7 +509,7 @@ static int read_caches(struct lscpu_cxt *cxt, struct lscpu_cpu *cpu)
 			/* cache size */
 			if (ul_path_readf_buffer(sys, buf, sizeof(buf),
 					"cpu%d/cache/index%zu/size", num, i) > 0)
-				parse_size(buf, &ca->size, NULL);
+				ul_parse_size(buf, &ca->size, NULL);
 			else
 				ca->size = 0;
 		}
@@ -659,6 +659,8 @@ float lsblk_cputype_get_minmhz(struct lscpu_cxt *cxt, struct lscpu_cputype *ct)
 		struct lscpu_cpu *cpu = cxt->cpus[i];
 
 		if (!cpu || cpu->type != ct || !is_cpu_present(cxt, cpu))
+			continue;
+		if (!cpu->mhz_min_freq)
 			continue;
 		if (res < 0.0 || cpu->mhz_min_freq < res)
 			res = cpu->mhz_min_freq;

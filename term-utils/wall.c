@@ -195,7 +195,7 @@ static int has_tty(char **ttys, char *name)
 {
 	char **str;
 
-	STRV_FOREACH(str, ttys) {
+	UL_STRV_FOREACH(str, ttys) {
 		if (strcmp(*str, name) == 0)
 			return 1;
 	}
@@ -240,9 +240,9 @@ int main(int argc, char **argv)
 				warnx(_("--nobanner is available only for root"));
 			break;
 		case 't':
-			timeout = strtou32_or_err(optarg, _("invalid timeout argument"));
+			timeout = strtou32_or_err(optarg, _("invalid timeout"));
 			if (timeout < 1)
-				errx(EXIT_FAILURE, _("invalid timeout argument: %s"), optarg);
+				errx(EXIT_FAILURE, _("invalid timeout: %s"), optarg);
 			break;
 		case 'g':
 			group_buf = init_group_workspace(optarg);
@@ -292,7 +292,7 @@ int main(int argc, char **argv)
 			}
 			if (!(group_buf && !is_gr_member(name, group_buf))
 			    && sd_session_get_tty(sessions_list[i], &tty) >= 0
-			    && strv_consume(&ttys, tty) < 0)
+			    && ul_strv_consume(&ttys, tty) < 0)
 				err(EXIT_FAILURE, _("failed to allocate lines list"));
 
 			free(name);
@@ -324,19 +324,19 @@ utmp:
 			mem2strcpy(line, utmpptr->ut_line, sizeof(utmpptr->ut_line), sizeof(line));
 			if (has_tty(ttys, line))
 				continue;
-			if (strv_extend(&ttys, line) < 0)
+			if (ul_strv_extend(&ttys, line) < 0)
 				err(EXIT_FAILURE, _("failed to allocate lines list"));
 		}
 		endutxent();
 	}
 
-	STRV_FOREACH(str, ttys) {
+	UL_STRV_FOREACH(str, ttys) {
 		char *er = ttymsg(&iov, 1, *str, timeout);
 		if (er)
 			 warnx("%s", er);
 	}
 
-	strv_free(ttys);
+	ul_strv_free(ttys);
 	free(mbuf);
 	free_group_workspace(group_buf);
 	exit(EXIT_SUCCESS);
@@ -413,8 +413,7 @@ static char *makemsg(char *fname, char **mvec, int mvecsz,
 			 * After all, our invoker can easily do "wall < file"
 			 * instead of "wall file".
 			 */
-			uid_t uid = getuid();
-			if (uid && (uid != geteuid() || getgid() != getegid()))
+			if (getuid() && is_privileged_execution())
 				errx(EXIT_FAILURE, _("will not read %s - use stdin."),
 				     fname);
 

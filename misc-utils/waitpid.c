@@ -13,9 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 
 #include <sys/epoll.h>
@@ -51,7 +50,7 @@ static pid_t *parse_pids(size_t n_strings, char * const *strings)
 	pid_t *pids = xcalloc(n_strings, sizeof(*pids));
 
 	for (size_t i = 0; i < n_strings; i++)
-		pids[i] = strtopid_or_err(strings[i], _("failed to parse pid"));
+		pids[i] = strtopid_or_err(strings[i], _("invalid PID argument"));
 
 	return pids;
 }
@@ -198,14 +197,13 @@ static int parse_options(int argc, char **argv)
 			verbose = true;
 			break;
 		case 't':
-			strtotimespec_or_err(optarg, &timeout,
-					     _("Could not parse timeout"));
+			strtotimespec_or_err(optarg, &timeout,  _("invalid timeout"));
 			break;
 		case 'e':
 			allow_exited = true;
 			break;
 		case 'c':
-			count = str2num_or_err(optarg, 10, _("Invalid count"),
+			count = str2num_or_err(optarg, 10, _("invalid count"),
 					       1, INT64_MAX);
 			break;
 		case 'V':

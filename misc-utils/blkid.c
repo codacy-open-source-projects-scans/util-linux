@@ -96,7 +96,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(	" -p, --probe                low-level superblocks probing (bypass cache)\n"), out);
 	fputs(_(	" -i, --info                 gather information about I/O limits\n"), out);
 	fputs(_(        " -H, --hint <value>         set hint for probing function\n"), out);
-	fputs(_(	" -S, --size <size>          overwrite device size\n"), out);
+	fputs(_(	" -S, --size <size>          override device size\n"), out);
 	fputs(_(	" -O, --offset <offset>      probe at the given offset\n"), out);
 	fputs(_(	" -u, --usages <list>        filter by \"usage\" (e.g. -u filesystem,raid)\n"), out);
 	fputs(_(	" -n, --match-types <list>   filter by filesystem type (e.g. -n vfat,ext3)\n"), out);
@@ -651,7 +651,7 @@ static char **list_to_types(const char *list, int *flag)
 		p += 2;
 	}
 	if (!p || !*p) {
-		warnx(_("error: -u <list> argument is empty"));
+		warnx(_("invalid argument: %s"), list);
 		goto err;
 	}
 	for (i = 1; p && (p = strchr(p, ',')); i++, p++);
@@ -813,7 +813,7 @@ int main(int argc, char **argv)
 				errx(BLKID_EXIT_OTHER, _("unsupported output format %s"), optarg);
 			break;
 		case 'O':
-			ctl.offset = strtosize_or_err(optarg, _("invalid offset argument"));
+			ctl.offset = strtosize_or_err(optarg, _("invalid offset"));
 			break;
 		case 'p':
 			ctl.lowprobe_superblocks = 1;
@@ -826,7 +826,7 @@ int main(int argc, char **argv)
 			ctl.show[numtag++] = optarg;
 			break;
 		case 'S':
-			ctl.size = strtosize_or_err(optarg, _("invalid size argument"));
+			ctl.size = strtosize_or_err(optarg, _("invalid size"));
 			break;
 		case 't':
 			if (search_type) {

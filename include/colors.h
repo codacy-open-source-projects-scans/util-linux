@@ -1,11 +1,9 @@
 /*
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
  *
- * Copyright (C) 2012 Ondrej Oprala <ooprala@redhat.com>
- * Copyright (C) 2012-2014 Karel Zak <kzak@redhat.com>
- *
- * This file may be distributed under the terms of the
- * GNU Lesser General Public License.
+ * Authors: 2012 Ondrej Oprala <ooprala@redhat.com>
+ *          2012-2025 Karel Zak <kzak@redhat.com>
  */
 #ifndef UTIL_LINUX_COLORS_H
 #define UTIL_LINUX_COLORS_H
@@ -32,7 +30,7 @@ enum colortmode {
 #endif
 
 extern int colormode_from_string(const char *str);
-extern int colormode_or_err(const char *str, const char *errmsg);
+extern int colormode_or_err(const char *str);
 
 /* Initialize the global variable UL_COLOR_TERM_OK */
 extern int colors_init(int mode, const char *util_name);

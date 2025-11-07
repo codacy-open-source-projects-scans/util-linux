@@ -41,6 +41,8 @@
  *	present curses can still be used.
  * 2010-10-21 Davidlohr Bueso <dave@gnu.org>
  *	modified mem allocation handling for util-linux
+ * 2025-04-03 Christian Goeschel Ndjomouo <cgoesc2@wgu.edu>
+ *  	modified to add MORESECURE, PAGERSECURE and MORE_SHELL_LINES environment variables
  */
 
 #include <stdio.h>
@@ -202,6 +204,7 @@ struct more_control {
 #endif
 	unsigned int
 		ignore_stdin,  		/* POLLHUP; peer closed pipe */
+		pending_stdin,		/* data on stdin temporary ignored when waiting for stderr */
 		bad_stdout,  		/* true if overwriting does not turn off standout */
 		catch_suspend,  	/* we should catch the SIGTSTP signal */
 		clear_line_ends,  	/* do not scroll, paint each screen from the top */
@@ -218,6 +221,7 @@ struct more_control {
 		leading_colon,  	/* key command has leading ':' character */
 		is_eof,                 /* EOF detected */
 		is_paused,  		/* is output paused */
+		is_secure,		/* is running in secure mode */
 		no_quit_dialog,  	/* suppress quit dialog */
 		no_scroll,  		/* do not scroll, clear the screen and then display text */
 		no_tty_in,  		/* is input in interactive mode */
@@ -226,6 +230,7 @@ struct more_control {
 		print_banner,  		/* print file name banner */
 		reading_num,  		/* are we reading leading_number */
 		report_errors,  	/* is an error reported */
+		prev_command_called,	/* previous more command is called */
 		search_at_start,  	/* search pattern defined at start up */
 		search_called,  	/* previous more command was a search */
 		squeeze_spaces,  	/* suppress white space */
@@ -861,6 +866,9 @@ static struct number_command read_command(struct more_control *ctl)
 			case 'p':
 				cmd.key = more_kc_previous_file;
 				return cmd;
+			case '!':
+				cmd.key = more_kc_run_shell;
+				return cmd;
 			default:
 				cmd.key = more_kc_unknown_command;
 				return cmd;
@@ -1030,7 +1038,7 @@ static void ttyin(struct more_control *ctl, char buf[], int nmax, char pchar)
 						case (size_t)-2:
 						case (size_t)-1:
 							state = state_bak;
-							/* fallthrough */
+							FALLTHROUGH;
 						case 0:
 							mblength = 1;
 						}
@@ -1165,7 +1173,7 @@ static void expand(struct more_control *ctl, char *inbuf)
 				*outstr++ = *inpstr++;
 				break;
 			}
-			/* fallthrough */
+			FALLTHROUGH;
 		default:
 			*outstr++ = c;
 		}
@@ -1266,8 +1274,7 @@ static void __attribute__((__format__ (__printf__, 3, 4)))
 		}
 		va_end(argp);
 
-		if ((geteuid() != getuid() || getegid() != getgid())
-		    && drop_permissions() != 0)
+		if (is_privileged_execution() && drop_permissions() != 0)
 			err(EXIT_FAILURE, _("drop permissions failed"));
 
 		execvp(cmd, args);
@@ -1295,8 +1302,11 @@ static void run_shell(struct more_control *ctl, char *filename)
 	erase_to_col(ctl, 0);
 	putchar('!');
 	fflush(NULL);
-	if (ctl->previous_command.key == more_kc_run_shell && ctl->shell_line)
+	if (ctl->previous_command.key == more_kc_run_shell && ctl->shell_line
+	    && ctl->prev_command_called == 1) {
 		fputs(ctl->shell_line, stderr);
+		ctl->prev_command_called = 0;
+	}
 	else {
 		ttyin(ctl, cmdbuf, sizeof(cmdbuf) - 2, '!');
 		if (strpbrk(cmdbuf, "%!\\"))
@@ -1369,11 +1379,14 @@ static int more_poll(struct more_control *ctl, int timeout, int *stderr_active)
 
 	if (stderr_active)
 		*stderr_active = 0;
+	else
+		/* always check stdin if not care about stderr */
+		ctl->pending_stdin = 0;
 
 	while (!has_data) {
 		int rc;
 
-		if (ctl->ignore_stdin)
+		if (ctl->ignore_stdin || ctl->pending_stdin)
 			pfd[POLLFD_STDIN].fd = -1;	/* probably closed, ignore */
 
 		rc = poll(pfd, ARRAY_SIZE(pfd), timeout);
@@ -1431,8 +1444,11 @@ static int more_poll(struct more_control *ctl, int timeout, int *stderr_active)
 			if ((pfd[POLLFD_STDIN].revents & POLLHUP) ||
 			    (pfd[POLLFD_STDIN].revents & POLLNVAL))
 				ctl->ignore_stdin = 1;
-			else
+			else {
 				has_data++;
+				if (ctl->current_file == stdin)
+					ctl->pending_stdin = 1;
+			}
 		}
 
 		/* event on stderr (we reads user commands from stderr!) */
@@ -1545,6 +1561,7 @@ static char *find_editor(void)
 
 static void runtime_usage(void)
 {
+	print_separator('-', 79);
 	fputs(_("Most commands optionally preceded by integer argument k.  "
 		"Defaults in brackets.\n"
 		"Star (*) indicates argument becomes new default.\n"), stdout);
@@ -1674,16 +1691,30 @@ static int more_key_command(struct more_control *ctl, char *filename)
 	else
 		ctl->report_errors = 0;
 	ctl->search_called = 0;
+	ctl->prev_command_called = 0;
 	for (;;) {
 		if (more_poll(ctl, -1, &stderr_active) <= 0)
 			continue;
 		if (stderr_active == 0)
 			continue;
+
+		/* There could be new data on stdin (e.g. prog | more) while
+		 * we are waiting for user's activity on stderr. These stdin
+		 * events are temporarily ignored to avoid a busy loop. Let's
+		 * reset this to ensure stdin is checked next time. */
+		ctl->pending_stdin = 0;
+
 		cmd = read_command(ctl);
 		if (cmd.key == more_kc_unknown_command)
 			continue;
-		if (cmd.key == more_kc_repeat_previous)
+		if (cmd.key == more_kc_repeat_previous) {
 			cmd = ctl->previous_command;
+			ctl->prev_command_called = 1;
+		}
+		else {
+			ctl->previous_command = cmd;
+		}
+
 		switch (cmd.key) {
 		case more_kc_backwards:
 			if (ctl->no_tty_in) {
@@ -1775,7 +1806,7 @@ static int more_key_command(struct more_control *ctl, char *filename)
 				break;
 			}
 			search_again = 1;
-			/* fallthrough */
+			FALLTHROUGH;
 		case more_kc_search:
 			if (cmd.number == 0)
 				cmd.number++;
@@ -1797,8 +1828,13 @@ static int more_key_command(struct more_control *ctl, char *filename)
 			done = 1;
 			break;
 		case more_kc_run_shell:
-			run_shell(ctl, filename);
-			break;
+			if (ctl->is_secure == 1) {
+				more_error(ctl, _("Command not available in secure mode"));
+				break;
+			} else {
+				run_shell(ctl, filename);
+				break;
+			}
 		case more_kc_help:
 			if (ctl->no_scroll)
 				more_clear_screen(ctl);
@@ -1829,11 +1865,15 @@ static int more_key_command(struct more_control *ctl, char *filename)
 			done = 1;
 			break;
 		case more_kc_run_editor:	/* This case should go right before default */
-			if (!ctl->no_tty_in) {
+			if (ctl->is_secure == 1) {
+				more_error(ctl, _("Command not available in secure mode"));
+				break;
+			}
+		  	if (!ctl->no_tty_in) {
 				execute_editor(ctl, cmdbuf, sizeof(cmdbuf), filename);
 				break;
 			}
-			/* fallthrough */
+			FALLTHROUGH;
 		default:
 			if (ctl->suppress_bell) {
 				erase_to_col(ctl, 0);
@@ -1849,7 +1889,6 @@ static int more_key_command(struct more_control *ctl, char *filename)
 			fflush(NULL);
 			break;
 		}
-		ctl->previous_command = cmd;
 		if (done) {
 			cmd.key = more_kc_unknown_command;
 			break;
@@ -2095,13 +2134,21 @@ int main(int argc, char **argv)
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
 	close_stdout_atexit();
-	setlocale(LC_ALL, "");
 
 	/* Auto set no scroll on when binary is called page */
 	if (!(strcmp(program_invocation_short_name, "page")))
 		ctl.no_scroll++;
 
 	ctl.exit_on_eof = getenv("POSIXLY_CORRECT") ? 0 : 1;
+
+	if (getenv("MORESECURE") || getenv("PAGERSECURE"))
+		ctl.is_secure = 1;
+
+	if ((s = getenv("MORE_SHELL_LINES")) && isdigit_string(s)) {
+		uint16_t x = 0;
+		if (ul_strtou16(s, (uint16_t *) &x, 10) == 0)
+			ctl.lines_per_screen = x;
+	}
 
 	if ((s = getenv("MORE")) != NULL)
 		env_argscan(&ctl, s);

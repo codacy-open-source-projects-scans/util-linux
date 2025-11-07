@@ -29,6 +29,7 @@
 #include <libsmartcols.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "nls.h"
 #include "bitops.h"
 #include "blkdev.h"
@@ -91,10 +92,10 @@ enum {
 
 /* column names */
 struct colinfo {
-        const char * const	name; /* header */
-        double			whint; /* width hint (N < 1 is in percent of termwidth) */
+	const char * const	name; /* header */
+	double			whint; /* width hint (N < 1 is in percent of termwidth) */
 	int			flags; /* SCOLS_FL_* */
-        const char		*help;
+	const char		*help;
 };
 
 enum {
@@ -139,13 +140,15 @@ struct swapon_ctl {
 
 	struct swap_prop props;		/* global settings for all devices */
 
-	bool	all,			/* turn on all swap devices */
-		bytes,			/* display --show in bytes */
-		fix_page_size,		/* reinitialize page size */
-		no_heading,		/* toggle --show headers */
-		raw,			/* toggle --show alignment */
-		show,			/* display --show information */
-		verbose;		/* be chatty */
+	bool	all,		/* turn on all swap devices */
+		annotate,	/* annotate columns with a tooltip (always|never|auto)*/
+		bytes,		/* display --show in bytes */
+		fix_page_size,	/* reinitialize page size */
+		no_heading,	/* toggle --show headers */
+		raw,		/* toggle --show alignment */
+		show,		/* display --show information */
+		summarize,	/* display summary of swap use */
+		verbose;	/* be chatty */
 };
 
 static int column_name_to_id(const char *name, size_t namesz)
@@ -157,7 +160,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -259,7 +262,8 @@ static int display_summary(void)
 	if (!itr)
 		err(EXIT_FAILURE, _("failed to initialize libmount iterator"));
 
-	/* TRANSLATORS: The tabs make each field a multiple of 8 characters. Keep aligned with each entry below. */
+	/* TRANSLATORS: The tabs make each field a multiple of 8 characters.
+	 * Please keep the translation aligned with the original. */
 	printf(_("Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n"));
 
 	while (mnt_table_next_fs(st, itr, &fs) == 0) {
@@ -270,7 +274,6 @@ static int display_summary(void)
 		off_t size = mnt_fs_get_size(fs);
 		off_t used = mnt_fs_get_usedsize(fs);
 
-		/* TRANSLATORS: Keep each field a multiple of 8 characters and aligned with the header above. */
 		printf("%s%*s%s%s\t%jd%s\t%jd%s\t%d\n",
 			src,
 			srclen < 40 ? 40 - srclen : 1, " ",
@@ -294,6 +297,7 @@ static int show_table(struct swapon_ctl *ctl)
 	struct libmnt_fs *fs;
 	int i;
 	struct libscols_table *table = NULL;
+	struct libscols_column *cl = NULL;
 
 	if (!st)
 		return -1;
@@ -314,8 +318,11 @@ static int show_table(struct swapon_ctl *ctl)
 	for (i = 0; i < ctl->ncolumns; i++) {
 		const struct colinfo *col = get_column_info(ctl, i);
 
-		if (!scols_table_new_column(table, col->name, col->whint, col->flags))
+		cl = scols_table_new_column(table, col->name, col->whint, col->flags);
+		if (!cl)
 			err(EXIT_FAILURE, _("failed to allocate output column"));
+		if (ctl->annotate && col->help)
+			scols_column_refer_annotation(cl, col->help);
 	}
 
 	while (mnt_table_next_fs(st, itr, &fs) == 0)
@@ -346,7 +353,7 @@ static int swap_reinitialize(struct swap_device *dev)
 		return -1;
 
 	case 0:	/* child */
-		if (geteuid() != getuid() && drop_permissions() != 0)
+		if (is_privileged_execution() && drop_permissions() != 0)
 			exit(EXIT_FAILURE);
 
 		cmd[idx++] = "mkswap";
@@ -832,6 +839,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -s, --summary            display summary about used swap devices (DEPRECATED)\n"), out);
 	fputs(_(" -T, --fstab <path>       alternative file to /etc/fstab\n"), out);
 	fputs(_("     --show[=<columns>]   display summary in definable table\n"), out);
+	fputs(_("     --output-all         output all available columns\n"), out);
+	fputs(_("     --annotate[=<when>]  annotate columns with a tooltip (always|never|auto)\n"), out);
 	fputs(_("     --noheadings         don't print table heading (with --show)\n"), out);
 	fputs(_("     --raw                use the raw output format (with --show)\n"), out);
 	fputs(_("     --bytes              display swap size in bytes in --show output\n"), out);
@@ -867,10 +876,11 @@ int main(int argc, char *argv[])
 {
 	int status = 0, c;
 	size_t i;
-	char *options = NULL, *fstab_filename = NULL;
+	char *options = NULL, *fstab_filename = NULL, *annotate_opt_arg = NULL;
 
 	enum {
 		BYTES_OPTION = CHAR_MAX + 1,
+		ANNOTATE_OPTION,
 		NOHEADINGS_OPTION,
 		RAW_OPTION,
 		SHOW_OPTION,
@@ -878,22 +888,23 @@ int main(int argc, char *argv[])
 	};
 
 	static const struct option long_opts[] = {
-		{ "priority",   required_argument, NULL, 'p'               },
-		{ "discard",    optional_argument, NULL, 'd'               },
-		{ "ifexists",   no_argument,       NULL, 'e'               },
-		{ "options",    optional_argument, NULL, 'o'               },
-		{ "summary",    no_argument,       NULL, 's'               },
-		{ "fixpgsz",    no_argument,       NULL, 'f'               },
-		{ "all",        no_argument,       NULL, 'a'               },
-		{ "help",       no_argument,       NULL, 'h'               },
-		{ "verbose",    no_argument,       NULL, 'v'               },
-		{ "version",    no_argument,       NULL, 'V'               },
-		{ "show",       optional_argument, NULL, SHOW_OPTION       },
-		{ "output-all", no_argument,       NULL, OPT_LIST_TYPES    },
-		{ "noheadings", no_argument,       NULL, NOHEADINGS_OPTION },
-		{ "raw",        no_argument,       NULL, RAW_OPTION        },
-		{ "bytes",      no_argument,       NULL, BYTES_OPTION      },
-		{ "fstab",      required_argument, NULL, 'T'               },
+		{ "priority",     required_argument, NULL, 'p'                 },
+		{ "discard",      optional_argument, NULL, 'd'                 },
+		{ "ifexists",     no_argument,       NULL, 'e'                 },
+		{ "options",      optional_argument, NULL, 'o'                 },
+		{ "summary",      no_argument,       NULL, 's'                 },
+		{ "fixpgsz",      no_argument,       NULL, 'f'                 },
+		{ "all",          no_argument,       NULL, 'a'                 },
+		{ "help",         no_argument,       NULL, 'h'                 },
+		{ "verbose",      no_argument,       NULL, 'v'                 },
+		{ "version",      no_argument,       NULL, 'V'                 },
+		{ "show",         optional_argument, NULL, SHOW_OPTION         },
+		{ "output-all",   no_argument,       NULL, OPT_LIST_TYPES      },
+		{ "annotate",     optional_argument, NULL, ANNOTATE_OPTION     },
+		{ "noheadings",   no_argument,       NULL, NOHEADINGS_OPTION   },
+		{ "raw",          no_argument,       NULL, RAW_OPTION          },
+		{ "bytes",        no_argument,       NULL, BYTES_OPTION        },
+		{ "fstab",        required_argument, NULL, 'T'                 },
 		{ NULL, 0, NULL, 0 }
 	};
 
@@ -965,8 +976,8 @@ int main(int argc, char *argv[])
 			ctl.fix_page_size = 1;
 			break;
 		case 's':		/* status report */
-			status = display_summary();
-			return status;
+			ctl.summarize = 1;
+			break;
 		case 'v':		/* be chatty */
 			ctl.verbose = 1;
 			break;
@@ -984,6 +995,9 @@ int main(int argc, char *argv[])
 		case OPT_LIST_TYPES:
 			for (ctl.ncolumns = 0; (size_t)ctl.ncolumns < ARRAY_SIZE(infos); ctl.ncolumns++)
 				ctl.columns[ctl.ncolumns] = ctl.ncolumns;
+			break;
+		case ANNOTATE_OPTION:
+			annotate_opt_arg = optarg;
 			break;
 		case NOHEADINGS_OPTION:
 			ctl.no_heading = 1;
@@ -1007,6 +1021,12 @@ int main(int argc, char *argv[])
 	}
 	argv += optind;
 
+	if (annotationwanted(annotate_opt_arg))
+		ctl.annotate = 1;
+
+	if (ctl.summarize)
+		return display_summary();
+
 	if (ctl.show || (!ctl.all && !numof_labels() && !numof_uuids() && *argv == NULL)) {
 		if (!ctl.ncolumns) {
 			/* default columns */
@@ -1016,8 +1036,7 @@ int main(int argc, char *argv[])
 			ctl.columns[ctl.ncolumns++] = COL_USED;
 			ctl.columns[ctl.ncolumns++] = COL_PRIO;
 		}
-		status = show_table(&ctl);
-		return status;
+		return show_table(&ctl);
 	}
 
 	if (ctl.props.no_fail && !ctl.all) {

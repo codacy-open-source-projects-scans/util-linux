@@ -57,6 +57,7 @@
 #include "c.h"
 #include "closestream.h"
 #include "canonicalize.h"
+#include "fileutils.h"
 
 #include "debug.h"
 
@@ -251,7 +252,7 @@ static void dirlist_add_dir(struct wh_dirlist **ls0, int type, const char *dir)
 	ls->st_ino = st.st_ino;
 	ls->st_dev = st.st_dev;
 	ls->type = type;
-	ls->path = canonicalize_path(dir);
+	ls->path = ul_canonicalize_path(dir);
 
 	if (!*ls0)
 		*ls0 = ls;		/* first in the list */
@@ -297,7 +298,7 @@ static void dirlist_add_subdir(struct wh_dirlist **ls, int type, const char *dir
 				dir, buf, postfix ? postfix : ""));
 
 	while ((dp = readdir(dirp)) != NULL) {
-		if (!strcmp(dp->d_name, ".") || !strcmp(dp->d_name, ".."))
+		if (is_dotdir_dirent(dp))
 			continue;
 		if (postfix)
 			snprintf(d, PATH_MAX - len, "%s%s", dp->d_name, postfix);
@@ -471,7 +472,7 @@ static void findin(const char *dir, const char *pattern, int *count,
 
 static void lookup(const char *pattern, struct wh_dirlist *ls, int want)
 {
-	char patbuf[PATH_MAX];
+	char patbuf[PATH_MAX] = { 0 };
 	int count = 0;
 	char *wait = NULL, *p;
 

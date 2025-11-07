@@ -112,8 +112,19 @@ extern void ul_close_all_fds(unsigned int first, unsigned int last);
 #define UL_COPY_WRITE_ERROR (-2)
 int ul_copy_file(int from, int to);
 
-
 extern int ul_reopen(int fd, int flags);
 extern char *ul_basename(char *path);
+
+extern char *ul_restricted_path_oper(const char *path,
+		int (*oper)(const char *path, char **result, void *data),
+		void *data);
+
+/* return 1 if @d is "." or ".." */
+static inline bool is_dotdir_dirent(const struct dirent *d)
+{
+	return (d && d->d_name[0] == '.'
+		&& (d->d_name[1] == 0
+		    || (d->d_name[1] == '.' && d->d_name[2] == 0)));
+}
 
 #endif /* UTIL_LINUX_FILEUTILS */

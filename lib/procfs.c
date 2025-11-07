@@ -2,7 +2,7 @@
  * No copyright is claimed.  This code is in the public domain; do with
  * it what you wish.
  *
- * Copyright (C) 2021 Karel Zak <kzak@redhat.com>
+ * Written by Karel Zak <kzak@redhat.com> [2021]
  */
 #include <ctype.h>
 #include <unistd.h>
@@ -20,6 +20,7 @@
 #include "all-io.h"
 #include "debug.h"
 #include "strutils.h"
+#include "statfs_magic.h"
 
 static void procfs_process_deinit_path(struct path_cxt *pc);
 
@@ -412,7 +413,7 @@ int fd_is_procfs(int fd)
 		}
 	} while (ret != 0);
 
-	return st.f_type == STATFS_PROC_MAGIC;
+	return F_TYPE_EQUAL(st.f_type, STATFS_PROC_MAGIC);
 	return 0;
 }
 #else
@@ -447,6 +448,11 @@ char *pid_get_cmdname(pid_t pid)
 char *pid_get_cmdline(pid_t pid)
 {
 	return strdup_procfs_file(pid, "cmdline");
+}
+
+char *pid_get_personality(pid_t pid)
+{
+	return strdup_procfs_file(pid, "personality");
 }
 
 #ifdef TEST_PROGRAM_PROCFS

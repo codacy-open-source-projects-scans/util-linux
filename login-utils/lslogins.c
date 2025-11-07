@@ -14,9 +14,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 
 #include <stdio.h>
@@ -52,6 +51,7 @@
 #endif
 
 #include "c.h"
+#include "cctype.h"
 #include "nls.h"
 #include "closestream.h"
 #include "xalloc.h"
@@ -63,6 +63,13 @@
 #include "logindefs.h"
 #include "procfs.h"
 #include "timeutils.h"
+#include "column-list-table.h"
+
+/* Types used for JSON and --list-columns */
+enum {
+	COLTYPE_STR	= 0,	/* default */
+	COLTYPE_NUM	= 1,	/* always u64 number */
+};
 
 /*
  * column description
@@ -74,6 +81,7 @@ struct lslogins_coldesc {
 
 	double whint;	/* width hint */
 	long flag;
+	int type;	/* COLTYPE_* column type*/
 };
 
 static int lslogins_flag;
@@ -98,7 +106,8 @@ enum {
 	OUT_NEWLINE,
 	OUT_RAW,
 	OUT_NUL,
-	OUT_PRETTY
+	OUT_PRETTY,
+	OUT_JSON
 };
 
 enum {
@@ -228,33 +237,33 @@ static const char *const pretty_status[] = {
 
 static const struct lslogins_coldesc coldescs[] =
 {
-	[COL_USER]          = { "USER",		N_("user name"), N_("Username"), 0.1, SCOLS_FL_NOEXTREMES },
-	[COL_UID]           = { "UID",		N_("user ID"), "UID", 1, SCOLS_FL_RIGHT},
-	[COL_PWDEMPTY]      = { "PWD-EMPTY",	N_("password not defined"), N_("Password not required (empty)"), 1, SCOLS_FL_RIGHT },
-	[COL_PWDDENY]       = { "PWD-DENY",	N_("login by password disabled"), N_("Login by password disabled"), 1, SCOLS_FL_RIGHT },
-	[COL_PWDLOCK]       = { "PWD-LOCK",	N_("password defined, but locked"), N_("Password is locked"), 1, SCOLS_FL_RIGHT },
-	[COL_PWDMETHOD]     = { "PWD-METHOD",   N_("password encryption method"), N_("Password encryption method"), 0.1 },
-	[COL_NOLOGIN]       = { "NOLOGIN",	N_("log in disabled by nologin(8) or pam_nologin(8)"), N_("No login"), 1, SCOLS_FL_RIGHT },
-	[COL_GROUP]         = { "GROUP",	N_("primary group name"), N_("Primary group"), 0.1 },
-	[COL_GID]           = { "GID",		N_("primary group ID"), "GID", 1, SCOLS_FL_RIGHT },
-	[COL_SGROUPS]       = { "SUPP-GROUPS",	N_("supplementary group names"), N_("Supplementary groups"), 0.1 },
-	[COL_SGIDS]         = { "SUPP-GIDS",    N_("supplementary group IDs"), N_("Supplementary group IDs"), 0.1 },
-	[COL_HOME]          = { "HOMEDIR",	N_("home directory"), N_("Home directory"), 0.1 },
-	[COL_SHELL]         = { "SHELL",	N_("login shell"), N_("Shell"), 0.1 },
-	[COL_GECOS]         = { "GECOS",	N_("full user name"), N_("Gecos field"), 0.1, SCOLS_FL_TRUNC },
-	[COL_LAST_LOGIN]    = { "LAST-LOGIN",	N_("date of last login"), N_("Last login"), 0.1, SCOLS_FL_RIGHT },
-	[COL_LAST_TTY]      = { "LAST-TTY",	N_("last tty used"), N_("Last terminal"), 0.05 },
-	[COL_LAST_HOSTNAME] = { "LAST-HOSTNAME",N_("hostname during the last session"), N_("Last hostname"),  0.1},
-	[COL_FAILED_LOGIN]  = { "FAILED-LOGIN",	N_("date of last failed login"), N_("Failed login"), 0.1 },
-	[COL_FAILED_TTY]    = { "FAILED-TTY",	N_("where did the login fail?"), N_("Failed login terminal"), 0.05 },
-	[COL_HUSH_STATUS]   = { "HUSHED",	N_("user's hush settings"), N_("Hushed"), 1, SCOLS_FL_RIGHT },
-	[COL_PWD_WARN]      = { "PWD-WARN",	N_("days user is warned of password expiration"), N_("Password expiration warn interval"), 0.1, SCOLS_FL_RIGHT },
-	[COL_PWD_EXPIR]     = { "PWD-EXPIR",	N_("password expiration date"), N_("Password expiration"), 0.1, SCOLS_FL_RIGHT },
-	[COL_PWD_CTIME]     = { "PWD-CHANGE",	N_("date of last password change"), N_("Password changed"), 0.1, SCOLS_FL_RIGHT},
-	[COL_PWD_CTIME_MIN] = { "PWD-MIN",	N_("number of days required between changes"), N_("Minimum change time"), 0.1, SCOLS_FL_RIGHT },
-	[COL_PWD_CTIME_MAX] = { "PWD-MAX",	N_("max number of days a password may remain unchanged"), N_("Maximum change time"), 0.1, SCOLS_FL_RIGHT },
-	[COL_SELINUX]       = { "CONTEXT",	N_("the user's security context"), N_("Selinux context"), 0.1 },
-	[COL_NPROCS]        = { "PROC",         N_("number of processes run by the user"), N_("Running processes"), 1, SCOLS_FL_RIGHT },
+	[COL_USER]          = { "USER",		N_("user name"), N_("Username"), 0.1, SCOLS_FL_NOEXTREMES, COLTYPE_STR },
+	[COL_UID]           = { "UID",		N_("user ID"), "UID", 1, SCOLS_FL_RIGHT, COLTYPE_NUM},
+	[COL_PWDEMPTY]      = { "PWD-EMPTY",	N_("password not defined"), N_("Password not required (empty)"), 1, SCOLS_FL_RIGHT, COLTYPE_NUM },
+	[COL_PWDDENY]       = { "PWD-DENY",	N_("login by password disabled"), N_("Login by password disabled"), 1, SCOLS_FL_RIGHT, COLTYPE_NUM },
+	[COL_PWDLOCK]       = { "PWD-LOCK",	N_("password defined, but locked"), N_("Password is locked"), 1, SCOLS_FL_RIGHT, COLTYPE_NUM },
+	[COL_PWDMETHOD]     = { "PWD-METHOD",   N_("password encryption method"), N_("Password encryption method"), 0.1, 0, COLTYPE_NUM },
+	[COL_NOLOGIN]       = { "NOLOGIN",	N_("log in disabled by nologin(8) or pam_nologin(8)"), N_("No login"), 1, SCOLS_FL_RIGHT, COLTYPE_NUM },
+	[COL_GROUP]         = { "GROUP",	N_("primary group name"), N_("Primary group"), 0.1, 0, COLTYPE_STR },
+	[COL_GID]           = { "GID",		N_("primary group ID"), "GID", 1, SCOLS_FL_RIGHT, COLTYPE_NUM },
+	[COL_SGROUPS]       = { "SUPP-GROUPS",	N_("supplementary group names"), N_("Supplementary groups"), 0.1, 0, COLTYPE_STR },
+	[COL_SGIDS]         = { "SUPP-GIDS",    N_("supplementary group IDs"), N_("Supplementary group IDs"), 0.1, 0, COLTYPE_NUM },
+	[COL_HOME]          = { "HOMEDIR",	N_("home directory"), N_("Home directory"), 0.1, 0, COLTYPE_STR },
+	[COL_SHELL]         = { "SHELL",	N_("login shell"), N_("Shell"), 0.1, 0, COLTYPE_STR },
+	[COL_GECOS]         = { "GECOS",	N_("full user name"), N_("Gecos field"), 0.1, SCOLS_FL_TRUNC, COLTYPE_STR },
+	[COL_LAST_LOGIN]    = { "LAST-LOGIN",	N_("date of last login"), N_("Last login"), 0.1, SCOLS_FL_RIGHT, COLTYPE_STR },
+	[COL_LAST_TTY]      = { "LAST-TTY",	N_("last tty used"), N_("Last terminal"), 0.05, 0, COLTYPE_STR },
+	[COL_LAST_HOSTNAME] = { "LAST-HOSTNAME",N_("hostname during the last session"), N_("Last hostname"), 0.1, 0, COLTYPE_STR},
+	[COL_FAILED_LOGIN]  = { "FAILED-LOGIN",	N_("date of last failed login"), N_("Failed login"), 0.1, 0, COLTYPE_STR },
+	[COL_FAILED_TTY]    = { "FAILED-TTY",	N_("where did the login fail?"), N_("Failed login terminal"), 0.05, 0, COLTYPE_STR },
+	[COL_HUSH_STATUS]   = { "HUSHED",	N_("user's hush settings"), N_("Hushed"), 1, SCOLS_FL_RIGHT, COLTYPE_STR },
+	[COL_PWD_WARN]      = { "PWD-WARN",	N_("days user is warned of password expiration"), N_("Password expiration warn interval"), 0.1, SCOLS_FL_RIGHT, COLTYPE_NUM },
+	[COL_PWD_EXPIR]     = { "PWD-EXPIR",	N_("password expiration date"), N_("Password expiration"), 0.1, SCOLS_FL_RIGHT, COLTYPE_STR },
+	[COL_PWD_CTIME]     = { "PWD-CHANGE",	N_("date of last password change"), N_("Password changed"), 0.1, SCOLS_FL_RIGHT, COLTYPE_STR },
+	[COL_PWD_CTIME_MIN] = { "PWD-MIN",	N_("number of days required between changes"), N_("Minimum change time"), 0.1, SCOLS_FL_RIGHT, COLTYPE_NUM },
+	[COL_PWD_CTIME_MAX] = { "PWD-MAX",	N_("max number of days a password may remain unchanged"), N_("Maximum change time"), 0.1, SCOLS_FL_RIGHT, COLTYPE_NUM },
+	[COL_SELINUX]       = { "CONTEXT",	N_("the user's security context"), N_("Selinux context"), 0.1, 0, COLTYPE_STR },
+	[COL_NPROCS]        = { "PROC",         N_("number of processes run by the user"), N_("Running processes"), 1, SCOLS_FL_RIGHT, COLTYPE_NUM },
 };
 
 struct lslogins_control {
@@ -324,7 +333,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(coldescs); i++) {
 		const char *cn = coldescs[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -498,10 +507,14 @@ static int parse_utmpx(const char *path, size_t *nrecords, struct utmpx **record
 
 	/* optimize allocation according to file size, the realloc() below is
 	 * just fallback only */
-	if (stat(path, &st) == 0 && (size_t) st.st_size >= sizeof(struct utmpx)) {
-		imax = st.st_size / sizeof(struct utmpx);
-		ary = xreallocarray(NULL, imax, sizeof(struct utmpx));
-	}
+	if (stat(path, &st) == 0) {
+		if ((size_t) st.st_size >= sizeof(struct utmpx)) {
+			imax = st.st_size / sizeof(struct utmpx);
+			ary = xreallocarray(NULL, imax, sizeof(struct utmpx));
+		} else
+			return -ENODATA;
+	} else
+		return -errno;
 
 	for (i = 0; ; i++) {
 		struct utmpx *u;
@@ -834,13 +847,15 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 	while (n < ncolumns) {
 		switch (columns[n++]) {
 		case COL_USER:
-			user->login = xstrdup(pwd->pw_name);
+			if (!user->login)
+				user->login = xstrdup(pwd->pw_name);
 			break;
 		case COL_UID:
 			user->uid = pwd->pw_uid;
 			break;
 		case COL_GROUP:
-			user->group = xstrdup(grp->gr_name);
+			if (!grp->gr_name)
+				user->group = xstrdup(grp->gr_name);
 			break;
 		case COL_GID:
 			user->gid = pwd->pw_gid;
@@ -852,15 +867,20 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 				err(EXIT_FAILURE, _("failed to get supplementary groups"));
 			break;
 		case COL_HOME:
-			user->homedir = xstrdup(pwd->pw_dir);
+			if (!user->homedir)
+				user->homedir = xstrdup(pwd->pw_dir);
 			break;
 		case COL_SHELL:
-			user->shell = xstrdup(pwd->pw_shell);
+			if (!user->shell)
+				user->shell = xstrdup(pwd->pw_shell);
 			break;
 		case COL_GECOS:
-			user->gecos = xstrdup(pwd->pw_gecos);
+			if (!user->gecos)
+				user->gecos = xstrdup(pwd->pw_gecos);
 			break;
 		case COL_LAST_LOGIN:
+			if (user->last_login)
+				break;
 			if (user_wtmp) {
 				time = user_wtmp->ut_tv.tv_sec;
 				user->last_login = make_time(ctl->time_mode, time);
@@ -872,6 +892,8 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 			}
 			break;
 		case COL_LAST_TTY:
+			if (user->last_tty)
+				break;
 			user->last_tty = xcalloc(1, sizeof(user_wtmp->ut_line) + 1);
 			if (user_wtmp) {
 				mem2strcpy(user->last_tty, user_wtmp->ut_line,
@@ -881,6 +903,8 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 				get_lastlog(ctl, user->uid, user->login, user->last_tty, LASTLOG_LINE);
 			break;
 		case COL_LAST_HOSTNAME:
+			if (user->last_hostname)
+				break;
 			user->last_hostname = xcalloc(1, sizeof(user_wtmp->ut_host) + 1);
 			if (user_wtmp) {
 				mem2strcpy(user->last_hostname, user_wtmp->ut_host,
@@ -890,13 +914,13 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 				get_lastlog(ctl, user->uid, user->login, user->last_hostname, LASTLOG_HOST);
 			break;
 		case COL_FAILED_LOGIN:
-			if (user_btmp) {
+			if (!user->failed_login && user_btmp) {
 				time = user_btmp->ut_tv.tv_sec;
 				user->failed_login = make_time(ctl->time_mode, time);
 			}
 			break;
 		case COL_FAILED_TTY:
-			if (user_btmp) {
+			if (!user->failed_tty && user_btmp) {
 				user->failed_tty = xmalloc(sizeof(user_btmp->ut_line) + 1);
 				mem2strcpy(user->failed_tty, user_btmp->ut_line,
 						sizeof(user_btmp->ut_line),
@@ -904,7 +928,7 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 			}
 			break;
 		case COL_HUSH_STATUS:
-			user->hushed = get_hushlogin_status(pwd, 0);
+			user->hushed = get_hushlogin_status(pwd, /* override_home= */ NULL, 0);
 			if (user->hushed == -1)
 				user->hushed = STATUS_UNKNOWN;
 			break;
@@ -968,11 +992,11 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 						access(_PATH_VAR_NOLOGIN, F_OK) == 0;
 			break;
 		case COL_PWD_WARN:
-			if (shadow && shadow->sp_warn >= 0)
+			if (!user->pwd_warn && shadow && shadow->sp_warn >= 0)
 				xasprintf(&user->pwd_warn, "%ld", shadow->sp_warn);
 			break;
 		case COL_PWD_EXPIR:
-			if (shadow && shadow->sp_expire >= 0)
+			if (!user->pwd_expire && shadow && shadow->sp_expire >= 0)
 				user->pwd_expire = make_time(ctl->time_mode == TIME_ISO ?
 						TIME_ISO_SHORT : ctl->time_mode,
 						shadow->sp_expire * 86400);
@@ -981,17 +1005,17 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 			/* sp_lstchg is specified in days, showing hours
 			 * (especially in non-GMT timezones) would only serve
 			 * to confuse */
-			if (shadow)
+			if (!user->pwd_ctime && shadow)
 				user->pwd_ctime = make_time(ctl->time_mode == TIME_ISO ?
 						TIME_ISO_SHORT : ctl->time_mode,
 						shadow->sp_lstchg * 86400);
 			break;
 		case COL_PWD_CTIME_MIN:
-			if (shadow && shadow->sp_min > 0)
+			if (!user->pwd_ctime_min && shadow && shadow->sp_min > 0)
 				xasprintf(&user->pwd_ctime_min, "%ld", shadow->sp_min);
 			break;
 		case COL_PWD_CTIME_MAX:
-			if (shadow && shadow->sp_max > 0)
+			if (!user->pwd_ctime_max && shadow && shadow->sp_max > 0)
 				xasprintf(&user->pwd_ctime_max, "%ld", shadow->sp_max);
 			break;
 		case COL_SELINUX:
@@ -1002,8 +1026,8 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 			break;
 		case COL_NPROCS:
 #ifdef __linux__
-
-			xasprintf(&user->nprocs, "%d", get_nprocs(pwd->pw_uid));
+			if (!user->nprocs)
+				xasprintf(&user->nprocs, "%d", get_nprocs(pwd->pw_uid));
 #endif
 			break;
 		default:
@@ -1173,6 +1197,17 @@ static int create_usertree(struct lslogins_control *ctl)
 	return 0;
 }
 
+static void set_column_type(const struct lslogins_coldesc *cd, struct libscols_column *cl)
+{
+	if (cd->type == COLTYPE_NUM) {
+		scols_column_set_json_type(cl, SCOLS_JSON_NUMBER);
+		scols_column_set_data_type(cl, SCOLS_DATA_U64);
+		return;
+	}
+	scols_column_set_json_type(cl, SCOLS_JSON_STRING);
+	scols_column_set_data_type(cl, SCOLS_DATA_STRING);
+}
+
 static struct libscols_table *setup_table(struct lslogins_control *ctl)
 {
 	struct libscols_table *table = scols_new_table();
@@ -1192,33 +1227,40 @@ static struct libscols_table *setup_table(struct lslogins_control *ctl)
 		break;
 	case OUT_NEWLINE:
 		scols_table_set_column_separator(table, "\n");
-		/* fallthrough */
+		FALLTHROUGH;
 	case OUT_EXPORT:
 		scols_table_enable_export(table, 1);
 		break;
 	case OUT_NUL:
 		scols_table_set_line_separator(table, "\0");
-		/* fallthrough */
+		FALLTHROUGH;
 	case OUT_RAW:
 		scols_table_enable_raw(table, 1);
 		break;
 	case OUT_PRETTY:
 		scols_table_enable_noheadings(table, 1);
+		break;
+	case OUT_JSON:
+		scols_table_enable_json(table, 1);
 	default:
 		break;
 	}
 
 	while (n < ncolumns) {
 		int flags = coldescs[columns[n]].flag;
+		struct libscols_column *col;
 
 		if (ctl->notrunc)
 			flags &= ~SCOLS_FL_TRUNC;
 
-		if (!scols_table_new_column(table,
+		col = scols_table_new_column(table,
 				coldescs[columns[n]].name,
 				coldescs[columns[n]].whint,
-				flags))
+				flags);
+		if (!col)
 			goto fail;
+
+		set_column_type(&coldescs[columns[n]], col);
 		++n;
 	}
 
@@ -1451,8 +1493,11 @@ static int print_user_table(struct lslogins_control *ctl)
 		print_journal_tail(ctl->journal_path, ctl->uid, 3, ctl->time_mode);
 		fputc('\n', stdout);
 #endif
-	} else
+	} else {
+		if (outmode == OUT_JSON)
+			scols_table_set_name(tb, "logins");
 		scols_print_table(tb);
+	}
 	return 0;
 }
 
@@ -1505,7 +1550,6 @@ static int parse_time_mode(const char *s)
 static void __attribute__((__noreturn__)) usage(void)
 {
 	FILE *out = stdout;
-	size_t i;
 
 	fputs(USAGE_HEADER, out);
 	fprintf(out, _(" %s [options] [<username>]\n"), program_invocation_short_name);
@@ -1529,6 +1573,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("     --output-all         output all columns\n"), out);
 	fputs(_(" -p, --pwd                display information related to login by password\n"), out);
 	fputs(_(" -r, --raw                display in raw mode\n"), out);
+	fputs(_(" -J, --json               display in JSON format mode\n"), out);
 	fputs(_(" -s, --system-accs        display system accounts\n"), out);
 	fputs(_("     --time-format=<type> display dates in short, full or iso format\n"), out);
 	fputs(_(" -u, --user-accs          display user accounts\n"), out);
@@ -1542,20 +1587,39 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("     --lastlog2 <path>    set an alternate path for lastlog2\n"), out);
 #endif
 	fputs(USAGE_SEPARATOR, out);
+	/* FIXME: Replace with USAGE_LIST_COLUMNS_OPTION() macro from include/c.h */
+	fputs(_(" -H, --list-columns       list the available columns\n"), out);
 	fprintf(out, USAGE_HELP_OPTIONS(26));
-
-	fputs(USAGE_COLUMNS, out);
-	for (i = 0; i < ARRAY_SIZE(coldescs); i++)
-		fprintf(out, " %14s  %s\n", coldescs[i].name, _(coldescs[i].help));
 
 	fprintf(out, USAGE_MAN_TAIL("lslogins(1)"));
 
 	exit(EXIT_SUCCESS);
 }
 
+static void __attribute__((__noreturn__)) list_columns(void)
+{
+	size_t i;
+	struct libscols_table *tbl = xcolumn_list_table_new("lslogins-columns", stdout,
+						outmode == OUT_RAW ? 1 : 0,
+						outmode == OUT_JSON ? 1 : 0);
+
+	for (i = 0; i < ARRAY_SIZE(coldescs); i++) {
+		const struct lslogins_coldesc *ci = &coldescs[i];
+
+		xcolumn_list_table_append_line(tbl, ci->name,
+			ci->type == COLTYPE_NUM  ? SCOLS_JSON_NUMBER : SCOLS_JSON_STRING,
+			NULL, _(ci->help));
+	}
+
+	scols_print_table(tbl);
+	scols_unref_table(tbl);
+
+	exit(EXIT_SUCCESS);
+}
+
 int main(int argc, char *argv[])
 {
-	int c;
+	int c, collist = 0;
 	char *logins = NULL, *groups = NULL, *outarg = NULL;
 	char *path_lastlog = _PATH_LASTLOG, *path_wtmp = _PATH_WTMP, *path_btmp = _PATH_BTMP;
 	struct lslogins_control *ctl = xcalloc(1, sizeof(struct lslogins_control));
@@ -1592,12 +1656,14 @@ int main(int argc, char *argv[])
 		{ "output-all",     no_argument,	0, OPT_OUTPUT_ALL },
 		{ "last",           no_argument,	0, 'L', },
 		{ "raw",            no_argument,	0, 'r' },
+		{ "json",           no_argument,	0, 'J' },
 		{ "system-accs",    no_argument,	0, 's' },
 		{ "time-format",    required_argument,	0, OPT_TIME_FMT },
 		{ "user-accs",      no_argument,	0, 'u' },
 		{ "version",        no_argument,	0, 'V' },
 		{ "pwd",            no_argument,	0, 'p' },
 		{ "print0",         no_argument,	0, 'z' },
+		{ "list-columns",   no_argument,	0, 'H' },
 		{ "wtmp-file",      required_argument,	0, OPT_WTMP },
 		{ "btmp-file",      required_argument,	0, OPT_BTMP },
 		{ "lastlog-file",   required_argument,	0, OPT_LASTLOG },
@@ -1612,10 +1678,10 @@ int main(int argc, char *argv[])
 
 	static const ul_excl_t excl[] = {	/* rows and cols in ASCII order */
 		{ 'G', 'o' },
+		{ 'J','c','n','r','z' },
 		{ 'L', 'o' },
 		{ 'Z', 'o' },
 		{ 'a', 'o' },
-		{ 'c','n','r','z' },
 		{ 'o', 'p' },
 		{ 0 }
 	};
@@ -1632,7 +1698,7 @@ int main(int argc, char *argv[])
 	add_column(columns, ncolumns++, COL_UID);
 	add_column(columns, ncolumns++, COL_USER);
 
-	while ((c = getopt_long(argc, argv, "acefGg:hLl:no:prsuVyzZ",
+	while ((c = getopt_long(argc, argv, "acefGg:HhJLl:no:prsuVyzZ",
 				longopts, NULL)) != -1) {
 
 		err_exclusive_options(c, longopts, excl, excl_st);
@@ -1690,6 +1756,9 @@ int main(int argc, char *argv[])
 		case 'r':
 			outmode = OUT_RAW;
 			break;
+		case 'J':
+			outmode = OUT_JSON;
+			break;
 		case 's':
 			ctl->SYS_UID_MIN = getlogindefs_num("SYS_UID_MIN", UL_SYS_UID_MIN);
 			ctl->SYS_UID_MAX = getlogindefs_num("SYS_UID_MAX", UL_SYS_UID_MAX);
@@ -1713,6 +1782,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'z':
 			outmode = OUT_NUL;
+			break;
+		case 'H':
+			collist = 1;
 			break;
 		case OPT_LASTLOG:
 			path_lastlog = optarg;
@@ -1763,6 +1835,9 @@ int main(int argc, char *argv[])
 			errtryhelp(EXIT_FAILURE);
 		}
 	}
+
+	if (collist)
+		list_columns();
 
 	if (argc - optind == 1) {
 		if (strchr(argv[optind], ','))

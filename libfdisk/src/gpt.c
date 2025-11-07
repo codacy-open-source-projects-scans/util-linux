@@ -735,7 +735,7 @@ static int get_script_u64(struct fdisk_context *cxt, uint64_t *num, const char *
 	if (!str)
 		return 1;
 
-	rc = parse_size(str, (uintmax_t *) num, &pwr);
+	rc = ul_parse_size(str, (uintmax_t *) num, &pwr);
 	if (rc < 0)
 		return rc;
 	if (pwr)
@@ -1043,7 +1043,7 @@ fail:
 static inline uint32_t count_crc32(const unsigned char *buf, size_t len,
 				   size_t ex_off, size_t ex_len)
 {
-	return (ul_crc32_exclude_offset(~0L, buf, len, ex_off, ex_len) ^ ~0L);
+	return (ul_crc32_exclude_offset(~0L, buf, len, ex_off, ex_len, 0) ^ ~0L);
 }
 
 static inline uint32_t gpt_header_count_crc32(struct gpt_header *header)
@@ -1736,7 +1736,7 @@ static char *encode_to_utf8(unsigned char *src, size_t count)
 static int gpt_entry_attrs_to_string(struct gpt_entry *e, char **res)
 {
 	unsigned int n, count = 0;
-	size_t l;
+	size_t l, res_size;
 	char *bits, *p;
 	uint64_t attrs;
 
@@ -1752,10 +1752,11 @@ static int gpt_entry_attrs_to_string(struct gpt_entry *e, char **res)
 
 	/* Note that sizeof() is correct here, we need separators between
 	 * the strings so also count \0 is correct */
-	*res = calloc(1, sizeof(GPT_ATTRSTR_NOBLOCK) +
+	res_size = sizeof(GPT_ATTRSTR_NOBLOCK) +
 			 sizeof(GPT_ATTRSTR_REQ) +
 			 sizeof(GPT_ATTRSTR_LEGACY) +
-			 sizeof("GUID:") + (GPT_ATTRBIT_GUID_COUNT * 3));
+			 sizeof("GUID:") + (GPT_ATTRBIT_GUID_COUNT * 3);
+	*res = calloc(1, res_size);
 	if (!*res)
 		return -errno;
 
@@ -1779,15 +1780,20 @@ static int gpt_entry_attrs_to_string(struct gpt_entry *e, char **res)
 
 	for (n = GPT_ATTRBIT_GUID_FIRST;
 	     n < GPT_ATTRBIT_GUID_FIRST + GPT_ATTRBIT_GUID_COUNT; n++) {
+		int rc;
 
 		if (!isset(bits, n))
 			continue;
 		if (!count) {
 			if (p != *res)
 				*p++ = ' ';
-			p += sprintf(p, "GUID:%u", n);
+			rc = snprintf(p, res_size - (p - *res), "GUID:%u", n);
 		} else
-			p += sprintf(p, ",%u", n);
+			rc = snprintf(p, res_size - (p - *res), ",%u", n);
+
+		if (rc < 0 || (size_t) rc >= res_size - (p - *res))
+			break;
+		p += rc;
 		count++;
 	}
 

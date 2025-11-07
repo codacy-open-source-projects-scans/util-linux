@@ -45,6 +45,7 @@
 #include <sys/wait.h>
 
 #include "mount-api-utils.h"
+#include "strv.h"
 
 /**
  * mnt_new_context:
@@ -54,14 +55,13 @@
 struct libmnt_context *mnt_new_context(void)
 {
 	struct libmnt_context *cxt;
-	uid_t ruid, euid;
+	uid_t ruid;
 
 	cxt = calloc(1, sizeof(*cxt));
 	if (!cxt)
 		return NULL;
 
 	ruid = getuid();
-	euid = geteuid();
 
 	mnt_context_reset_status(cxt);
 
@@ -76,7 +76,7 @@ struct libmnt_context *mnt_new_context(void)
 	INIT_LIST_HEAD(&cxt->hooksets_datas);
 
 	/* if we're really root and aren't running setuid */
-	cxt->restricted = (uid_t) 0 == ruid && ruid == euid ? 0 : 1;
+	cxt->restricted = (uid_t) 0 == ruid && !is_privileged_execution() ? 0 : 1;
 
 	cxt->noautofs = 0;
 
@@ -529,9 +529,6 @@ int mnt_context_is_xnocanonicalize(
 	assert(cxt);
 	assert(type);
 
-	if (mnt_context_is_nocanonicalize(cxt))
-		return 1;
-
 	ol = mnt_context_get_optlist(cxt);
 	if (!ol)
 		return 0;
@@ -575,7 +572,7 @@ int mnt_context_is_lazy(struct libmnt_context *cxt)
  * @cxt: mount context
  * @enable: TRUE or FALSE
  *
- * Enable/disable only-once mount (check if FS is not already mounted).
+ * Enable/disable only-once mount (check if source + target is not already mounted).
  *
  * Returns: 0 on success, negative number in case of error.
  */
@@ -593,6 +590,57 @@ int mnt_context_enable_onlyonce(struct libmnt_context *cxt, int enable)
 int mnt_context_is_onlyonce(struct libmnt_context *cxt)
 {
 	return cxt->flags & MNT_FL_ONLYONCE ? 1 : 0;
+}
+
+/**
+ * mnt_context_enable_exclusive
+ * @cxt: mount context
+ * @enable: TRUE or FALSE
+ *
+ * Enable/disable exclusive mount (only one FS instance is allowed).
+ *
+ * Returns: 0 on success, negative number in case of error.
+ */
+int mnt_context_enable_exclusive(struct libmnt_context *cxt, int enable)
+{
+	return set_flag(cxt, MNT_FL_EXCL, enable);
+}
+
+/**
+ * mnt_context_is_exclusive:
+ * @cxt: mount context
+ *
+ * Returns: 1 if exclisive mount is enabled or 0
+ */
+int mnt_context_is_exclusive(struct libmnt_context *cxt)
+{
+	return cxt->flags & MNT_FL_EXCL ? 1 : 0;
+}
+
+/**
+ * mnt_context_enable_beneath
+ * @cxt: mount context
+ * @enable: TRUE or FALSE
+ *
+ * Enable/disable underlying mount (move). The filesystem is attached beneath the current
+ * top-level mount of the mountpoint. See mount_move( MOVE_MOUNT_BENEATH ).
+ *
+ * Returns: 0 on success, negative number in case of error.
+ */
+int mnt_context_enable_beneath(struct libmnt_context *cxt, int enable)
+{
+	return set_flag(cxt, MNT_FL_BENEATH, enable);
+}
+
+/**
+ * mnt_context_is_beneath:
+ * @cxt: mount context
+ *
+ * Returns: 1 if beneath mount is enabled or 0
+ */
+int mnt_context_is_beneath(struct libmnt_context *cxt)
+{
+	return cxt->flags & MNT_FL_BENEATH ? 1 : 0;
 }
 
 /**
@@ -2022,8 +2070,11 @@ int mnt_context_guess_srcpath_fstype(struct libmnt_context *cxt, char **type)
 		struct libmnt_opt *opt;
 		const char *allowed;
 
-		if (!ol)
+		if (!ol) {
+			free(*type);
+			*type = NULL;
 			return -ENOMEM;
+		}
 
 		opt = mnt_optlist_get_named(ol,
 				"X-mount.auto-fstypes", cxt->map_userspace);
@@ -2201,8 +2252,9 @@ int mnt_context_merge_mflags(struct libmnt_context *cxt)
 int mnt_context_prepare_update(struct libmnt_context *cxt)
 {
 	int rc;
-	const char *target, *name;
+	const char *target, *source, *name;
 	unsigned long flags = 0;
+	struct libmnt_optlist *ol;
 
 	assert(cxt);
 	assert(cxt->fs);
@@ -2217,6 +2269,7 @@ int mnt_context_prepare_update(struct libmnt_context *cxt)
 	}
 
 	target = mnt_fs_get_target(cxt->fs);
+	source = mnt_fs_get_srcpath(cxt->fs);
 
 	if (cxt->action == MNT_ACT_UMOUNT && target && !strcmp(target, "/")) {
 		DBG(CXT, ul_debugobj(cxt, "root umount: setting NOMTAB"));
@@ -2231,6 +2284,7 @@ int mnt_context_prepare_update(struct libmnt_context *cxt)
 		DBG(CXT, ul_debugobj(cxt, "skip update: no writable destination"));
 		return 0;
 	}
+
 	/* 0 = success, 1 = not called yet */
 	if (cxt->syscall_status != 1 && cxt->syscall_status != 0) {
 		DBG(CXT, ul_debugobj(cxt,
@@ -2239,12 +2293,24 @@ int mnt_context_prepare_update(struct libmnt_context *cxt)
 		return 0;
 	}
 
-	if (!cxt->update) {
-		if (cxt->action == MNT_ACT_UMOUNT && is_file_empty(name)) {
-			DBG(CXT, ul_debugobj(cxt, "skip update: umount, no table"));
-			return 0;
-		}
+	ol = mnt_context_get_optlist(cxt);
+	if (!ol)
+		return -ENOMEM;
 
+	if ((cxt->action == MNT_ACT_UMOUNT || mnt_optlist_is_move(ol))
+	    && is_file_empty(name)) {
+		DBG(CXT, ul_debugobj(cxt, "skip update: umount/move, empty table"));
+		return 0;
+	}
+
+	if (mnt_optlist_is_move(ol) &&
+	    ((target && startswithpath(name, target))
+	     || (source && startswithpath(name, source)))) {
+		DBG(CXT, ul_debugobj(cxt, "skip update: utab move"));
+		return 0;
+	}
+
+	if (!cxt->update) {
 		cxt->update = mnt_new_update();
 		if (!cxt->update)
 			return -ENOMEM;
@@ -2716,54 +2782,106 @@ void mnt_context_syscall_reset_status(struct libmnt_context *cxt)
 	cxt->syscall_status = 0;
 	cxt->syscall_name = NULL;
 
-	free(cxt->errmsg);
-	cxt->errmsg = NULL;
+	mnt_context_reset_mesgs(cxt);
 }
 
-int mnt_context_set_errmsg(struct libmnt_context *cxt, const char *msg)
+void mnt_context_reset_mesgs(struct libmnt_context *cxt)
 {
-	char *p = NULL;
+	DBG(CXT, ul_debug("reset messages"));
+	ul_strv_free(cxt->mesgs);
+	cxt->mesgs = NULL;
+}
 
+int mnt_context_append_mesg(struct libmnt_context *cxt, const char *msg)
+{
 	if (msg) {
-		p = strdup(msg);
-		if (!p)
-			return -ENOMEM;
+		DBG(CXT, ul_debug("mesg: '%s'", msg));
 	}
-
-	free(cxt->errmsg);
-	cxt->errmsg = p;
-
-	return 0;
+	return ul_strv_extend(&cxt->mesgs, msg);
 }
 
-int mnt_context_append_errmsg(struct libmnt_context *cxt, const char *msg)
-{
-	if (cxt->errmsg) {
-		int rc = strappend(&cxt->errmsg, "; ");
-		if (rc)
-			return rc;
-	}
-
-	return strappend(&cxt->errmsg, msg);
-}
-
-int mnt_context_sprintf_errmsg(struct libmnt_context *cxt, const char *msg, ...)
+int mnt_context_sprintf_mesg(struct libmnt_context *cxt, const char *msg, ...)
 {
 	int rc;
 	va_list ap;
-	char *p = NULL;
 
 	va_start(ap, msg);
-	rc = vasprintf(&p, msg, ap);
+	rc = ul_strv_extendv(&cxt->mesgs, msg, ap);
 	va_end(ap);
 
-	if (rc < 0 || !p)
-		return rc;
+	return rc;
+}
 
-	free(cxt->errmsg);
-	cxt->errmsg = p;
+int mnt_context_read_mesgs(struct libmnt_context *cxt, int fd)
+{
+	uint8_t buf[BUFSIZ];
+	ssize_t sz;
+	size_t count = 0;
+	int errsv = errno;
 
-	return 0;
+	if (fd < 0)
+		return 0;
+
+	while ((sz = read(fd, buf, sizeof(buf) - 1)) != -1) {
+
+		if (sz <= 0)
+			continue;
+		if (buf[sz - 1] == '\n')
+			buf[--sz] = '\0';
+		else
+			buf[sz] = '\0';
+
+		if (!*buf)
+			continue;
+
+		mnt_context_append_mesg(cxt, (char *) buf);
+		count++;;
+	}
+
+	errno = errsv;
+	return count;
+}
+
+/**
+ * mnt_context_get_nmesgs:
+ * @cxt: mount context
+ * @type: type of message (see fsopen() man page) or zero for all types
+ *
+ * Returns: number of messages
+ *
+ * Since: 2.41
+ */
+size_t mnt_context_get_nmesgs(struct libmnt_context *cxt, char type)
+{
+	size_t n;
+	char **s;
+
+	if (!cxt || !cxt->mesgs)
+		return 0;
+
+	n = ul_strv_length(cxt->mesgs);
+	if (n && type) {
+		n = 0;
+		UL_STRV_FOREACH(s, cxt->mesgs) {
+			if (*s && **s == type)
+				n++;
+		}
+	}
+
+	return n;
+}
+
+/**
+ * mnt_context_get_mesgs:
+ * @cxt: mount context
+ *
+ * Returns: NULL terminated array of messages or NULL
+ *
+ * Since: 2.41
+ */
+char **mnt_context_get_mesgs(struct libmnt_context *cxt)
+{
+	return cxt ? cxt->mesgs : NULL;
 }
 
 /**

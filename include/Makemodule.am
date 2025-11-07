@@ -48,12 +48,15 @@ dist_noinst_HEADERS += \
 	include/monotonic.h \
 	include/mount-api-utils.h \
 	include/namespace.h \
+	include/netaddrq.h \
+	include/netlink.h \
 	include/nls.h \
 	include/optutils.h \
 	include/pager.h \
 	include/partx.h \
 	include/path.h \
 	include/pathnames.h \
+	include/pidutils.h \
 	include/pidfd-utils.h \
 	include/plymouth-ctrl.h \
 	include/procfs.h \
@@ -82,4 +85,5 @@ dist_noinst_HEADERS += \
 	include/ttyutils.h \
 	include/widechar.h \
 	include/xalloc.h \
-	include/xxhash.h
+	include/xxhash.h \
+	include/configs.h

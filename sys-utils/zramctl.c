@@ -13,9 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 
 #include <getopt.h>
@@ -23,12 +22,18 @@
 #include <string.h>
 #include <stdarg.h>
 #include <assert.h>
+#include <sys/file.h>
 #include <sys/types.h>
 #include <dirent.h>
 
 #include <libsmartcols.h>
 
+#if HAVE_DECL_SD_DEVICE_NEW_FROM_SYSPATH
+#include <systemd/sd-device.h>
+#endif
+
 #include "c.h"
+#include "cctype.h"
 #include "nls.h"
 #include "closestream.h"
 #include "strutils.h"
@@ -41,6 +46,8 @@
 #include "pathnames.h"
 
 /*#define CONFIG_ZRAM_DEBUG*/
+
+#define _cleanup_(x) __attribute__((__cleanup__(x)))
 
 #ifdef CONFIG_ZRAM_DEBUG
 # define DBG(x)	 do { fputs("zram: ", stderr); x; fputc('\n', stderr); } while(0)
@@ -82,7 +89,7 @@ static const struct colinfo infos[] = {
 	[COL_ZEROPAGES] = { "ZERO-PAGES",   3, SCOLS_FL_RIGHT, N_("empty pages with no allocated memory") },
 	[COL_MEMTOTAL]  = { "TOTAL",        5, SCOLS_FL_RIGHT, N_("all memory including allocator fragmentation and metadata overhead") },
 	[COL_MEMLIMIT]  = { "MEM-LIMIT",    5, SCOLS_FL_RIGHT, N_("memory limit used to store compressed data") },
-	[COL_MEMUSED]   = { "MEM-USED",     5, SCOLS_FL_RIGHT, N_("memory zram have been consumed to store compressed data") },
+	[COL_MEMUSED]   = { "MEM-USED",     5, SCOLS_FL_RIGHT, N_("peak memory usage to store compressed data") },
 	[COL_MIGRATED]  = { "MIGRATED",     5, SCOLS_FL_RIGHT, N_("number of objects migrated by compaction") },
 	[COL_COMPRATIO] = { "COMP-RATIO",   5, SCOLS_FL_RIGHT, N_("compression ratio: DATA/TOTAL") },
 	[COL_MOUNTPOINT]= { "MOUNTPOINT",0.10, SCOLS_FL_TRUNC, N_("where the device is mounted") },
@@ -113,8 +120,13 @@ static const char *const mm_stat_names[] = {
 
 struct zram {
 	char	devname[32];
+	int	lock_fd;
 	struct	path_cxt *sysfs;	/* device specific sysfs directory */
 	char	**mm_stat;
+
+#if HAVE_DECL_SD_DEVICE_NEW_FROM_SYSPATH
+	sd_device	*device;
+#endif
 
 	unsigned int mm_stat_probed : 1,
 		     control_probed : 1,
@@ -143,17 +155,160 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
 	return -1;
 }
 
+#if HAVE_DECL_SD_DEVICE_NEW_FROM_SYSPATH
+static int monitor_callback(sd_device_monitor *m, sd_device *device, void *userdata)
+{
+	struct zram *z = userdata;
+	sd_device_action_t a;
+	const char *s;
+
+	assert(z);
+	assert(device);
+
+	if (sd_device_get_action(device, &a) < 0)
+		return 0;
+
+	if (a == SD_DEVICE_REMOVE)
+		return 0;
+
+	if (sd_device_get_devname(device, &s) < 0)
+		return 0;
+
+	if (strcmp(s, z->devname) != 0)
+		return 0;
+
+	if (sd_device_get_is_initialized(device) <= 0)
+		return 0;
+
+	assert(!z->device);
+	z->device = sd_device_ref(device);
+
+	return sd_event_exit(sd_device_monitor_get_event(m), 0);
+}
+#endif
+
+static int zram_wait_initialized(struct zram *z)
+{
+#if HAVE_DECL_SD_DEVICE_NEW_FROM_SYSPATH
+	_cleanup_(sd_device_unrefp) sd_device *dev = NULL;
+	_cleanup_(sd_device_monitor_unrefp) sd_device_monitor *m = NULL;
+	sd_event *event;
+	int r;
+
+	assert(z);
+
+	z->device = sd_device_unref(z->device);
+
+	/* prepare device monitor. */
+	r = sd_device_monitor_new(&m);
+	if (r < 0)
+		return r;
+
+	r = sd_device_monitor_filter_add_match_subsystem_devtype(m, "block", "disk");
+	if (r < 0)
+		return r;
+
+	r = sd_device_monitor_start(m, monitor_callback, z);
+	if (r < 0)
+		return r;
+
+	event = sd_device_monitor_get_event(m);
+
+	/* Wait up to 3 seconds. */
+	r = sd_event_add_time_relative(event, NULL, CLOCK_BOOTTIME, 3 * 1000 * 1000, 0, NULL, (void*) (intptr_t) (-ETIMEDOUT));
+	if (r < 0)
+	        return r;
+
+	/* Check if the device is already initialized. */
+#if HAVE_DECL_SD_DEVICE_OPEN
+	/* sd_device_new_from_devname() and sd_device_open() are both since systemd-251 */
+	r = sd_device_new_from_devname(&dev, z->devname);
+#else
+	{
+		char syspath[PATH_MAX];
+		const char *slash;
+
+		slash = strrchr(z->devname, '/');
+		if (!slash)
+			return -EINVAL;
+		snprintf(syspath, sizeof(syspath), "/sys/class/block/%s", slash+1);
+
+		r = sd_device_new_from_syspath(&dev, syspath);
+	}
+#endif
+	if (r < 0)
+		return r;
+
+	r = sd_device_get_is_initialized(dev);
+	if (r < 0)
+		return r;
+	if (r > 0) {
+		/* Already initialized. It is not necessary to wait with the monitor. */
+		z->device = dev;
+		dev = NULL;
+		return 0;
+	}
+
+	return sd_event_loop(event);
+#else
+	assert(z);
+	return 0;
+#endif
+}
+
+static int zram_lock(struct zram *z, int operation)
+{
+	int fd, r;
+
+	assert(z);
+	assert((operation & ~LOCK_NB) == LOCK_SH ||
+	       (operation & ~LOCK_NB) == LOCK_EX);
+
+	if (z->lock_fd >= 0)
+		return 0;
+
+#if HAVE_DECL_SD_DEVICE_OPEN
+	if (z->device) {
+		fd = sd_device_open(z->device, O_RDONLY|O_CLOEXEC|O_NONBLOCK|O_NOCTTY);
+	        if (fd < 0)
+			return fd;
+	} else {
+#endif
+		fd = open(z->devname, O_RDONLY|O_CLOEXEC|O_NONBLOCK|O_NOCTTY);
+		if (fd < 0)
+			return -errno;
+#if HAVE_DECL_SD_DEVICE_OPEN
+	}
+#endif
+
+	if (flock(fd, operation) < 0) {
+		r = -errno;
+		close(fd);
+		return r;
+	}
+
+	z->lock_fd = fd;
+	return 0;
+}
+
+static void zram_unlock(struct zram *z) {
+	if (z && z->lock_fd >= 0) {
+		close(z->lock_fd);
+		z->lock_fd = -EBADF;
+	}
+}
+
 static void zram_reset_stat(struct zram *z)
 {
 	if (z) {
-		strv_free(z->mm_stat);
+		ul_strv_free(z->mm_stat);
 		z->mm_stat = NULL;
 		z->mm_stat_probed = 0;
 	}
@@ -192,6 +347,8 @@ static struct zram *new_zram(const char *devname)
 	DBG(fprintf(stderr, "new: %p", z));
 	if (devname)
 		zram_set_devname(z, devname, 0);
+
+	z->lock_fd = -EBADF;
 	return z;
 }
 
@@ -202,6 +359,12 @@ static void free_zram(struct zram *z)
 	DBG(fprintf(stderr, "free: %p", z));
 	ul_unref_path(z->sysfs);
 	zram_reset_stat(z);
+	zram_unlock(z);
+
+#if HAVE_DECL_SD_DEVICE_NEW_FROM_SYSPATH
+	sd_device_unref(z->device);
+#endif
+
 	free(z);
 }
 
@@ -362,11 +525,11 @@ static int get_mm_stat(struct zram *z,
 	if (!z->mm_stat && !z->mm_stat_probed) {
 		char *str = NULL;
 		if (ul_path_read_string(sysfs, &str, "mm_stat") > 0 && str) {
-			z->mm_stat = strv_split(str, " ");
+			z->mm_stat = ul_strv_split(str, " ");
 
 			/* make sure kernel provides mm_stat as expected */
-			if (strv_length(z->mm_stat) < ARRAY_SIZE(mm_stat_names)) {
-				strv_free(z->mm_stat);
+			if (ul_strv_length(z->mm_stat) < ARRAY_SIZE(mm_stat_names)) {
+				ul_strv_free(z->mm_stat);
 				z->mm_stat = NULL;
 			}
 		}
@@ -581,17 +744,18 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("Set up and control zram devices.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	fputs(_(" -a, --algorithm <alg>              compression algorithm to use\n"), out);
-	fputs(_(" -b, --bytes                        print sizes in bytes rather than in human readable format\n"), out);
-	fputs(_(" -f, --find                         find a free device\n"), out);
-	fputs(_(" -n, --noheadings                   don't print headings\n"), out);
-	fputs(_(" -o, --output <list>                columns to use for status output\n"), out);
-	fputs(_("     --output-all                   output all columns\n"), out);
-	fputs(_(" -p, --algorithm-params <params>    algorithm parameters to use\n"), out);
-	fputs(_("     --raw                          use raw status output format\n"), out);
-	fputs(_(" -r, --reset                        reset all specified devices\n"), out);
-	fputs(_(" -s, --size <size>                  device size\n"), out);
-	fputs(_(" -t, --streams <number>             number of compression streams\n"), out);
+	fputs(_(" -a, --algorithm <alg>     compression algorithm to use\n"), out);
+	fputs(_(" -b, --bytes               print sizes in bytes, not in human-readable form\n"), out);
+	fputs(_(" -f, --find                find a free device\n"), out);
+	fputs(_(" -n, --noheadings          don't print headings\n"), out);
+	fputs(_(" -o, --output <list>       columns to use for status output\n"), out);
+	fputs(_("     --output-all          output all columns\n"), out);
+	fputs(_(" -p, --algorithm-params <parameter>...\n"
+		"                           parameters for the compression algorithm\n"), out);
+	fputs(_(" -r, --reset <device>...   reset the specified zram devices\n"), out);
+	fputs(_("     --raw                 use raw status output format\n"), out);
+	fputs(_(" -s, --size <size>         device size\n"), out);
+	fputs(_(" -t, --streams <number>    number of compression streams\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
 	fprintf(out, USAGE_HELP_OPTIONS(27));
@@ -599,8 +763,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(USAGE_ARGUMENTS, out);
 	fprintf(out, USAGE_ARG_SIZE(_("<size>")));
 
-	fputs(_(" <alg> specify algorithm, supported are:\n"), out);
-	fputs(_("   lzo, lz4, lz4hc, deflate, 842 and zstd\n"), out);
+	fputs(_(" <alg> is the name of an algorithm; supported are:\n"), out);
+	fputs(  "   lzo, lz4, lz4hc, deflate, 842, zstd\n", out);
 	fputs(_("   (List may be inaccurate, consult man page.)\n"), out);
 
 	fputs(USAGE_COLUMNS, out);
@@ -760,8 +924,10 @@ int main(int argc, char **argv)
 			errx(EXIT_FAILURE, _("no device specified"));
 		while (optind < argc) {
 			zram = new_zram(argv[optind]);
-			if (!zram_exist(zram)
-			    || zram_set_u64parm(zram, "reset", 1)) {
+			if (!zram_exist(zram) ||
+			    zram_wait_initialized(zram) ||
+			    zram_lock(zram, LOCK_EX | LOCK_NB) ||
+			    (zram_unlock(zram), zram_set_u64parm(zram, "reset", 1))) {
 				warn(_("%s: failed to reset"), zram->devname);
 				rc = 1;
 			}
@@ -790,11 +956,25 @@ int main(int argc, char **argv)
 				err(EXIT_FAILURE, "%s", zram->devname);
 		}
 
+		/* Wait for udevd initialized the device. */
+		if (zram_wait_initialized(zram))
+			err(EXIT_FAILURE, _("%s: failed to wait for initialized"), zram->devname);
+
+		/* Even if the device has been initialized by udevd, the device may be still opened and
+		 * locked by udevd. Let's wait for the lock taken by udevd is released. */
+		if (zram_lock(zram, LOCK_EX))
+			err(EXIT_FAILURE, _("%s: failed to lock"), zram->devname);
+
+		/* Writting 'reset' attribute is refused by the kernel when the device node is opened.
+		 * Hence, we cannot keep the lock, unfortunately. */
+		zram_unlock(zram);
+
 		if (zram_set_u64parm(zram, "reset", 1))
 			err(EXIT_FAILURE, _("%s: failed to reset"), zram->devname);
 
 		if (nstreams &&
-		    zram_set_u64parm(zram, "max_comp_streams", nstreams))
+		    zram_set_u64parm(zram, "max_comp_streams", nstreams) &&
+		    errno != ENOENT)
 			err(EXIT_FAILURE, _("%s: failed to set number of streams"), zram->devname);
 
 		if (algorithm &&

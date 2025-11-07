@@ -346,16 +346,6 @@ int loopcxt_get_fd(struct loopdev_cxt *lc)
 	return __loopcxt_get_fd(lc, O_RDONLY);
 }
 
-int loopcxt_set_fd(struct loopdev_cxt *lc, int fd, mode_t mode)
-{
-	if (!lc)
-		return -EINVAL;
-
-	lc->fd = fd;
-	lc->mode = mode;
-	return 0;
-}
-
 /*
  * @lc: context
  * @flags: LOOPITER_FL_* flags
@@ -488,7 +478,7 @@ static int loop_scandir(const char *dirname, int **ary, int hasprefix)
 		    d->d_type != DT_LNK)
 			continue;
 #endif
-		if (!strcmp(d->d_name, ".") || !strcmp(d->d_name, ".."))
+		if (is_dotdir_dirent(d))
 			continue;
 
 		if (hasprefix) {
@@ -594,9 +584,7 @@ static int loopcxt_next_from_sysfs(struct loopdev_cxt *lc)
 
 		DBG(ITER, ul_debugobj(iter, "check %s", d->d_name));
 
-		if (strcmp(d->d_name, ".") == 0
-		    || strcmp(d->d_name, "..") == 0
-		    || strncmp(d->d_name, "loop", 4) != 0)
+		if (is_dotdir_dirent(d) || strncmp(d->d_name, "loop", 4) != 0)
 			continue;
 
 		snprintf(name, sizeof(name), "%s/loop/backing_file", d->d_name);
@@ -702,10 +690,10 @@ int is_loopdev(const char *device)
 
 		snprintf(name, sizeof(name), _PATH_SYS_DEVBLOCK "/%d:%d",
 				major(st.st_rdev), minor(st.st_rdev));
-		cn = canonicalize_path(name);
+		cn = ul_canonicalize_path(name);
 		if (cn)
 			p = stripoff_last_component(cn);
-		rc = p && startswith(p, "loop");
+		rc = p && ul_startswith(p, "loop");
 		free(cn);
 	}
 
@@ -1267,7 +1255,7 @@ int loopcxt_set_backing_file(struct loopdev_cxt *lc, const char *filename)
 	if (!lc)
 		return -EINVAL;
 
-	lc->filename = canonicalize_path(filename);
+	lc->filename = ul_canonicalize_path(filename);
 	if (!lc->filename)
 		return -errno;
 
@@ -1428,14 +1416,7 @@ int loopcxt_setup_device(struct loopdev_cxt *lc)
 	do {
 		errno = 0;
 
-		/* For the ioctls, it's enough to use O_RDONLY, but udevd
-		 * monitor devices by inotify, and udevd needs IN_CLOSE_WRITE
-		 * event to trigger probing of the new device.
-		 *
-		 * The mode used for the device does not have to match the mode
-		 * used for the backing file.
-		 */
-		dev_fd = __loopcxt_get_fd(lc, O_RDWR);
+		dev_fd = __loopcxt_get_fd(lc, mode);
 		if (dev_fd >= 0 || lc->control_ok == 0)
 			break;
 		if (errno != EACCES && errno != ENOENT)
@@ -1620,14 +1601,53 @@ int loopcxt_ioctl_blocksize(struct loopdev_cxt *lc, uint64_t blocksize)
 	return 0;
 }
 
-int loopcxt_delete_device(struct loopdev_cxt *lc)
+/*
+ * @lc: context
+ * @nr: returns loop device number
+ *
+ * Extracts the loop device number from the device path.
+ * Supports both /dev/loop<N> and /dev/loop/<N> formats.
+ *
+ * Returns: 0 on success, <0 on error
+ */
+static int loopcxt_get_device_nr(struct loopdev_cxt *lc, int *nr)
+{
+	const char *p, *dev;
+	int rc = -EINVAL;
+
+	errno = 0;
+	if (!lc || !nr)
+		return rc;
+
+	dev = loopcxt_get_device(lc);
+	if (!dev)
+		goto done;
+
+	p = strrchr(dev, '/');
+	if (!p)
+		goto done;
+
+	if (sscanf(p, "/loop%d", nr) != 1 && sscanf(p, "/%d", nr) != 1)
+		goto done;
+
+	if (*nr < 0)
+		goto done;
+	rc = 0;
+done:
+	if (rc && !errno)
+		errno = -rc;
+	DBG(CXT, ul_debugobj(lc, "get_device_nr [nr=%d]", *nr));
+	return rc;
+}
+
+int loopcxt_detach_device(struct loopdev_cxt *lc)
 {
 	int rc, fd = loopcxt_get_fd(lc);
 
 	if (fd < 0)
 		return -EINVAL;
 
-	DBG(SETUP, ul_debugobj(lc, "calling LOOP_SET_CLR_FD"));
+	DBG(SETUP, ul_debugobj(lc, "calling LOOP_CLR_FD"));
 
 	rc = repeat_on_eagain( ioctl(fd, LOOP_CLR_FD, 0) );
 	if (rc != 0) {
@@ -1639,23 +1659,44 @@ int loopcxt_delete_device(struct loopdev_cxt *lc)
 	return 0;
 }
 
+int loopcxt_remove_device(struct loopdev_cxt *lc)
+{
+       int rc = -EINVAL;
+       int ctl, nr = -1;
+
+       if (!(lc->flags & LOOPDEV_FL_CONTROL)) {
+               rc = -ENOSYS;
+               goto done;
+       }
+
+       rc = loopcxt_get_device_nr(lc, &nr);
+       if (rc)
+               goto done;
+
+       ctl = open(_PATH_DEV_LOOPCTL, O_RDWR|O_CLOEXEC);
+       if (ctl >= 0) {
+               DBG(CXT, ul_debugobj(lc, "remove_device %d", nr));
+               rc = ioctl(ctl, LOOP_CTL_REMOVE, nr);
+               close(ctl);
+       }
+       lc->control_ok = rc >= 0 ? 1 : 0;
+done:
+       DBG(CXT, ul_debugobj(lc, "remove_device done [rc=%d]", rc));
+       return rc;
+}
+
 int loopcxt_add_device(struct loopdev_cxt *lc)
 {
 	int rc = -EINVAL;
 	int ctl, nr = -1;
-	const char *p, *dev = loopcxt_get_device(lc);
-
-	if (!dev)
-		goto done;
 
 	if (!(lc->flags & LOOPDEV_FL_CONTROL)) {
 		rc = -ENOSYS;
 		goto done;
 	}
 
-	p = strrchr(dev, '/');
-	if (!p || (sscanf(p, "/loop%d", &nr) != 1 && sscanf(p, "/%d", &nr) != 1)
-	       || nr < 0)
+	rc = loopcxt_get_device_nr(lc, &nr);
+	if (rc)
 		goto done;
 
 	ctl = open(_PATH_DEV_LOOPCTL, O_RDWR|O_CLOEXEC);
@@ -1706,7 +1747,7 @@ int loopcxt_find_unused(struct loopdev_cxt *lc)
 		DBG(CXT, ul_debugobj(lc, "find_unused by loop-control [rc=%d]", rc));
 	}
 
-	if (rc < 0) {
+	if (rc < 0 && rc != -EACCES) {
 		DBG(CXT, ul_debugobj(lc, "using loop scan"));
 		rc = loopcxt_init_iterator(lc, LOOPITER_FL_FREE);
 		if (rc)
@@ -1803,7 +1844,7 @@ int loopdev_is_used(const char *device, const char *filename,
 /*
  * Returns: 0 = success, < 0 error
  */
-int loopdev_delete(const char *device)
+int loopdev_detach(const char *device)
 {
 	struct loopdev_cxt lc;
 	int rc;
@@ -1815,7 +1856,7 @@ int loopdev_delete(const char *device)
 	if (!rc)
 		rc = loopcxt_set_device(&lc, device);
 	if (!rc)
-		rc = loopcxt_delete_device(&lc);
+		rc = loopcxt_detach_device(&lc);
 	loopcxt_deinit(&lc);
 	return rc;
 }

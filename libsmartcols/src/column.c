@@ -107,11 +107,13 @@ struct libscols_column *scols_copy_column(const struct libscols_column *cl)
 		goto err;
 	if (scols_cell_copy_content(&ret->header, &cl->header))
 		goto err;
+	if (scols_column_refer_annotation(ret, cl->annotation))
+		goto err;
 
-	ret->width	= cl->width;
-	ret->width_hint	= cl->width_hint;
-	ret->flags	= cl->flags;
-	ret->is_groups  = cl->is_groups;
+	ret->width		= cl->width;
+	ret->width_hint		= cl->width_hint;
+	ret->flags		= cl->flags;
+	ret->is_groups		= cl->is_groups;
 
 	memcpy(&ret->wstat, &cl->wstat, sizeof(cl->wstat));
 
@@ -320,6 +322,75 @@ const char *scols_column_get_name(struct libscols_column *cl)
 }
 
 /**
+ * scols_column_refer_annotation:
+ * @cl: a pointer to a struct libscols_column instance
+ * @annotation: column annotation
+ *
+ * Returns: 0, a negative value in case of an error.
+ *
+ * Since: 2.42
+ */
+int scols_column_refer_annotation(struct libscols_column *cl, const char *annotation)
+{
+	if (!annotation)
+		return -1;
+
+	cl->annotation = (char *) annotation;
+	return 0;
+}
+
+/**
+ * scols_column_get_annotation:
+ * @cl: a pointer to a struct libscols_column instance
+ *
+ * Returns: A pointer to a column annotation, which is stored in column annotation
+ *
+ * Since: 2.42
+ */
+const char *scols_column_get_annotation(struct libscols_column *cl)
+{
+	return cl->annotation;
+}
+
+/**
+ * scols_column_set_headercolor:
+ * @cl: a pointer to a struct libscols_column instance
+ * @color: color name or ESC sequence
+ *
+ * The set header color.
+ *
+ * Returns: 0, a negative value in case of an error.
+ *
+ * Since: 2.42
+ */
+int scols_column_set_headercolor(struct libscols_column *cl, const char *color)
+{
+	struct libscols_cell *hdr = scols_column_get_header(cl);
+
+	if (!hdr)
+		return -EINVAL;
+
+	return scols_cell_set_color(hdr, color);
+}
+
+/**
+ * scols_column_get_headercolor:
+ * @cl: a pointer to a struct libscols_column instance
+ *
+ * Returns: The current color setting of the column header or NULL.
+ *
+ * Since: 2.42
+ */
+const char *scols_column_get_headercolor(struct libscols_column *cl)
+{
+	struct libscols_cell *hdr = scols_column_get_header(cl);
+
+	if (hdr)
+		return scols_cell_get_color(hdr);
+	return NULL;
+}
+
+/**
  * scols_shellvar_name:
  * @name: raw (column) name
  * @buf: buffer to returns normalized name
@@ -404,7 +475,7 @@ const char *scols_column_get_name_as_shellvar(struct libscols_column *cl)
  * The default color for data cells and column header.
  *
  * If you want to set header specific color then use scols_column_get_header()
- * and scols_cell_set_color().
+ * and scols_cell_set_color() or scols_column_set_headercolor() since v2.42.
  *
  * If you want to set data cell specific color the use scols_line_get_cell() +
  * scols_cell_set_color().
@@ -447,12 +518,15 @@ const char *scols_column_get_color(const struct libscols_column *cl)
  * The final cell URI is composed of the column-uri, cell-uri, and cell-data.
  * The column-uri and/or cell-uri must be set for this feature to be enabled.
  *
+ * <informalexample>
+ * <programlisting>
  * column-uri  cell-uri                  cell-data      final-URI                 link
- * -----------------------------------------------------------------------------------
+ * --------------------------------------------------------------------------------------------
  *             file://host/path/foo.txt  foo            file://host/path/foo.txt  foo
  * file://host /path/foo.txt             foo            file://host/path/foo.txt  foo
  * file://host                           /path/foo.txt  file://host/path/foo.txt  /path/foo.txt
- *
+ * </programlisting>
+ * </informalexample>
  *
  * Returns: 0, a negative value in case of an error.
  */
@@ -669,7 +743,7 @@ int scols_column_get_wrap_data(const struct libscols_column *cl,
 	return 0;
 }
 
-/*
+/**
  * scols_column_set_data_func:
  * @cl: a pointer to a struct libscols_column instance
  * @datafunc: function to return data
@@ -679,7 +753,7 @@ int scols_column_get_wrap_data(const struct libscols_column *cl,
  * for some internal operations (like filters or counters) it needs to convert
  * the strings to usable data format. If this conversion is not possible then
  * application can define datafunc() callback to provide data for filters and counters.
-
+ *
  * The callback needs to return the data as pointer to void, and the data type
  * is defined by scols_column_set_data_type().
  *
@@ -874,8 +948,10 @@ int scols_column_is_customwrap(const struct libscols_column *cl)
  * @cl: a pointer to a struct libscols_column instance
  * @opts: options string
  *
- * Set properties from string, the string is comma separated list, like
- * "trunc,right,json=number", ...
+ * Set properties from string, the string is comma separated list. Supported
+ * properties are: trunc, tree, right, strictwidth, noextremes, hidden, wrap,
+ * wrapnl, wrapzero,json={string,number,float,array-string,array-number,boolean},
+ * width=, color=, headercolor= and name=.
  *
  * Returns: 0 on success, <0 on error
  *
@@ -958,6 +1034,14 @@ int scols_column_set_properties(struct libscols_column *cl, const char *opts)
 			char *x = strndup(value, valuesz);
 			if (x) {
 				scols_column_set_color(cl, x);
+				free(x);
+			}
+
+		} else if (value && strncmp(name, "headercolor", namesz) == 0) {
+
+			char *x = strndup(value, valuesz);
+			if (x) {
+				scols_column_set_headercolor(cl, x);
 				free(x);
 			}
 

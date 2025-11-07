@@ -4,6 +4,7 @@ AM_CPPFLAGS = \
 	-DLOCALEDIR=\"$(localedir)\" \
 	-D_PATH_RUNSTATEDIR=\"${runstatedir}\" \
 	-D_PATH_LOCALSTATEDIR=\"${localstatedir}\" \
+	-D_PATH_SYSCONFDIR=\"${sysconfdir}\" \
 	-D_PATH_SYSCONFSTATICDIR=\"${sysconfstaticdir}\"
 
 if USE_VENDORDIR
@@ -62,6 +63,7 @@ sbin_PROGRAMS =
 dist_usrbin_exec_SCRIPTS =
 systemdsystemunit_DATA =
 tmpfiles_DATA =
+sysusers_DATA =
 dist_bashcompletion_DATA =
 check_PROGRAMS =
 dist_check_SCRIPTS =
@@ -81,14 +83,9 @@ CHECK_LOCALS =
 
 EXTRA_DIST =
 CLEANFILES =
+DISTCLEANFILES =
 
 SUBDIRS = po
-
-if ENABLE_ASCIIDOC
-if ENABLE_POMAN
-SUBDIRS += po-man
-endif
-endif
 
 RCS_FIND_IGNORE = \( -name SCCS -o -name BitKeeper -o -name .svn -o \
 		-name CVS -o -name .pc -o -name .hg -o -name .git \) -prune -o
@@ -124,6 +121,7 @@ include lsfd-cmd/Makemodule.am
 include pam_lastlog2/Makemodule.am
 include bash-completion/Makemodule.am
 include man-common/Makemodule.am
+include po-man/Makemodule.am
 
 include Documentation/Makemodule.am
 include tests/Makemodule.am
@@ -135,22 +133,29 @@ EXTRA_DIST += \
 	tools/meson-make-manpage-stub.sh \
 	tools/meson-make-symlink.sh \
 	\
+	disk-utils/meson.build \
 	include/meson.build \
 	libblkid/meson.build \
+	libfdisk/meson.build \
+	liblastlog2/man/meson.build \
+	liblastlog2/meson.build \
+	lib/meson.build \
 	libmount/meson.build \
 	libmount/python/meson.build \
-	misc-utils/meson.build \
 	libsmartcols/meson.build \
-	text-utils/meson.build \
-	po/meson.build \
-	lib/meson.build \
+	libuuid/man/meson.build \
 	libuuid/meson.build \
-	liblastlog2/meson.build \
+	login-utils/meson.build \
+	lsfd-cmd/meson.build \
+	man-common/meson.build \
+	misc-utils/meson.build \
+	pam_lastlog2/man/meson.build \
+	po-man/meson.build \
+	po/meson.build \
+	schedutils/meson.build \
 	sys-utils/meson.build \
-	libfdisk/meson.build \
 	term-utils/meson.build \
-	disk-utils/meson.build \
-	login-utils/meson.build
+	text-utils/meson.build
 
 # pylibmountexec module must be installed after usrlib_exec libraries,
 # otherwise the libtool relink step will fail to find libmount.la and
@@ -227,7 +232,7 @@ edit_cmd += -e 's|@vendordir[@]||g'
 endif
 
 CLEANFILES += $(PATHFILES) $(EXTRA_LTLIBRARIES)
-EXTRA_DIST += $(PATHFILES:=.in)
+EXTRA_DIST += $(PATHFILES:=.in) $(ADOCFILES_COMMON)
 
 $(PATHFILES): Makefile
 	@ rm -f $@ $@.tmp
@@ -239,7 +244,7 @@ $(PATHFILES): Makefile
 
 
 if ENABLE_ASCIIDOC
-EXTRA_DIST += $(ADOCFILES_COMMON) $(MANPAGES) $(MANLINKS)
+EXTRA_DIST += $(MANPAGES) $(MANLINKS)
 man_MANS += $(MANPAGES) $(MANLINKS)
 
 $(MANPAGES): $(ADOCFILES_COMMON)
@@ -263,7 +268,6 @@ SUFFIXES = .1.adoc .3.adoc .5.adoc .8.adoc .1 .3 .5 .8
 		$(MKDIR_P) $$(dirname $@) && \
 		$(asciidoc_man_cmd) --base-dir=$(abs_srcdir) \
 				    --destination-dir $(abs_builddir)/$$(dirname $@) $<
-
 -include \
 	$(abs_builddir)/**.1.deps \
 	$(abs_builddir)/**.3.deps \
@@ -271,12 +275,12 @@ SUFFIXES = .1.adoc .3.adoc .5.adoc .8.adoc .1 .3 .5 .8
 	$(abs_builddir)/**.8.deps
 
 $(MANLINKS): $(MANPAGES)
-gen-man: $(man_MANS)
+gen-man: $(man_MANS) gen-poman
 
 # Standard "make" follows BUILD_* macros from ./configure, and in this case, it
 # ignores man pages for disabled tools, but for distribution tarball, we need
 # to generate all man-pages (to avoid dependence on asciidoc). [kzak Jan-2022]
-gen-man-dist:
+gen-man-dist: gen-poman-dist
 	@list=`find -name *.adoc -not -path "*/man-common/*" -not -path "*/po-man/*" | sed -e 's/\.adoc//g'`; \
 	missing=`for p in $$list; do test -f $$p || echo $$p; done`; \
 	if test -n "$$missing"; then \
@@ -288,13 +292,15 @@ gen-man-dist:
 else
 
 if HAVE_MANPAGES
-EXTRA_DIST += $(ADOCFILES_COMMON) $(MANPAGES) $(MANLINKS)
+EXTRA_DIST += $(MANPAGES) $(MANLINKS)
 man_MANS += $(MANPAGES) $(MANLINKS)
 endif
 
 gen-man:
 gen-man-dist:
 endif
+
+all-local: gen-man
 
 
 # Arrange so that .tarball-version appears only in the distribution
@@ -360,7 +366,8 @@ DISTCHECK_CONFIGURE_FLAGS = \
 	--with-python \
 	--with-bashcompletiondir=$$dc_install_base/$(bashcompletiondir) \
 	--with-systemdsystemunitdir=$$dc_install_base/$(systemdsystemunitdir) \
-	--with-tmpfilesdir=$$dc_install_base/$(tmpfilesdir)
+	--with-tmpfilesdir=$$dc_install_base/$(tmpfilesdir) \
+	--with-sysusersdir=$$dc_install_base/$(sysusersdir)
 
 BUILT_SOURCES += .version
 .version:

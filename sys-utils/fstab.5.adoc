@@ -33,6 +33,8 @@ SUCH DAMAGE.
 
     @(#)fstab.5	6.5 (Berkeley) 5/10/91
 ////
+ifdef::neverdefined[---]
+
 = fstab(5)
 :doctype: manpage
 :man manual: File formats
@@ -54,7 +56,11 @@ The file *fstab* contains descriptive information about the filesystems the syst
 
 The file is not read by *mount*(8) only but often is used by many other tools and daemons, and proper functionality may require additional steps. For example, on systemd-based systems, it's recommended to use *systemctl daemon-reload* after *fstab* modification.
 
-Each filesystem is described on a separate line. Fields on each line are separated by tabs or spaces. Lines starting with '#' are comments. Blank lines are ignored.
+See the *swapon*(8) man page for details about swap area fstab configuration.
+
+Each filesystem is described on a separate line, with fields separated by tabs or spaces. The line is split into fields before being parsed. This means that any spaces or tabs within the fields must be escaped using \040 or \011, even within quoted strings (e.g. LABEL="foo\040bar").
+
+Lines starting with '#' are comments. Blank lines are ignored.
 
 The following is a typical example of an *fstab* entry:
 

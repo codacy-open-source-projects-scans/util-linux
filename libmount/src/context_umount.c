@@ -711,29 +711,28 @@ static int exec_helper(struct libmnt_context *cxt)
 		type = mnt_fs_get_fstype(cxt->fs);
 
 		args[i++] = cxt->helper;			/* 1 */
+		args[i++] = mnt_fs_get_target(cxt->fs);		/* 2 */
 
 		if (mnt_context_is_nomtab(cxt))
-			args[i++] = "-n";			/* 2 */
+			args[i++] = "-n";			/* 3 */
 		if (mnt_context_is_lazy(cxt))
-			args[i++] = "-l";			/* 3 */
+			args[i++] = "-l";			/* 4 */
 		if (mnt_context_is_force(cxt))
-			args[i++] = "-f";			/* 4 */
+			args[i++] = "-f";			/* 5 */
 		if (mnt_context_is_verbose(cxt))
-			args[i++] = "-v";			/* 5 */
+			args[i++] = "-v";			/* 6 */
 		if (mnt_context_is_rdonly_umount(cxt))
-			args[i++] = "-r";			/* 6 */
+			args[i++] = "-r";			/* 7 */
 		if (type
 		    && strchr(type, '.')
-		    && !endswith(cxt->helper, type)) {
-			args[i++] = "-t";			/* 7 */
-			args[i++] = type;			/* 8 */
+		    && !ul_endswith(cxt->helper, type)) {
+			args[i++] = "-t";			/* 8 */
+			args[i++] = type;			/* 9 */
 		}
 		if (namespace) {
-			args[i++] = "-N";			/* 9 */
-			args[i++] = namespace;			/* 10 */
+			args[i++] = "-N";			/* 10 */
+			args[i++] = namespace;			/* 11 */
 		}
-
-		args[i++] = mnt_fs_get_target(cxt->fs);		/* 11 */
 
 		args[i] = NULL;					/* 12 */
 		for (i = 0; args[i]; i++)
@@ -935,6 +934,7 @@ static int do_umount(struct libmnt_context *cxt)
 		}
 		cxt->syscall_status = 0;
 		DBG(CXT, ul_debugobj(cxt, "read-only re-mount(2) success"));
+		mnt_fs_mark_attached(cxt->fs);
 		return 0;
 	}
 
@@ -945,6 +945,7 @@ static int do_umount(struct libmnt_context *cxt)
 	}
 
 	cxt->syscall_status = 0;
+	mnt_fs_mark_detached(cxt->fs);
 	DBG(CXT, ul_debugobj(cxt, "umount(2) success"));
 	return 0;
 }

@@ -21,8 +21,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -313,6 +312,7 @@ static void tcinit(struct console *con)
 		}
 
 		setlocale(LC_CTYPE, "POSIX");
+		setlocale(LC_MESSAGES, "POSIX");
 		goto setattr;
 	}
 #if defined(IUTF8) && defined(KDGKBMODE)
@@ -327,10 +327,12 @@ static void tcinit(struct console *con)
 	case K_XLATE:
 	default:
 		setlocale(LC_CTYPE, "POSIX");
+		setlocale(LC_MESSAGES, "POSIX");
 		break;
 	}
 #else
 	setlocale(LC_CTYPE, "POSIX");
+	setlocale(LC_MESSAGES, "POSIX");
 #endif
 	reset_virtual_console(tio, flags);
 setattr:
@@ -398,11 +400,11 @@ static void tcfinal(struct console *con)
 		break;
 	case 1:				/* odd parity */
 		tio->c_cflag |= PARODD;
-		/* fallthrough */
+		FALLTHROUGH;
 	case 2:				/* even parity */
 		tio->c_cflag |= PARENB;
 		tio->c_iflag |= (INPCK | ISTRIP);
-		/* fallthrough */
+		FALLTHROUGH;
 	case (1 | 2):			/* no parity bit */
 		tio->c_cflag &= ~CSIZE;
 		tio->c_cflag |= CS7;
@@ -793,7 +795,7 @@ static char *getpasswd(struct console *con)
 			switch (errno) {
 			case EIO:
 				con->flags |= CON_EIO;
-				/* fallthrough */
+				FALLTHROUGH;
 			default:
 				warn(_("cannot read %s"), con->tty);
 				break;
@@ -1035,7 +1037,7 @@ int main(int argc, char **argv)
 	while ((c = getopt_long(argc, argv, "ehpt:V", longopts, NULL)) != -1) {
 		switch(c) {
 		case 't':
-			timeout = strtou32_or_err(optarg, _("invalid timeout argument"));
+			timeout = strtou32_or_err(optarg, _("invalid timeout"));
 			break;
 		case 'p':
 			profile = 1;
@@ -1048,6 +1050,21 @@ int main(int argc, char **argv)
 			static const char *const features[] = {
 #ifdef USE_SULOGIN_EMERGENCY_MOUNT
 				"emergency-mount",
+#endif
+#ifdef HAVE_LIBSELINUX
+				"selinux",
+#endif
+#ifdef USE_PLYMOUTH_SUPPORT
+				"plymouth",
+#endif
+#ifdef KDGKBMODE
+				"keyboard mode",
+#endif
+#ifdef HAVE_WIDECHAR
+				"widechar",
+#endif
+#ifdef TIOCGSERIAL
+				"serial-info",
 #endif
 				NULL
 			};
@@ -1223,7 +1240,7 @@ int main(int argc, char **argv)
 			exit(0);
 		case -1:
 			warn(_("fork failed"));
-			/* fallthrough */
+			FALLTHROUGH;
 		default:
 			break;
 		}

@@ -19,7 +19,6 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <wchar.h>
 #include <libsmartcols.h>
 #include <libmount.h>
 # include <stdbool.h>
@@ -43,6 +42,8 @@
 #include "nls.h"
 #include "xalloc.h"
 #include "c.h"
+#include "cctype.h"
+#include "widechar.h"
 #include "list.h"
 #include "closestream.h"
 #include "optutils.h"
@@ -271,11 +272,19 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
 	return -1;
+}
+
+static inline const char *column_id_to_name(int id)
+{
+	assert(id >= 0);
+	assert(id < (int) ARRAY_SIZE(infos));
+
+	return infos[ id ].name;
 }
 
 static int has_column(int id)
@@ -303,7 +312,11 @@ static inline const struct colinfo *get_column_info(unsigned num)
 	return &infos[ get_column_id(num) ];
 }
 
+
 #ifdef USE_NS_GET_API
+static struct lsns_namespace *add_namespace_for_nsfd(struct lsns *ls, int fd, ino_t ino);
+
+
 /* Get the inode number for the parent namespace of the namespace `fd' specifies.
  * If `pfd' is non-null, the file descriptor opening the parent namespace.*/
 static int get_parent_ns_ino(int fd, enum lsns_type lsns_type, ino_t *pino, int *pfd)
@@ -422,8 +435,6 @@ error:
 	return rc;
 }
 
-static struct lsns_namespace *add_namespace_for_nsfd(struct lsns *ls, int fd, ino_t ino);
-
 static struct lsns_namespace *get_namespace(struct lsns *ls, ino_t ino)
 {
 	struct list_head *p;
@@ -524,7 +535,24 @@ static int get_netnsid_via_netlink_recv_response(int *netnsid)
 	return 0;
 }
 
-static int get_netnsid_via_netlink(struct path_cxt *pc, const char *path)
+static int get_netnsid_via_netlink(int target_fd)
+{
+	int netnsid;
+
+	if (netlink_fd < 0)
+		return LSNS_NETNS_UNUSABLE;
+
+	if (get_netnsid_via_netlink_send_request(target_fd) < 0)
+		return LSNS_NETNS_UNUSABLE;
+
+	netnsid = LSNS_NETNS_UNUSABLE;
+	if (get_netnsid_via_netlink_recv_response(&netnsid) < 0)
+		return LSNS_NETNS_UNUSABLE;
+
+	return netnsid;
+}
+
+static int get_netnsid_for_pc_via_netlink(struct path_cxt *pc, const char *path)
 {
 	int netnsid;
 	int target_fd;
@@ -536,27 +564,18 @@ static int get_netnsid_via_netlink(struct path_cxt *pc, const char *path)
 	if (target_fd < 0)
 		return LSNS_NETNS_UNUSABLE;
 
-	if (get_netnsid_via_netlink_send_request(target_fd) < 0) {
-		netnsid = LSNS_NETNS_UNUSABLE;
-		goto out;
-	}
+	netnsid = get_netnsid_via_netlink(target_fd);
 
-	if (get_netnsid_via_netlink_recv_response(&netnsid) < 0) {
-		netnsid = LSNS_NETNS_UNUSABLE;
-		goto out;
-	}
-
- out:
 	close(target_fd);
 	return netnsid;
 }
 
-static int get_netnsid(struct path_cxt *pc, ino_t netino)
+static int get_netnsid_for_pc(struct path_cxt *pc, ino_t netino)
 {
 	int netnsid;
 
 	if (!netnsid_cache_find(netino, &netnsid)) {
-		netnsid = get_netnsid_via_netlink(pc, "ns/net");
+		netnsid = get_netnsid_for_pc_via_netlink(pc, "ns/net");
 		netnsid_cache_add(netino, netnsid);
 	}
 
@@ -587,7 +606,10 @@ static void add_namespace_from_sock(struct lsns *ls, pid_t pid, uint64_t fd)
 	if (get_namespace(ls, sb.st_ino))
 		goto out_nsfd;
 
+#ifdef USE_NS_GET_API
 	add_namespace_for_nsfd(ls, nsfd, sb.st_ino);
+#endif
+
 out_nsfd:
 	close(nsfd);
 out_sk:
@@ -596,8 +618,8 @@ out_pidfd:
 	close(pidfd);
 }
 #else
-static int get_netnsid(struct path_cxt *pc __attribute__((__unused__)),
-		       ino_t netino __attribute__((__unused__)))
+static int get_netnsid_for_pc(struct path_cxt *pc __attribute__((__unused__)),
+			      ino_t netino __attribute__((__unused__)))
 {
 	return LSNS_NETNS_UNUSABLE;
 }
@@ -608,6 +630,7 @@ static void add_namespace_from_sock(struct lsns *ls __attribute__((__unused__)),
 {
 }
 #endif /* HAVE_LINUX_NET_NAMESPACE_H */
+
 /* Read namespaces open(2)ed explicitly by the process specified by `pc'. */
 static void read_opened_namespaces(struct lsns *ls, struct path_cxt *pc, pid_t pid)
 {
@@ -627,11 +650,13 @@ static void read_opened_namespaces(struct lsns *ls, struct path_cxt *pc, pid_t p
 		if (st.st_dev == ls->nsfs_dev) {
 			if (get_namespace(ls, st.st_ino))
 				continue;
+#ifdef USE_NS_GET_API
 			int fd = ul_path_openf(pc, O_RDONLY, "fd/%ju", (uintmax_t) num);
 			if (fd >= 0) {
 				add_namespace_for_nsfd(ls, fd, st.st_ino);
 				close(fd);
 			}
+#endif
 		} else if ((st.st_mode & S_IFMT) == S_IFSOCK) {
 			add_namespace_from_sock(ls, pid, num);
 		}
@@ -674,7 +699,7 @@ static int read_process(struct lsns *ls, struct path_cxt *pc)
 			goto done;
 		}
 		if (p->ns_ids[i] && i == LSNS_TYPE_NET)
-			p->netnsid = get_netnsid(pc, p->ns_ids[i]);
+			p->netnsid = get_netnsid_for_pc(pc, p->ns_ids[i]);
 		rc = 0;
 	}
 
@@ -759,7 +784,7 @@ static int namespace_has_process(struct lsns_namespace *ns, pid_t pid)
 }
 
 static struct lsns_namespace *add_namespace(struct lsns *ls, enum lsns_type type, ino_t ino,
-					    ino_t parent_ino, ino_t owner_ino)
+					    ino_t parent_ino, ino_t owner_ino, int netnsid)
 {
 	struct lsns_namespace *ns = xcalloc(1, sizeof(*ns));
 
@@ -775,6 +800,7 @@ static struct lsns_namespace *add_namespace(struct lsns *ls, enum lsns_type type
 	ns->id = ino;
 	ns->related_id[RELA_PARENT] = parent_ino;
 	ns->related_id[RELA_OWNER] = owner_ino;
+	ns->netnsid = netnsid;
 
 	list_add_tail(&ns->namespaces, &ls->namespaces);
 	return ns;
@@ -859,6 +885,7 @@ static struct lsns_namespace *add_namespace_for_nsfd(struct lsns *ls, int fd, in
 	struct lsns_namespace *ns;
 	int clone_type;
 	enum lsns_type lsns_type;
+	int netnsid;
 
 	clone_type = lsns_ioctl(fd, NS_GET_NSTYPE);
 	if (clone_type < 0)
@@ -870,7 +897,15 @@ static struct lsns_namespace *add_namespace_for_nsfd(struct lsns *ls, int fd, in
 	get_parent_ns_ino(fd, lsns_type, &ino_parent, &fd_parent);
 	get_owner_ns_ino(fd, &ino_owner, &fd_owner);
 
-	ns = add_namespace(ls, lsns_type, ino, ino_parent, ino_owner);
+	if (lsns_type == LSNS_TYPE_NET) {
+		if (!netnsid_cache_find(ino, &netnsid)) {
+			netnsid = get_netnsid_via_netlink(fd);
+			netnsid_cache_add(ino, netnsid);
+		}
+	} else
+		netnsid = LSNS_NETNS_UNUSABLE;
+
+	ns = add_namespace(ls, lsns_type, ino, ino_parent, ino_owner, netnsid);
 	lsns_ioctl(fd, NS_GET_OWNER_UID, &ns->uid_fallback);
 	add_uid(uid_cache, ns->uid_fallback);
 
@@ -1012,7 +1047,8 @@ static int read_persistent_namespaces(struct lsns *ls)
 			continue;
 		if (get_namespace(ls, ino))
 			continue;
-
+		if (!mnt_fs_get_target(fs))
+			continue;
 		fd = open(mnt_fs_get_target(fs), O_RDONLY);
 		if (fd < 0)
 			continue;
@@ -1043,8 +1079,12 @@ static int read_assigned_namespaces(struct lsns *ls)
 			if (proc->ns_ids[i] == 0)
 				continue;
 			if (!(ns = get_namespace(ls, proc->ns_ids[i]))) {
+				int netnsid = (i == LSNS_TYPE_NET)
+					? proc->netnsid
+					: LSNS_NETNS_UNUSABLE;
 				ns = add_namespace(ls, i, proc->ns_ids[i],
-						   proc->ns_pids[i], proc->ns_oids[i]);
+						   proc->ns_pids[i], proc->ns_oids[i],
+						   netnsid);
 				if (!ns)
 					return -ENOMEM;
 			}
@@ -1132,9 +1172,11 @@ static int nsfs_xasputs(char **str,
 
 		const char *tgt = mnt_fs_get_target(fs);
 
+		if(!tgt)
+			continue;
+
 		if (!*str)
 			xasprintf(str, "%s", tgt);
-
 		else if (!is_path_included(*str, tgt, sep)) {
 			char *tmp = NULL;
 
@@ -1194,10 +1236,8 @@ static void fill_column(struct lsns *ls,
 		xasprintf(&str, "%s", get_id(uid_cache, proc? proc->uid: ns->uid_fallback)->name);
 		break;
 	case COL_NETNSID:
-		if (!proc)
-			break;
 		if (ns->type == LSNS_TYPE_NET)
-			netnsid_xasputs(&str, proc->netnsid);
+			netnsid_xasputs(&str, ns->netnsid);
 		break;
 	case COL_NSFS:
 		nsfs_xasputs(&str, ns, ls->tab, ls->no_wrap ? ',' : '\n');
@@ -1544,42 +1584,55 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -T, --tree[=<rel>]     use tree format (parent, owner, or process)\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(_(" -H, --list-columns     list the available columns\n"), out);
+	fprintf(out, USAGE_LIST_COLUMNS_OPTION(24));
 	fprintf(out, USAGE_HELP_OPTIONS(24));
 	fprintf(out, USAGE_MAN_TAIL("lsns(8)"));
 
 	exit(EXIT_SUCCESS);
 }
 
-static void __attribute__((__noreturn__)) list_colunms(bool raw, bool json)
+static void __attribute__((__noreturn__)) list_colunms(struct lsns *ls)
 {
-   struct libscols_table *col_tb = xcolumn_list_table_new("lsns-columns", stdout, raw, json);
+   struct libscols_table *col_tb = xcolumn_list_table_new("lsns-columns", stdout, ls->raw, ls->json);
 
    for (size_t i = 0; i < ARRAY_SIZE(infos); i++)
            xcolumn_list_table_append_line(col_tb, infos[i].name,
 					  infos[i].json_type, NULL,
 					  _(infos[i].help));
-
    scols_print_table(col_tb);
    scols_unref_table(col_tb);
 
    exit(EXIT_SUCCESS);
 }
 
+static int stat_self_ns (const char *ns, struct stat *st)
+{
+	int r;
+	char *fname = NULL;
+
+	xasprintf(&fname, "/proc/self/ns/%s", ns);
+	r = stat(fname, st);
+	free(fname);
+
+	return r;
+}
+
 static dev_t read_nsfs_dev(void)
 {
 	struct stat st;
 
-	if (stat("/proc/self/ns/user", &st) < 0)
-		err(EXIT_FAILURE, _("failed to do stat /proc/self/ns/user"));
+	for (size_t i = 0; i < ARRAY_SIZE(ns_names); i++) {
+		if (stat_self_ns(ns_names[i], &st) == 0)
+			return st.st_dev;
+	}
 
-	return st.st_dev;
+	return -1;
 }
 
 int main(int argc, char *argv[])
 {
 	struct lsns ls;
-	int c, force_list = 0;
+	int c, force_list = 0, collist = 0;
 	int r = 0;
 	char *outarg = NULL;
 	enum {
@@ -1649,7 +1702,7 @@ int main(int argc, char *argv[])
 			ls.persist = 1;
 			break;
 		case 'p':
-			ls.fltr_pid = strtos32_or_err(optarg, _("invalid PID argument"));
+			ls.fltr_pid = strtopid_or_err(optarg, _("invalid PID argument"));
 			break;
 		case 'n':
 			ls.no_headings = 1;
@@ -1691,8 +1744,8 @@ int main(int argc, char *argv[])
 			ls.filter = new_filter(optarg);
 			break;
 		case 'H':
-			list_colunms(ls.raw, ls.json);
-
+			collist = 1;
+			break;
 		case 'h':
 			usage();
 		case 'V':
@@ -1701,6 +1754,9 @@ int main(int argc, char *argv[])
 			errtryhelp(EXIT_FAILURE);
 		}
 	}
+
+	if (collist)
+		list_colunms(&ls);
 
 	if (!ls.fltr_ntypes) {
 		size_t i;
@@ -1755,7 +1811,9 @@ int main(int argc, char *argv[])
 		err(EXIT_FAILURE, _("failed to allocate UID cache"));
 
 #ifdef HAVE_LINUX_NET_NAMESPACE_H
-	if (has_column(COL_NETNSID))
+	if (has_column(COL_NETNSID)
+	    || (ls.filter && scols_filter_has_holder(ls.filter,
+						     column_id_to_name(COL_NETNSID))))
 		netlink_fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
 #endif
 	ls.tab = mnt_new_table_from_file(_PATH_PROC_MOUNTINFO);

@@ -312,8 +312,13 @@ function ts_init_env {
 	CHARSET="UTF-8"
 	ASAN_OPTIONS="detect_leaks=0"
 	UBSAN_OPTIONS="print_stacktrace=1:print_summary=1:halt_on_error=1"
+	KERNEL_VERSION_XYZ=$(uname -r | awk -F- '{print $1}')
+	KERNEL_VERSION_MAJOR=$(echo "$KERNEL_VERSION_XYZ" | awk -F. '{print $1}')
+	KERNEL_VERSION_MINOR=$(echo "$KERNEL_VERSION_XYZ" | awk -F. '{print $2}')
+	KERNEL_RELEASE=$(echo "$KERNEL_VERSION_XYZ" | awk -F. '{print $3}')
 
-	export LANG LANGUAGE LC_ALL CHARSET ASAN_OPTIONS UBSAN_OPTIONS
+	export LANG LANGUAGE LC_ALL CHARSET ASAN_OPTIONS UBSAN_OPTIONS \
+	       KERNEL_VERSION_XYZ KERNEL_VERSION_MAJOR KERNEL_VERSION_MINOR KERNEL_RELEASE
 
 	mydir=$(ts_canonicalize "$mydir")
 
@@ -639,6 +644,27 @@ function ts_skip_subtest {
 	# reset environment back to parental test
 	ts_init_core_env
 
+}
+
+# Specify the kernel version X.Y.Z you wish to compare against like:
+#
+#	ts_kernel_ver_lt X Y Z
+#
+function ts_kernel_ver_lt {
+	if [ $KERNEL_VERSION_MAJOR -lt $1 ]; then
+		return 0
+	elif [ $KERNEL_VERSION_MAJOR -eq $1 ]; then
+		if [ $KERNEL_VERSION_MINOR -lt $2 ]; then
+			return 0
+		elif [ $KERNEL_VERSION_MINOR -eq $2 ]; then
+			if [ $KERNEL_RELEASE -lt $3 ]; then
+				return 0
+			fi
+		fi
+
+	fi
+
+	return 1
 }
 
 function ts_finalize {
@@ -1192,12 +1218,20 @@ function ts_check_enosys_syscalls {
 	[ $? -ne 0 ] && ts_skip "test_enosys does not work: $*"
 }
 
+function ts_is_in_docker {
+	test -e /.dockerenv
+}
+
 function ts_skip_docker {
-	test -e /.dockerenv && ts_skip "unsupported in docker environment"
+	ts_is_in_docker && ts_skip "unsupported in docker environment"
 }
 
 function ts_check_ipv6 {
        if [ ! -e /proc/net/if_inet6 ]; then
                ts_skip "IPv6 is not supported"
        fi
+}
+
+function ts_skip_netns {
+	grep -q '#define HAVE_LINUX_NET_NAMESPACE_H' ${top_builddir}/config.h || ts_skip "no netns support"
 }

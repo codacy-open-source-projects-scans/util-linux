@@ -54,6 +54,7 @@
 #include "strv.h"
 #include "optutils.h"
 #include "mbsalign.h"
+#include "colors.h"
 
 #include "libsmartcols.h"
 
@@ -83,6 +84,7 @@ struct column_control {
 	const char *tab_colnoextrem;	/* --table-noextreme */
 	const char *tab_colwrap;	/* --table-wrap */
 	const char *tab_colhide;	/* --table-hide */
+	const char *tab_colorscheme;	/* --table-colorscheme */
 
 	const char *tree;
 	const char *tree_id;
@@ -90,6 +92,7 @@ struct column_control {
 
 	wchar_t *input_separator;
 	const char *output_separator;
+	const char *wrap_separator;
 
 	wchar_t	**ents;		/* input entries */
 	size_t	nents;		/* number of entries */
@@ -112,18 +115,21 @@ typedef enum {
 	ANSI_ESC = 0x1b,
 	ANSI_SGR = '[',
 	ANSI_OSC = ']',
-	ANSI_APC = '_',
-	ANSI_BSL = '\\'
+	ANSI_LNK = '8',
+	ANSI_LBL = 0x7,
+	ANSI_LSP = ';',
+	ANSI_LSG = 'M',
+	ANSI_END = '\\'
 } ansi_esc_states;
 
 /**
  * Count how many characters are non-printable due to ANSI X3.41 escape codes.
  *
- * It detects and count only Fe Escape sequences. These sequences contains characters
- * that normally are printable, but due to being part of a escape sequence are ignored
- * when displayed in console terminals.
+ * It detects and count Fe Escape and OSC 8 links sequences. These sequences contains
+ * characters that normally are printable, but due to being part of a escape sequence
+ * are ignored when displayed in console terminals.
  */
-static inline size_t ansi_esc_width(ansi_esc_states *state, size_t *found, const wchar_t *str)
+static inline size_t ansi_esc_width(ansi_esc_states *state, size_t *found, const wchar_t *str, int chw)
 {
 	switch (*state) {
 	case ANSI_CHR:
@@ -144,7 +150,7 @@ static inline size_t ansi_esc_width(ansi_esc_states *state, size_t *found, const
 		case '_':  // APC - Application Program Command
 		case 'P':  // DCS - Device Control String
 		case '^':  // PM  - Privacy Message
-			*state = ANSI_APC;
+			*state = ANSI_END;
 			break;
 		default:
 			*state = ANSI_CHR;
@@ -153,7 +159,7 @@ static inline size_t ansi_esc_width(ansi_esc_states *state, size_t *found, const
 		*found = 1;
 		return 0;
 	case ANSI_SGR:
-		*found += 1;
+		*found += chw;
 		// Fe escape sequences allows the range 0x30-0x3f
 		// However SGR (Select Graphic Rendition) only uses: 0-9 ';' ':'
 		if (*str >= '0' && *str <= '?')
@@ -162,24 +168,58 @@ static inline size_t ansi_esc_width(ansi_esc_states *state, size_t *found, const
 		if (*str <= '@' && *str >= '~')
 			*found = 0;
 		break;
-	case ANSI_APC:
 	case ANSI_OSC:
-		*found += 1;
+		*found += chw;
+		if (*str == ANSI_LNK) // OSC8-Link
+			*state = ANSI_LNK; 
+		else
+			*state = ANSI_END; // other command sequences are ignored
+		return 0;
+	case ANSI_LNK: // OSC8 Terminal Hiperlink Sequence
+		switch (*str) {
+		case 0x7:  // Separated by BEL
+			*state = ANSI_LBL; //#  \e]8;;LINK\aTEXT\e]8;;\a  #
+			break;
+		case 0x1b: // OSC8-Link separated by ESC-BACKSLASH
+			*found += 2;
+			*state = ANSI_LBL; //#  \e]8;;LINK\e\\TEXT\e]8;;\e\\  #
+			break;
+		default:
+			*found += chw;
+		}
+		return 0; // ignore link width
+	case ANSI_LBL:
+		if (*str == 0x1b) { // Link label goes until ESC BACKSLASH
+			*found += chw;
+			*state = ANSI_LSP;
+		}
+		return 0;
+	case ANSI_LSP:
+		*found += chw;
+		if (*str == '[') // SGR FG/BG colors nested inside OSC8-Link sequence
+			*state = ANSI_LSG;
+		else
+			*state = ANSI_END; //# Link label ends with \e[8;;\e\\ #
+		return 0;
+	case ANSI_LSG: //#  \e]8;;LINK\e\\\e[1;34mTEXT\e[0m\e]8;;\e\\  #
+		*found += chw;
+		if (*str < '0' || *str > '?') //  SGR color sequence ends with 'm'
+			*state = ANSI_LBL;
+		return 0;
+	case ANSI_END:
+		switch (*str) {
+		case 0x1b:  // APC/OSC8-Links ends with ESC-BACKSLASH
+			*found += chw;
+			break;
+		case 0x7:  // APC/OSC/OSC8-Links ends with BEL
 #ifdef HAVE_WIDECHAR
-		if (*str == 0x9c || *str == 0x7) // ends with ST (String Terminator) or BEL (\a)
-			break;
-#else
-		if (((unsigned char)*str) == 0x9c || *str == 0x7)
-			break;
+		case 0x9c:  // APC/DCS/DM ends with ST (String Terminator)
 #endif
-		else if (*str == 0x1b) // ends with ESC BACKSLASH
-			*state = ANSI_BSL;
-		return 0;
-	case ANSI_BSL:
-		if (*str == '\\') // ends with BACKSLASH
 			break;
-		*found = 0;
+		default:
+			*found += chw;
 		return 0;
+	}
 	}
 	size_t res = *found;
 	*state = ANSI_CHR;
@@ -196,13 +236,12 @@ static size_t width(const wchar_t *str)
 	for (; *str != '\0'; str++) {
 #ifdef HAVE_WIDECHAR
 		int x = wcwidth(*str);	/* don't use wcswidth(), need to ignore non-printable */
-		if (x > 0)
-			count += x;
 #else
-		if (isprint(*str))
-			count++;
+		int x = isprint(*str) ? 1 : 0;
 #endif
-		count -= ansi_esc_width(&state, &found, str);
+		int chw = x > 0 ? x : 0;
+		size_t nonpr = ansi_esc_width(&state, &found, str, chw);
+		count += chw - nonpr;
 	}
 	return count;
 }
@@ -249,6 +288,35 @@ static char *wcs_to_mbs(const wchar_t *s)
 #endif
 }
 
+static char *apply_wrap_separator(const char *data, const char *wrap_sep, size_t *result_size)
+{
+	char *result, *p;
+	const char *q;
+	size_t sep_len, data_len;
+
+	if (!data || !wrap_sep || !result_size)
+		return NULL;
+
+	sep_len = strlen(wrap_sep);
+	data_len = strlen(data);
+
+	result = xmalloc(data_len + 1);
+	p = result;
+	q = data;
+
+	while (*q) {
+		if (strncmp(q, wrap_sep, sep_len) == 0) {
+			*p++ = '\0';
+			q += sep_len;
+		} else
+			*p++ = *q++;
+	}
+	*p = '\0';
+
+	*result_size = p - result + 1;
+	return result;
+}
+
 static wchar_t *local_wcstok(struct column_control const *const ctl, wchar_t *p,
 			     wchar_t **state)
 {
@@ -282,16 +350,30 @@ static wchar_t *local_wcstok(struct column_control const *const ctl, wchar_t *p,
 
 static char **split_or_error(const char *str, const char *errmsg)
 {
-	char **res = strv_split(str, ",");
+	char **res = ul_strv_split(str, ",");
 	if (!res) {
 		if (errno == ENOMEM)
 			err_oom();
 		if (errmsg)
-			errx(EXIT_FAILURE, "%s: '%s'", errmsg, str);
+			errx(EXIT_FAILURE, "%s: '%s'", _(errmsg), str);
 		else
 			return NULL;
 	}
 	return res;
+}
+
+/* @key= is expected in the options string */
+static const char *colorseq_from_colorkey(char *opts, const char *key)
+{
+	char *cs = ul_optstr_get_value(opts, key);
+	const char *seq = NULL;
+
+	if (cs) {
+		seq = color_scheme_get_sequence(cs, NULL);
+		free(cs);
+	}
+
+	return seq;
 }
 
 static void init_table(struct column_control *ctl)
@@ -310,21 +392,34 @@ static void init_table(struct column_control *ctl)
 		scols_table_enable_noencoding(ctl->tab, 1);
 
 	scols_table_enable_maxout(ctl->tab, ctl->maxout ? 1 : 0);
+	scols_table_enable_colors(ctl->tab, colors_wanted() ? 1 : 0);
 
 	if (ctl->tab_columns) {
 		char **opts;
 
-		STRV_FOREACH(opts, ctl->tab_columns) {
+		UL_STRV_FOREACH(opts, ctl->tab_columns) {
 			struct libscols_column *cl;
 
 			cl = scols_table_new_column(ctl->tab, NULL, 0, 0);
 			scols_column_set_properties(cl, *opts);
+
+			if (ctl->tab_colorscheme) {
+				const char *seq;
+
+				seq = colorseq_from_colorkey(*opts, "colorkey");
+				if (seq)
+					scols_column_set_color(cl, seq);
+
+				seq = colorseq_from_colorkey(*opts, "headercolorkey");
+				if (seq)
+					scols_column_set_headercolor(cl, seq);
+			}
 		}
 
 	} else if (ctl->tab_colnames) {
 		char **name;
 
-		STRV_FOREACH(name, ctl->tab_colnames)
+		UL_STRV_FOREACH(name, ctl->tab_colnames)
 			scols_table_new_column(ctl->tab, *name, 0, 0);
 	} else
 		scols_table_enable_noheadings(ctl->tab, 1);
@@ -400,13 +495,13 @@ static int has_unnamed(const char *list)
 
 	all = split_or_error(list, NULL);
 	if (all) {
-		STRV_FOREACH(one, all) {
+		UL_STRV_FOREACH(one, all) {
 			if (strcmp(*one, "-") == 0) {
 				rc = 1;
 				break;
 			}
 		}
-		strv_free(all);
+		ul_strv_free(all);
 	}
 
 	return rc;
@@ -437,7 +532,7 @@ static void apply_columnflag_from_list(struct column_control *ctl, const char *l
 	all = split_or_error(list, errmsg);
 
 	/* apply to columns specified by name */
-	STRV_FOREACH(one, all) {
+	UL_STRV_FOREACH(one, all) {
 		int low = 0, up = 0;
 
 		if (strcmp(*one, "-") == 0) {
@@ -446,7 +541,7 @@ static void apply_columnflag_from_list(struct column_control *ctl, const char *l
 		}
 
 		/* parse range (N-M) */
-		if (strchr(*one, '-') && parse_range(*one, &low, &up, 0) == 0) {
+		if (strchr(*one, '-') && ul_parse_range(*one, &low, &up, 0) == 0) {
 			for (; low <= up; low++) {
 				if (low < 0)
 					cl = get_last_visible_column(ctl, (low * -1) -1);
@@ -463,7 +558,7 @@ static void apply_columnflag_from_list(struct column_control *ctl, const char *l
 		if (cl)
 			column_set_flag(cl, flag);
 	}
-	strv_free(all);
+	ul_strv_free(all);
 
 	/* apply flag to all columns without name */
 	if (unnamed) {
@@ -486,12 +581,12 @@ static void reorder_table(struct column_control *ctl)
 	struct libscols_column **wanted, *last = NULL;
 	size_t i, count = 0;
 	size_t ncols = scols_table_get_ncols(ctl->tab);
-	char **order = split_or_error(ctl->tab_order, _("failed to parse --table-order list"));
+	char **order = split_or_error(ctl->tab_order, N_("failed to parse --table-order list"));
 	char **one;
 
 	wanted = xcalloc(ncols, sizeof(struct libscols_column *));
 
-	STRV_FOREACH(one, order) {
+	UL_STRV_FOREACH(one, order) {
 		struct libscols_column *cl = string_to_column(ctl, *one);
 		if (cl)
 			wanted[count++] = cl;
@@ -503,7 +598,7 @@ static void reorder_table(struct column_control *ctl)
 	}
 
 	free(wanted);
-	strv_free(order);
+	ul_strv_free(order);
 }
 
 static void create_tree(struct column_control *ctl)
@@ -564,23 +659,60 @@ static void modify_table(struct column_control *ctl)
 
 	if (ctl->tab_colhide)
 		apply_columnflag_from_list(ctl, ctl->tab_colhide,
-				SCOLS_FL_HIDDEN , _("failed to parse --table-hide list"));
+				SCOLS_FL_HIDDEN , N_("failed to parse --table-hide list"));
 
 	if (ctl->tab_colright)
 		apply_columnflag_from_list(ctl, ctl->tab_colright,
-				SCOLS_FL_RIGHT, _("failed to parse --table-right list"));
+				SCOLS_FL_RIGHT, N_("failed to parse --table-right list"));
 
 	if (ctl->tab_coltrunc)
 		apply_columnflag_from_list(ctl, ctl->tab_coltrunc,
-				SCOLS_FL_TRUNC , _("failed to parse --table-trunc list"));
+				SCOLS_FL_TRUNC , N_("failed to parse --table-trunc list"));
 
 	if (ctl->tab_colnoextrem)
 		apply_columnflag_from_list(ctl, ctl->tab_colnoextrem,
-				SCOLS_FL_NOEXTREMES , _("failed to parse --table-noextreme list"));
+				SCOLS_FL_NOEXTREMES , N_("failed to parse --table-noextreme list"));
 
 	if (ctl->tab_colwrap)
 		apply_columnflag_from_list(ctl, ctl->tab_colwrap,
-				SCOLS_FL_WRAP , _("failed to parse --table-wrap list"));
+				SCOLS_FL_WRAP , N_("failed to parse --table-wrap list"));
+
+	if (ctl->wrap_separator && ctl->tab_colwrap) {
+		struct libscols_iter *itr_col, *itr_line;
+		struct libscols_column *cl;
+		struct libscols_line *ln;
+
+		itr_col = scols_new_iter(SCOLS_ITER_FORWARD);
+		itr_line = scols_new_iter(SCOLS_ITER_FORWARD);
+		if (!itr_col || !itr_line)
+			err_oom();
+
+		/* Apply wrap separator to existing data in wrapped columns */
+		while (scols_table_next_column(ctl->tab, itr_col, &cl) == 0) {
+			 if (!scols_column_is_wrap(cl))
+				 continue;
+
+			while (scols_table_next_line(ctl->tab, itr_line, &ln) == 0) {
+				struct libscols_cell *ce = scols_line_get_column_cell(ln, cl);
+				const char *data = scols_cell_get_data(ce);
+				char *wrapped;
+				size_t sz;
+
+				if  (!data)
+					continue;
+				wrapped = apply_wrap_separator(data, ctl->wrap_separator, &sz);
+				if (wrapped)
+					scols_cell_refer_memory(ce, wrapped, sz);
+			}
+			scols_reset_iter(itr_line, SCOLS_ITER_FORWARD);
+
+			/* Set wrapzero function for wrapped columns */
+			scols_column_set_wrapfunc(cl, NULL, scols_wrapzero_nextchunk, NULL);
+		}
+
+		scols_free_iter(itr_col);
+		scols_free_iter(itr_line);
+	}
 
 	if (!ctl->tab_colnoextrem) {
 		struct libscols_column *cl = get_last_visible_column(ctl, 0);
@@ -863,10 +995,12 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -t, --table                      create a table\n"), out);
 	fputs(_(" -n, --table-name <name>          table name for JSON output\n"), out);
 	fputs(_(" -O, --table-order <columns>      specify order of output columns\n"), out);
+	fputs(_("     --table-colorscheme <name>   specify color scheme name\n"), out);
 	fputs(_(" -C, --table-column <properties>  define column\n"), out);
 	fputs(_(" -N, --table-columns <names>      comma separated columns names\n"), out);
 	fputs(_(" -l, --table-columns-limit <num>  maximal number of input columns\n"), out);
-	fputs(_(" -E, --table-noextreme <columns>  don't count long text from the columns to column width\n"), out);
+	fputs(_(" -E, --table-noextreme <columns>  don't count long text in these columns\n"
+		"                                    to the column's width\n"), out);
 	fputs(_(" -d, --table-noheadings           don't print header\n"), out);
 	fputs(_(" -m, --table-maxout               fill all available space\n"), out);
 	fputs(_(" -e, --table-header-repeat        repeat header for each page\n"), out);
@@ -874,6 +1008,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -R, --table-right <columns>      right align text in these columns\n"), out);
 	fputs(_(" -T, --table-truncate <columns>   truncate text in the columns when necessary\n"), out);
 	fputs(_(" -W, --table-wrap <columns>       wrap text in the columns when necessary\n"), out);
+	fputs(_("     --wrap-separator <string>    wrap at this separator (requires --table-wrap)\n"), out);
 	fputs(_(" -L, --keep-empty-lines           don't ignore empty lines\n"), out);
 	fputs(_(" -J, --json                       use JSON output format for table\n"), out);
 
@@ -884,12 +1019,16 @@ static void __attribute__((__noreturn__)) usage(void)
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_(" -c, --output-width <width>       width of output in number of characters\n"), out);
-	fputs(_(" -o, --output-separator <string>  columns separator for table output (default is two spaces)\n"), out);
+	fputs(_(" -o, --output-separator <string>  columns separator for table output\n"
+		"                                    (default is two spaces)\n"), out);
 	fputs(_(" -s, --separator <string>         possible table delimiters\n"), out);
 	fputs(_(" -x, --fillrows                   fill rows before columns\n"), out);
 	fputs(_(" -S, --use-spaces <number>        minimal whitespaces between columns (no tabs)\n"), out);
 
-
+	fputs(USAGE_SEPARATOR, out);
+	fprintf(out, _("     --color[=<when>]             colorize output (%s, %s or %s)\n"), "auto", "always", "never");
+	fprintf(out,
+	        "                                    %s\n", USAGE_COLORS_DEFAULT);
 	fputs(USAGE_SEPARATOR, out);
 	fprintf(out, USAGE_HELP_OPTIONS(34));
 	fprintf(out, USAGE_MAN_TAIL("column(1)"));
@@ -907,10 +1046,17 @@ int main(int argc, char **argv)
 
 	int c;
 	unsigned int eval = 0;		/* exit value */
+	int colormode = UL_COLORMODE_UNDEF;
+	enum {
+		OPT_COLOR	= CHAR_MAX + 1,
+		OPT_COLORSCHEME,
+		OPT_WRAP_SEPARATOR,
+	};
 
 	static const struct option longopts[] =
 	{
 		{ "columns",             required_argument, NULL, 'c' }, /* deprecated */
+		{ "color",               optional_argument, NULL, OPT_COLOR },
 		{ "fillrows",            no_argument,       NULL, 'x' },
 		{ "help",                no_argument,       NULL, 'h' },
 		{ "json",                no_argument,       NULL, 'J' },
@@ -919,6 +1065,7 @@ int main(int argc, char **argv)
 		{ "output-width",        required_argument, NULL, 'c' },
 		{ "separator",           required_argument, NULL, 's' },
 		{ "table",               no_argument,       NULL, 't' },
+		{ "table-colorscheme",   required_argument, NULL,  OPT_COLORSCHEME },
 		{ "table-columns",       required_argument, NULL, 'N' },
 		{ "table-column",        required_argument, NULL, 'C' },
 		{ "table-columns-limit", required_argument, NULL, 'l' },
@@ -938,6 +1085,7 @@ int main(int argc, char **argv)
 		{ "tree-parent",         required_argument, NULL, 'p' },
 		{ "use-spaces",          required_argument, NULL, 'S' },
 		{ "version",             no_argument,       NULL, 'V' },
+		{ "wrap-separator",      required_argument, NULL, OPT_WRAP_SEPARATOR },
 		{ NULL,	0, NULL, 0 },
 	};
 	static const ul_excl_t excl[] = {       /* rows and cols in ASCII order */
@@ -962,7 +1110,7 @@ int main(int argc, char **argv)
 
 		switch(c) {
 		case 'C':
-			if (strv_extend(&ctl.tab_columns, optarg))
+			if (ul_strv_extend(&ctl.tab_columns, optarg))
 				err_oom();
 			break;
 		case 'c':
@@ -1000,7 +1148,7 @@ int main(int argc, char **argv)
 				errx(EXIT_FAILURE, _("columns limit must be greater than zero"));
 			break;
 		case 'N':
-			ctl.tab_colnames = split_or_error(optarg, _("failed to parse column names"));
+			ctl.tab_colnames = split_or_error(optarg, N_("failed to parse column names"));
 			break;
 		case 'n':
 			ctl.tab_name = optarg;
@@ -1031,7 +1179,7 @@ int main(int argc, char **argv)
 			free(ctl.input_separator);
 			ctl.input_separator = mbs_to_wcs(optarg);
 			if (!ctl.input_separator)
-				err(EXIT_FAILURE, _("failed to use input separator"));
+				err(EXIT_FAILURE, _("failed to parse input separator"));
 			ctl.greedy = 0;
 			break;
 		case 'T':
@@ -1045,6 +1193,17 @@ int main(int argc, char **argv)
 			break;
 		case 'x':
 			ctl.mode = COLUMN_MODE_FILLROWS;
+			break;
+		case OPT_COLOR:
+			colormode = UL_COLORMODE_AUTO;
+			if (optarg)
+				colormode = colormode_or_err(optarg);
+			break;
+		case OPT_COLORSCHEME:
+			ctl.tab_colorscheme = optarg;
+			break;
+		case OPT_WRAP_SEPARATOR:
+			ctl.wrap_separator = optarg;
 			break;
 
 		case 'h':
@@ -1077,6 +1236,9 @@ int main(int argc, char **argv)
 	if (!ctl.tab_colnames && !ctl.tab_columns && ctl.json)
 		errx(EXIT_FAILURE, _("option --table-columns or --table-column required for --json"));
 
+	if (ctl.mode == COLUMN_MODE_TABLE)
+		colors_init(colormode, ctl.tab_colorscheme ? : "column");
+
 	if (!*argv)
 		eval += read_input(&ctl, stdin);
 	else
@@ -1107,9 +1269,9 @@ int main(int argc, char **argv)
 
 			scols_unref_table(ctl.tab);
 			if (ctl.tab_colnames)
-				strv_free(ctl.tab_colnames);
+				ul_strv_free(ctl.tab_colnames);
 			if (ctl.tab_columns)
-				strv_free(ctl.tab_columns);
+				ul_strv_free(ctl.tab_columns);
 		}
 		break;
 	case COLUMN_MODE_FILLCOLS:

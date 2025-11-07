@@ -73,13 +73,14 @@ static void sig_handler(int signo __attribute__ ((__unused__)))
 static void __attribute__((__noreturn__)) usage(void)
 {
 	FILE *out = stdout;
-	fprintf(out, _("Usage: %s [options] [file ...]\n"),
-		program_invocation_short_name);
+	fputs(USAGE_HEADER, out);
+	fprintf(out, _(" %s [options] [<file> ...]\n"), program_invocation_short_name);
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Reverse lines characterwise.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
+	fputs(_(" -0, --zero     use the NUL byte as line separator\n"), out);
 	fprintf(out, USAGE_HELP_OPTIONS(16));
 	fprintf(out, USAGE_MAN_TAIL("rev(1)"));
 

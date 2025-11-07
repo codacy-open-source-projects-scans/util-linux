@@ -4,8 +4,8 @@
  * Copyright (C) 2007  Theodore Ts'o
  *
  * %Begin-Header%
- * This file may be redistributed under the terms of the GNU Public
- * License.
+ * This file may be redistributed under the terms of the
+ * GNU General Public License.
  * %End-Header%
  */
 
@@ -108,8 +108,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -P, --no-pid            do not create pid file\n"), out);
 	fputs(_(" -F, --no-fork           do not daemonize using double-fork\n"), out);
 	fputs(_(" -S, --socket-activation do not create listening socket\n"), out);
-	fputs(_(" -C, --cont-clock[=<NUM>[hd]]\n"), out);
-	fputs(_("                         activate continuous clock handling\n"), out);
+	fputs(_(" -C, --cont-clock[=<number>[hd]]\n"
+		"                         activate continuous clock handling\n"), out);
 	fputs(_(" -d, --debug             run in debugging mode\n"), out);
 	fputs(_(" -q, --quiet             turn on quiet mode\n"), out);
 	fputs(USAGE_SEPARATOR, out);
@@ -627,9 +627,11 @@ static void parse_options(int argc, char **argv, struct uuidd_cxt_t *uuidd_cxt,
 		err_exclusive_options(c, longopts, excl, excl_st);
 		switch (c) {
 		case 'C':
-			if (optarg != NULL)
+			if (optarg) {
+				if (*optarg == '=')
+					optarg++;
 				uuidd_cxt->cont_clock_offset = parse_cont_clock(optarg);
-			else
+			} else
 				uuidd_cxt->cont_clock_offset = 7200; /* default 2h */
 			break;
 		case 'd':

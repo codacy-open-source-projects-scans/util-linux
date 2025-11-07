@@ -10,6 +10,7 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdarg.h>
@@ -36,6 +37,12 @@
 #ifndef NAME_MAX
 # define NAME_MAX PATH_MAX
 #endif
+
+#ifndef HAVE_SYS_AUXV_H
+# include <sys/auxv.h>
+#endif
+
+#define BIT(n)                 (1 << (n))
 
 /*
  * __GNUC_PREREQ is deprecated in favour of __has_attribute() and
@@ -80,6 +87,39 @@
 # endif
 #endif
 
+#ifdef __has_attribute
+# define UL_HAS_ATTRIBUTE(x) __has_attribute(x)
+#else
+# define UL_HAS_ATTRIBUTE(x) 0
+#endif
+
+/* C-language Attributes are added in C23. */
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ > 201710L) && defined(__has_c_attribute)
+# define UL_HAS_C_ATTRIBUTE(x) __has_c_attribute(x)
+#else
+# define UL_HAS_C_ATTRIBUTE(x) 0
+#endif
+
+#if defined(__cplusplus) && defined(__has_cpp_attribute)
+# define UL_HAS_CPP_ATTRIBUTE(x) __has_cpp_attribute(x)
+#else
+# define UL_HAS_CPP_ATTRIBUTE(x) 0
+#endif
+
+/*
+Define FALLTHROUGH macro for annotating switch case with the 'fallthrough' attribute
+introduced in CPP17 and C23.
+CPP17 : https://en.cppreference.com/w/cpp/language/attributes/fallthrough
+C23   : https://en.cppreference.com/w/c/language/attributes/fallthrough
+*/
+#if UL_HAS_C_ATTRIBUTE(fallthrough) || UL_HAS_CPP_ATTRIBUTE(fallthrough)
+# define FALLTHROUGH [[fallthrough]]
+#elif UL_HAS_ATTRIBUTE(__fallthrough__)
+# define FALLTHROUGH __attribute__ ((__fallthrough__))
+#else
+# define FALLTHROUGH /* fallthrough */
+#endif
+
 
 /*
  * It evaluates to 1 if the attribute/feature is supported by the current
@@ -116,6 +156,12 @@
 # define __ul_returns_nonnull __attribute__((returns_nonnull))
 #else
 # define __ul_returns_nonnull
+#endif
+
+#if __has_attribute(__nonstring__)
+# define __ul_nonstring __attribute__((__nonstring__))
+#else
+# define __ul_nonstring
 #endif
 
 /*
@@ -405,6 +451,15 @@ fail:
 	return errno ? -errno : -1;
 }
 
+static inline bool is_privileged_execution(void)
+{
+#if defined(HAVE_GETAUXVAL) && defined(AT_SECURE)
+	return getauxval(AT_SECURE) != 0;
+#else
+	return (geteuid() != getuid()) || (getegid() != getgid());
+#endif
+}
+
 /*
  * The usleep function was marked obsolete in POSIX.1-2001 and was removed
  * in POSIX.1-2008.  It was replaced with nanosleep() that provides more
@@ -461,8 +516,13 @@ static inline void __attribute__((__noreturn__)) ul_sig_err(int excode, const ch
 #define USAGE_DEFAULT_COLUMNS _("\nDefault columns:\n")
 #define USAGE_SEPARATOR    "\n"
 
-#define USAGE_OPTSTR_HELP     _("display this help")
-#define USAGE_OPTSTR_VERSION  _("display version")
+#define USAGE_OPTSTR_LIST_COLUMNS  _("list the available columns")
+#define USAGE_OPTSTR_HELP          _("display this help")
+#define USAGE_OPTSTR_VERSION       _("display version")
+
+#define USAGE_LIST_COLUMNS_OPTION(marg_dsc) \
+		"%-" #marg_dsc "s%s\n" \
+		, " -H, --list-columns",    USAGE_OPTSTR_LIST_COLUMNS
 
 #define USAGE_HELP_OPTIONS(marg_dsc) \
 		"%-" #marg_dsc "s%s\n" \
@@ -472,8 +532,8 @@ static inline void __attribute__((__noreturn__)) ul_sig_err(int excode, const ch
 
 #define USAGE_ARG_SEPARATOR    "\n"
 #define USAGE_ARG_SIZE(_name) \
-		_(" %s arguments may be followed by the suffixes for\n" \
-		  "   GiB, TiB, PiB, EiB, ZiB, and YiB (the \"iB\" is optional)\n"), _name
+		_(" Values for %s may be followed by a suffix: KiB, MiB,\n" \
+		  " GiB, TiB, PiB, EiB, ZiB, or YiB (where the \"iB\" is optional).\n"), _name
 
 #define USAGE_MAN_TAIL(_man)   _("\nFor more details see %s.\n"), _man
 
@@ -602,4 +662,15 @@ static inline void ul_reset_errno(int *saved_errno) {
 
 #define UL_PROTECT_ERRNO __attribute__((__cleanup__(ul_reset_errno))) \
                          __attribute__((__unused__)) int __ul_saved_errno = errno
+
+
+/*
+ * thread-local storage
+ */
+#ifdef HAVE_TLS
+# define THREAD_LOCAL static __thread
+#else
+# define THREAD_LOCAL static
+#endif
+
 #endif /* UTIL_LINUX_C_H */

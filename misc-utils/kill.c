@@ -42,10 +42,12 @@
  *
  * Copyright (C) 2014 Sami Kerola <kerolasa@iki.fi>
  * Copyright (C) 2014 Karel Zak <kzak@redhat.com>
+ * Copyright (C) 2025 Christian Goeschel Ndjomouo <cgoesc2@wgu.edu>
  */
 
 #include <ctype.h>		/* for isdigit() */
 #include <signal.h>
+#include <sys/stat.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,6 +57,7 @@
 #include "c.h"
 #include "closestream.h"
 #include "nls.h"
+#include "pidutils.h"
 #include "pidfd-utils.h"
 #include "procfs.h"
 #include "pathnames.h"
@@ -67,12 +70,17 @@
 /* partial success, otherwise we return regular EXIT_{SUCCESS,FAILURE} */
 #define KILL_EXIT_SOMEOK	64
 
+#if defined(HAVE_PIDFD_OPEN) && defined(HAVE_PIDFD_SEND_SIGNAL)
+# define USE_KILL_WITH_TIMEOUT 1
+# define USE_KILL_WITH_PIDFDINO 1
+#endif
+
 enum {
 	KILL_FIELD_WIDTH = 11,
 	KILL_OUTPUT_WIDTH = 72
 };
 
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 # include <poll.h>
 # include "list.h"
 struct timeouts {
@@ -85,11 +93,12 @@ struct timeouts {
 struct kill_control {
 	char *arg;
 	pid_t pid;
+	ino_t pidfd_ino;
 	int numsig;
 #ifdef HAVE_SIGQUEUE
 	union sigval sigdata;
 #endif
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 	struct list_head follow_ups;
 #endif
 	bool	check_all,
@@ -97,7 +106,7 @@ struct kill_control {
 		do_pid,
 		require_handler,
 		use_sigval,
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 		timeout,
 #endif
 		verbose;
@@ -183,6 +192,11 @@ static void print_process_signal_state(pid_t pid)
 	ul_unref_path(pc);
 }
 
+static void print_signal_number_and_name(FILE *fp, int signum, const char *name, bool newline)
+{
+	fprintf(fp, "%2d %-8s%s", signum, name, newline? "\n": "");
+}
+
 static void pretty_print_signal(FILE *fp, size_t term_width, size_t *lpos,
 				int signum, const char *name)
 {
@@ -191,17 +205,22 @@ static void pretty_print_signal(FILE *fp, size_t term_width, size_t *lpos,
 		*lpos = 0;
 	}
 	*lpos += KILL_FIELD_WIDTH;
-	fprintf(fp, "%2d %-8s", signum, name);
+	print_signal_number_and_name(fp, signum, name, false);
 }
 
-static void print_all_signals(FILE *fp, int pretty)
+static void print_all_signals(FILE *fp, int with_signum)
 {
-	size_t n, lth, lpos = 0, width;
+	size_t n, lth, lpos = 0;
 	const char *signame = NULL;
 	int signum = 0;
+	int pretty = isatty(STDOUT_FILENO);
 
-	if (!pretty) {
+	if (!with_signum) {
 		for (n = 0; get_signame_by_idx(n, &signame, NULL) == 0; n++) {
+			if (!pretty) {
+				fprintf(fp, "%s\n", signame);
+				continue;
+			}
 			lth = 1 + strlen(signame);
 			if (KILL_OUTPUT_WIDTH < lpos + lth) {
 				fputc('\n', fp);
@@ -212,21 +231,33 @@ static void print_all_signals(FILE *fp, int pretty)
 			fputs(signame, fp);
 		}
 #ifdef SIGRTMIN
-		fputs(" RT<N> RTMIN+<N> RTMAX-<N>", fp);
+		if (!pretty)
+			fputs("RT<N>\nRTMIN+<N>\nRTMAX-<N>", fp);
+		else
+			fputs(" RT<N> RTMIN+<N> RTMAX-<N>", fp);
 #endif
 		fputc('\n', fp);
 		return;
 	}
 
-	/* pretty print */
-	width = get_terminal_width(KILL_OUTPUT_WIDTH + 1) - 1;
-	for (n = 0; get_signame_by_idx(n, &signame, &signum) == 0; n++)
-		pretty_print_signal(fp, width, &lpos, signum, signame);
+	/* with signal numbers */
+	if (!pretty) {
+		for (n = 0; get_signame_by_idx(n, &signame, &signum) == 0; n++)
+			print_signal_number_and_name(fp, signum, signame, true);
 #ifdef SIGRTMIN
-	pretty_print_signal(fp, width, &lpos, SIGRTMIN, "RTMIN");
-	pretty_print_signal(fp, width, &lpos, SIGRTMAX, "RTMAX");
+		print_signal_number_and_name(fp, SIGRTMIN, "RTMIN", true);
+		print_signal_number_and_name(fp, SIGRTMAX, "RTMAX", true);
 #endif
-	fputc('\n', fp);
+	} else {
+		size_t width = get_terminal_width(KILL_OUTPUT_WIDTH + 1) - 1;
+		for (n = 0; get_signame_by_idx(n, &signame, &signum) == 0; n++)
+			pretty_print_signal(fp, width, &lpos, signum, signame);
+#ifdef SIGRTMIN
+		pretty_print_signal(fp, width, &lpos, SIGRTMIN, "RTMIN");
+		pretty_print_signal(fp, width, &lpos, SIGRTMAX, "RTMAX");
+#endif
+		fputc('\n', fp);
+	}
 }
 
 static void err_nosig(char *name)
@@ -257,7 +288,7 @@ static void __attribute__((__noreturn__)) usage(void)
 {
 	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
-	fprintf(out, _(" %s [options] <pid>|<name>...\n"), program_invocation_short_name);
+	fprintf(out, _(" %s [options] <pid>|<pid>:<pidfd_ino>|<name>...\n"), program_invocation_short_name);
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Forcibly terminate a process.\n"), out);
@@ -269,14 +300,14 @@ static void __attribute__((__noreturn__)) usage(void)
 #ifdef HAVE_SIGQUEUE
 	fputs(_(" -q, --queue <value>    use sigqueue(2), not kill(2), and pass <value> as data\n"), out);
 #endif
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 	fputs(_("     --timeout <milliseconds> <follow-up signal>\n"
 		"                        wait up to timeout and send follow-up signal\n"), out);
 #endif
 	fputs(_(" -p, --pid              print pids without signaling them\n"), out);
 	fputs(_(" -l, --list[=<signal>|=0x<sigmask>]\n"
 		"                        list signal names, convert a signal number to a name,\n"
-		"                         or convert a signal mask to names\n"), out);
+		"                          or convert a signal mask to names\n"), out);
 	fputs(_(" -L, --table            list signal names and numbers\n"), out);
 	fputs(_(" -r, --require-handler  do not send signal if signal handler is not present\n"), out);
 	fputs(_(" -d, --show-process-state <pid>\n"
@@ -296,8 +327,11 @@ static void __attribute__((__noreturn__)) print_kill_version(void)
 #ifdef HAVE_SIGQUEUE
 		"sigqueue",
 #endif
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 		"pidfd",
+#endif
+#ifdef USE_KILL_WITH_PIDFDINO
+		"pidfdino",
 #endif
 	};
 
@@ -321,7 +355,7 @@ static char **parse_arguments(int argc, char **argv, struct kill_control *ctl)
 	char *arg;
 
 	/* Loop through the arguments.  Actually, -a is the only option
-	 * can be used with other options.  The 'kill' is basically a
+	 * that can be used with other options.  The 'kill' is basically a
 	 * one-option-at-most program. */
 	for (argc--, argv++; 0 < argc; argc--, argv++) {
 		arg = *argv;
@@ -392,7 +426,7 @@ static char **parse_arguments(int argc, char **argv, struct kill_control *ctl)
 			if (2 < argc)
 				errx(EXIT_FAILURE, _("too many arguments"));
 			arg = argv[1];
-			pid = strtopid_or_err(arg, _("invalid pid argument"));
+			pid = strtopid_or_err(arg, _("invalid PID argument"));
 			print_process_signal_state(pid);
 			exit(EXIT_SUCCESS);
 		}
@@ -400,7 +434,7 @@ static char **parse_arguments(int argc, char **argv, struct kill_control *ctl)
 			pid_t pid;
 			char *p = strchr(arg, '=') + 1;
 
-			pid = strtopid_or_err(p, _("invalid pid argument"));
+			pid = strtopid_or_err(p, _("invalid PID argument"));
 			print_process_signal_state((pid_t)pid);
 			exit(EXIT_SUCCESS);
 		}
@@ -443,7 +477,7 @@ static char **parse_arguments(int argc, char **argv, struct kill_control *ctl)
 			continue;
 		}
 #endif
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 		if (!strcmp(arg, "--timeout")) {
 			struct timeouts *next;
 
@@ -485,7 +519,7 @@ static char **parse_arguments(int argc, char **argv, struct kill_control *ctl)
 	return argv;
 }
 
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 static int kill_with_timeout(const struct kill_control *ctl)
 {
 	int pfd, n;
@@ -527,6 +561,22 @@ static int kill_with_timeout(const struct kill_control *ctl)
 }
 #endif
 
+#ifdef USE_KILL_WITH_PIDFDINO
+static int validate_pfd_ino(int pfd, ino_t pfd_ino)
+{
+	int rc;
+	struct stat f;
+
+	rc = fstat(pfd, &f);
+	if (rc != 0)
+		return -EINVAL;
+
+	if (f.st_ino != pfd_ino)
+		return -EINVAL;
+	return 0;
+}
+#endif
+
 static int kill_verbose(const struct kill_control *ctl)
 {
 	int rc = 0;
@@ -537,7 +587,7 @@ static int kill_verbose(const struct kill_control *ctl)
 		printf("%ld\n", (long) ctl->pid);
 		return 0;
 	}
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 	if (ctl->timeout) {
 		rc = kill_with_timeout(ctl);
 	} else
@@ -547,7 +597,24 @@ static int kill_verbose(const struct kill_control *ctl)
 		rc = sigqueue(ctl->pid, ctl->numsig, ctl->sigdata);
 	else
 #endif
-		rc = kill(ctl->pid, ctl->numsig);
+#ifdef USE_KILL_WITH_PIDFDINO
+		if ((ctl->pidfd_ino > 0)) {
+			int pfd;
+			pfd = pidfd_open(ctl->pid, 0);
+			if (pfd < 0)
+				err(EXIT_FAILURE, _("pidfd_open() failed: %d"), ctl->pid);
+
+			rc = validate_pfd_ino(pfd, ctl->pidfd_ino);
+			if (rc < 0)
+				errx(EXIT_FAILURE, _("pidfd inode %"PRIu64" not found for pid %d: %s"),
+								ctl->pidfd_ino, ctl->pid, strerror(-rc));
+
+			rc = pidfd_send_signal(pfd, ctl->numsig, 0, 0);
+			if (rc < 0)
+				err(EXIT_FAILURE, _("pidfd_send_signal() failed"));
+		} else
+#endif
+			rc = kill(ctl->pid, ctl->numsig);
 
 	if (rc < 0)
 		warn(_("sending signal to %s failed"), ctl->arg);
@@ -583,25 +650,24 @@ static int check_signal_handler(const struct kill_control *ctl)
 int main(int argc, char **argv)
 {
 	struct kill_control ctl = { .numsig = SIGTERM };
-	int nerrs = 0, ct = 0;
+	int nerrs = 0, ct = 0, rc = 0;
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
 	close_stdout_atexit();
 
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 	INIT_LIST_HEAD(&ctl.follow_ups);
 #endif
 	argv = parse_arguments(argc, argv, &ctl);
 
 	/* The rest of the arguments should be process ids and names. */
 	for ( ; (ctl.arg = *argv) != NULL; argv++) {
-		char *ep = NULL;
-
 		errno = 0;
-		ctl.pid = strtol(ctl.arg, &ep, 10);
-		if (errno == 0 && ep && *ep == '\0' && ctl.arg < ep) {
+
+		rc = ul_parse_pid_str(ctl.arg, &ctl.pid, &ctl.pidfd_ino);
+		if(errno == 0 && rc == 0) {
 			if (check_signal_handler(&ctl) <= 0)
 				continue;
 			if (kill_verbose(&ctl) != 0)
@@ -642,7 +708,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-#ifdef UL_HAVE_PIDFD
+#ifdef USE_KILL_WITH_TIMEOUT
 	while (!list_empty(&ctl.follow_ups)) {
 		struct timeouts *x = list_entry(ctl.follow_ups.next,
 				                  struct timeouts, follow_ups);

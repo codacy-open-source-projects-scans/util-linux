@@ -12,11 +12,11 @@ _lslogins_module()
 	"
 	case $prev in
 		'-g'|'--groups')
-			COMPREPLY=( $(compgen -W "$(getent group | awk -F: '{print $1}')" -- $cur) )
+			COMPREPLY=( $(compgen -W "$(command getent group | command awk -F: '{print $1}')" -- $cur) )
 			return 0
 			;;
 		'-l'|'--logins')
-			COMPREPLY=( $(compgen -W "$(getent passwd | awk -F: '{print $1}')" -- $cur) )
+			COMPREPLY=( $(compgen -W "$(command getent passwd | command awk -F: '{print $1}')" -- $cur) )
 			return 0
 			;;
 		'--time-format')
@@ -60,8 +60,10 @@ _lslogins_module()
 			--notruncate
 			--output
 			--output-all
+			--list-columns
 			--pwd
 			--raw
+			--json
 			--system-accs
 			--time-format
 			--user-accs
@@ -69,10 +71,10 @@ _lslogins_module()
 			--print0
 			--wtmp-file
 			--btmp-file
+			--shell
 			--lastlog
 			--help
-			--version
-		" -- $cur) )
+			--version" -- $cur) )
 	return 0
 }
 complete -F _lslogins_module lslogins

@@ -68,7 +68,7 @@ static bool sock_fill_column(struct proc *proc __attribute__((__unused__)),
 	case COL_TYPE:
 		if (!sock->protoname)
 			return false;
-		/* FALL THROUGH */
+		FALLTHROUGH;
 	case COL_SOCK_PROTONAME:
 		if (sock->protoname)
 			if (scols_line_set_data(ln, column_index, sock->protoname))
@@ -152,9 +152,9 @@ static void init_sock_content(struct file *file)
 		assert(file->proc);
 
 		if (is_opened_file(file))
-			sprintf(path, "/proc/%d/fd/%d", file->proc->pid, fd);
+			snprintf(path, sizeof(path), "/proc/%d/fd/%d", file->proc->pid, fd);
 		else
-			sprintf(path, "/proc/%d/map_files/%"PRIx64 "-%" PRIx64,
+			snprintf(path, sizeof(path), "/proc/%d/map_files/%"PRIx64 "-%" PRIx64,
 				file->proc->pid,
 				file->map_start,
 				file->map_end);

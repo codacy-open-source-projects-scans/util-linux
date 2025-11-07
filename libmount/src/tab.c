@@ -116,6 +116,8 @@ int mnt_reset_table(struct libmnt_table *tb)
 	}
 
 	tb->nents = 0;
+	mnt_table_reset_listmount(tb);
+
 	return 0;
 }
 
@@ -172,6 +174,13 @@ void mnt_free_table(struct libmnt_table *tb)
 	mnt_unref_cache(tb->cache);
 	free(tb->comm_intro);
 	free(tb->comm_tail);
+
+	free(tb->lsmnt);
+	tb->lsmnt = NULL;
+
+	mnt_unref_statmnt(tb->stmnt);
+	tb->stmnt = NULL;
+
 	free(tb);
 }
 
@@ -309,7 +318,7 @@ int mnt_table_append_intro_comment(struct libmnt_table *tb, const char *comm)
 {
 	if (!tb)
 		return -EINVAL;
-	return strappend(&tb->comm_intro, comm);
+	return ul_strappend(&tb->comm_intro, comm);
 }
 
 /**
@@ -350,7 +359,7 @@ int mnt_table_append_trailing_comment(struct libmnt_table *tb, const char *comm)
 {
 	if (!tb)
 		return -EINVAL;
-	return strappend(&tb->comm_tail, comm);
+	return ul_strappend(&tb->comm_tail, comm);
 }
 
 /**
@@ -393,6 +402,39 @@ int mnt_table_set_cache(struct libmnt_table *tb, struct libmnt_cache *mpc)
 struct libmnt_cache *mnt_table_get_cache(struct libmnt_table *tb)
 {
 	return tb ? tb->cache : NULL;
+}
+
+/**
+ * mnt_table_refer_statmnt:
+ * @tb: pointer to tab
+ * @sm: statmount setting or NULL
+ *
+ * Add a reference to the statmount() setting in the table (see
+ * mnt_new_statmnt() function, etc.).  This reference will automatically be
+ * used for any newly added filesystems in the @tb, eliminating the need for
+ * extra mnt_fs_refer_statmnt() calls for each filesystem.
+ *
+ * The reference is not removed by mnt_reset_table(), use NULL as @sm to
+ * remove the reference.
+ *
+ * Returns: 0 on success or negative number in case of error.
+ *
+ * Since: 2.41
+ */
+int mnt_table_refer_statmnt(struct libmnt_table *tb, struct libmnt_statmnt *sm)
+{
+	if (!tb)
+		return -EINVAL;
+	if (tb->stmnt == sm)
+		return 0;
+
+	mnt_unref_statmnt(tb->stmnt);
+	mnt_ref_statmnt(sm);
+
+	DBG(TAB, ul_debugobj(tb, "refer statmnt"));
+
+	tb->stmnt = sm;
+	return 0;
 }
 
 /**
@@ -455,6 +497,9 @@ int mnt_table_add_fs(struct libmnt_table *tb, struct libmnt_fs *fs)
 
 	DBG(TAB, ul_debugobj(tb, "add entry: %s %s",
 			mnt_fs_get_source(fs), mnt_fs_get_target(fs)));
+	if (tb->stmnt)
+		mnt_fs_refer_statmnt(fs, tb->stmnt);
+
 	return 0;
 }
 
@@ -462,18 +507,26 @@ static int __table_insert_fs(
 			struct libmnt_table *tb, int before,
 			struct libmnt_fs *pos, struct libmnt_fs *fs)
 {
-	struct list_head *head = pos ? &pos->ents : &tb->ents;
-
-	if (before)
-		list_add(&fs->ents, head);
+	if (!pos)
+		list_add_tail(&fs->ents, &tb->ents);
+	else if (before)
+		list_add_tail(&fs->ents, &pos->ents);
 	else
-		list_add_tail(&fs->ents, head);
+		list_add(&fs->ents, &pos->ents);
 
 	fs->tab = tb;
 	tb->nents++;
 
-	DBG(TAB, ul_debugobj(tb, "insert entry: %s %s",
+	if (mnt_fs_get_uniq_id(fs)) {
+		DBG(TAB, ul_debugobj(tb, "insert entry: %" PRIu64, mnt_fs_get_uniq_id(fs)));
+	} else {
+		DBG(TAB, ul_debugobj(tb, "insert entry: %s %s",
 			mnt_fs_get_source(fs), mnt_fs_get_target(fs)));
+	}
+
+	if (tb->stmnt)
+		mnt_fs_refer_statmnt(fs, tb->stmnt);
+
 	return 0;
 }
 
@@ -802,7 +855,23 @@ int mnt_table_next_fs(struct libmnt_table *tb, struct libmnt_iter *itr, struct l
 		return -EINVAL;
 	if (fs)
 		*fs = NULL;
+#ifdef HAVE_STATMOUNT_API
+	if (mnt_table_want_listmount(tb) &&
+	    (list_empty(&tb->ents) || itr->p == itr->head)) {
+		struct list_head *prev = NULL;
 
+		if (itr->p)
+			prev = IS_ITER_FORWARD(itr) ? itr->p->prev : itr->p->next;
+		rc =  mnt_table_next_lsmnt(tb, itr->direction);
+		if (rc)
+			return rc;
+		MNT_ITER_INIT(itr, &tb->ents);
+		if (prev) {
+		        itr->p = prev;
+			MNT_ITER_ITERATE(itr);
+		}
+	}
+#endif
 	if (!itr->head)
 		MNT_ITER_INIT(itr, &tb->ents);
 	if (itr->p != itr->head) {
@@ -1092,7 +1161,7 @@ struct libmnt_fs *mnt_table_find_target(struct libmnt_table *tb, const char *pat
 	}
 
 	/* try absolute path */
-	if (is_relative_path(path) && (cn = absolute_path(path))) {
+	if (ul_is_relative_path(path) && (cn = ul_absolute_path(path))) {
 		DBG(TAB, ul_debugobj(tb, "lookup absolute TARGET: '%s'", cn));
 		mnt_reset_iter(&itr, direction);
 		while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
@@ -1472,6 +1541,67 @@ struct libmnt_fs *mnt_table_find_devno(struct libmnt_table *tb,
 	return NULL;
 }
 
+/**
+ * mnt_table_find_id:
+ * @tb: mount table
+ * @id: classic mount ID
+ *
+ * See also mnt_id_from_path().
+ *
+ * Returns: a tab entry or NULL.
+ *
+ * Since: 2.41
+ */
+struct libmnt_fs *mnt_table_find_id(struct libmnt_table *tb, int id)
+{
+	struct libmnt_fs *fs = NULL;
+	struct libmnt_iter itr;
+
+	if (!tb)
+		return NULL;
+
+	DBG(TAB, ul_debugobj(tb, "lookup ID: %d", id));
+	mnt_reset_iter(&itr, MNT_ITER_BACKWARD);
+
+	while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
+		if (mnt_fs_get_id(fs) == id)
+			return fs;
+	}
+
+	return NULL;
+}
+
+/**
+ * mnt_table_find_uniq_id:
+ * @tb: mount table
+ * @id: uniqie 64-bit mount ID
+ *
+ * See also mnt_id_from_path().
+ *
+ * Returns: a tab entry or NULL.
+ *
+ * Since: 2.41
+ */
+struct libmnt_fs *mnt_table_find_uniq_id(struct libmnt_table *tb, uint64_t id)
+{
+	struct libmnt_fs *fs = NULL;
+	struct libmnt_iter itr;
+
+	if (!tb)
+		return NULL;
+
+	DBG(TAB, ul_debugobj(tb, "lookup uniq-ID: %" PRIu64, id));
+	mnt_reset_iter(&itr, MNT_ITER_BACKWARD);
+
+	while (mnt_table_next_fs(tb, &itr, &fs) == 0) {
+		if (mnt_fs_get_uniq_id(fs) == id)
+			return fs;
+	}
+
+	return NULL;
+}
+
+
 static char *remove_mountpoint_from_path(const char *path, const char *mnt)
 {
         char *res;
@@ -1688,7 +1818,7 @@ struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
 
 		DBG(FS, ul_debugobj(fs, "source root: %s, source FS root: %s", root, src_root));
 
-		if (src_root && root && !startswith(root, src_root)) {
+		if (src_root && root && !ul_startswith(root, src_root)) {
 			if (strcmp(root, "/") == 0) {
 				free(root);
 				root = strdup(src_root);
@@ -1770,7 +1900,7 @@ int __mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_f
 			src = mnt_fs_get_srcpath(rootfs);
 			if (fstype && strncmp(fstype, "nfs", 3) == 0 && root) {
 				/* NFS stores the root at the end of the source */
-				src = src2 = strconcat(src, root);
+				src = src2 = ul_strconcat(src, root);
 				free(root);
 				root = NULL;
 			}
@@ -1818,7 +1948,7 @@ int __mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_f
 			int flags = 0;
 
 			if (!mnt_fs_get_srcpath(fs) ||
-			    !startswith(mnt_fs_get_srcpath(fs), "/dev/loop"))
+			    !ul_startswith(mnt_fs_get_srcpath(fs), "/dev/loop"))
 				continue;	/* does not look like loopdev */
 
 			if (mnt_fs_get_option(fstab_fs, "offset", &val, &len) == 0) {
@@ -1924,6 +2054,7 @@ int mnt_table_is_fs_mounted(struct libmnt_table *tb, struct libmnt_fs *fstab_fs)
 
 #ifdef TEST_PROGRAM
 #include "pathnames.h"
+#include "cctype.h"
 
 static int parser_errcb(struct libmnt_table *tb __attribute__((unused)),
 			const char *filename, int line)
@@ -2099,9 +2230,9 @@ static int test_find(struct libmnt_test *ts __attribute__((unused)),
 	mnt_table_set_cache(tb, mpc);
 	mnt_unref_cache(mpc);
 
-	if (strcasecmp(find, "source") == 0)
+	if (c_strcasecmp(find, "source") == 0)
 		fs = mnt_table_find_source(tb, what, dr);
-	else if (strcasecmp(find, "target") == 0)
+	else if (c_strcasecmp(find, "target") == 0)
 		fs = mnt_table_find_target(tb, what, dr);
 
 	if (!fs)

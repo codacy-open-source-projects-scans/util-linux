@@ -67,7 +67,7 @@ _findmnt_module()
 			TYPES="adfs affs autofs cifs coda coherent cramfs
 				debugfs devpts efs ext2 ext3 ext4 hfs
 				hfsplus hpfs iso9660 jfs minix msdos
-				ncpfs nfs nfs4 ntfs proc qnx4 ramfs
+				ncpfs nfs nfs4 ntfs3 proc qnx4 ramfs
 				reiserfs romfs squashfs smbfs sysv tmpfs
 				ubifs udf ufs umsdos usbfs vfat xenix xfs"
 			COMPREPLY=( $(compgen -W "$TYPES" -- $cur) )
@@ -75,7 +75,7 @@ _findmnt_module()
 			;;
 		'-S'|'--source')
 			local DEV_MPOINT
-			DEV_MPOINT=$($1 -rno SOURCE | grep ^/dev)
+			DEV_MPOINT=$($1 -rno SOURCE | command grep ^/dev)
 			COMPREPLY=( $(compgen -W "$DEV_MPOINT" -- $cur) )
 			return 0
 			;;
@@ -112,6 +112,8 @@ _findmnt_module()
 				--tab-file
 				--first-only
 				--hyperlink
+				--id
+				--uniq-id
 				--invert
 				--json
 				--list
@@ -134,6 +136,15 @@ _findmnt_module()
 				--real
 				--pseudo
 				--list-columns
+				--bytes
+				--filter
+				--nocanonicalize
+				--shadowed
+				--shell
+				--uniq
+				--verbose
+				--verify
+				--vfs-all
 				--version"
 			COMPREPLY=( $(compgen -W "${OPTS[*]}" -- $cur) )
 			return 0

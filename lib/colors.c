@@ -1,11 +1,9 @@
 /*
- * SPDX-License-Identifier: LGPL-2.1-or-later
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
  *
- * Copyright (C) 2012 Ondrej Oprala <ooprala@redhat.com>
- * Copyright (C) 2012-2014 Karel Zak <kzak@redhat.com>
- *
- * This file may be distributed under the terms of the
- * GNU Lesser General Public License.
+ * Authors: 2012 Ondrej Oprala <ooprala@redhat.com>
+ *          2012-2025 Karel Zak <kzak@redhat.com>
  */
 #include <assert.h>
 #include <sys/stat.h>
@@ -31,7 +29,9 @@
 #endif
 
 #include "c.h"
+#include "cctype.h"
 #include "colors.h"
+#include "nls.h"
 #include "pathnames.h"
 #include "strutils.h"
 
@@ -246,7 +246,7 @@ static int filename_to_tokens(const char *str,
 static int colors_readdir(struct ul_color_ctl *cc, const char *dirname)
 {
 	DIR *dir;
-	int rc = 0;
+	int rc = -ENOENT;
 	struct dirent *d;
 	char sfile[PATH_MAX] = { '\0' };
 	size_t namesz, termsz;
@@ -312,6 +312,7 @@ static int colors_readdir(struct ul_color_ctl *cc, const char *dirname)
 					type == UL_COLORFILE_ENABLE ? "enable" : "???",
 					cc->scores[type], score));
 		cc->scores[type] = score;
+		rc = 0;
 		if (type == UL_COLORFILE_SCHEME)
 			strncpy(sfile, d->d_name, sizeof(sfile));
 	}
@@ -320,8 +321,6 @@ static int colors_readdir(struct ul_color_ctl *cc, const char *dirname)
 		sfile[sizeof(sfile) - 1] = '\0';
 		if (asprintf(&cc->sfile, "%s/%s", dirname, sfile) <= 0)
 			rc = -ENOMEM;
-	} else {
-		rc = -ENOENT;
 	}
 
 	closedir(dir);
@@ -601,7 +600,9 @@ int colors_init(int mode, const char *name)
 		cc->mode = mode;
 
 	if (cc->mode == UL_COLORMODE_UNDEF
+	    && getenv("NO_COLOR") == NULL
 	    && (ready = colors_terminal_is_ready())) {
+
 		int rc = colors_read_configuration(cc);
 		if (rc)
 			cc->mode = UL_COLORMODE_DEFAULT;
@@ -742,7 +743,7 @@ int colormode_from_string(const char *str)
 	assert(ARRAY_SIZE(modes) == __UL_NCOLORMODES);
 
 	for (i = 0; i < ARRAY_SIZE(modes); i++) {
-		if (strcasecmp(str, modes[i]) == 0)
+		if (c_strcasecmp(str, modes[i]) == 0)
 			return i;
 	}
 
@@ -752,14 +753,14 @@ int colormode_from_string(const char *str)
 /*
  * Parses @str and exit(EXIT_FAILURE) on error
  */
-int colormode_or_err(const char *str, const char *errmsg)
+int colormode_or_err(const char *str)
 {
 	const char *p = str && *str == '=' ? str + 1 : str;
 	int colormode;
 
 	colormode = colormode_from_string(p);
 	if (colormode < 0)
-		errx(EXIT_FAILURE, "%s: '%s'", errmsg, p);
+		errx(EXIT_FAILURE, _("unsupported color mode: %s"), p);
 
 	return colormode;
 }
@@ -788,7 +789,7 @@ int main(int argc, char *argv[])
 			color_scheme = optarg;
 			break;
 		case 'm':
-			mode = colormode_or_err(optarg, "unsupported color mode");
+			mode = colormode_or_err(optarg);
 			break;
 		case 'n':
 			name = optarg;

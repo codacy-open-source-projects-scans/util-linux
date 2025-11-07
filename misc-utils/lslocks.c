@@ -43,6 +43,7 @@
 #include "xalloc.h"
 #include "strutils.h"
 #include "c.h"
+#include "cctype.h"
 #include "list.h"
 #include "closestream.h"
 #include "optutils.h"
@@ -381,7 +382,8 @@ static struct lock *get_lock(char *buf, struct override_info *oinfo, void *fallb
 				l->pid = oinfo->pid;
 				l->cmdname = xstrdup(oinfo->cmdname);
 			} else {
-				l->pid = strtos32_or_err(tok, _("failed to parse pid"));
+				/* strtopid_or_err() is not suitable here; tok can be -1.*/
+				l->pid = strtos32_or_err(tok, _("invalid PID argument"));
 				if (l->pid > 0) {
 					l->cmdname = pid_get_cmdname(l->pid);
 					if (!l->cmdname)
@@ -552,7 +554,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -720,7 +722,7 @@ static int get_json_type_for_column(int column_id, int representing_in_bytes)
 	case COL_SIZE:
 		if (!representing_in_bytes)
 			return SCOLS_JSON_STRING;
-		/* fallthrough */
+		FALLTHROUGH;
 	case COL_PID:
 	case COL_START:
 	case COL_END:
@@ -818,14 +820,14 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -u, --notruncate       don't truncate text in columns\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(_(" -H, --list-columns     list the available columns\n"), out);
+	fprintf(out, USAGE_LIST_COLUMNS_OPTION(24));
 	fprintf(out, USAGE_HELP_OPTIONS(24));
 	fprintf(out, USAGE_MAN_TAIL("lslocks(8)"));
 
 	exit(EXIT_SUCCESS);
 }
 
-static void __attribute__((__noreturn__)) list_colunms(void)
+static void __attribute__((__noreturn__)) list_columns(void)
 {
 	struct libscols_table *col_tb = xcolumn_list_table_new(
 					"lslocks-columns", stdout, raw, json);
@@ -901,7 +903,7 @@ int main(int argc, char *argv[])
 			json = 1;
 			break;
 		case 'p':
-			target_pid = strtos32_or_err(optarg, _("invalid PID argument"));
+			target_pid = strtopid_or_err(optarg, _("invalid PID argument"));
 			break;
 		case 'o':
 			outarg = optarg;
@@ -933,7 +935,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (collist)
-		list_colunms();	/* print end exit */
+		list_columns();	/* print end exit */
 
 	INIT_LIST_HEAD(&proc_locks);
 
@@ -950,6 +952,8 @@ int main(int argc, char *argv[])
 		columns[ncolumns++] = COL_PATH;
 	}
 
+	if (!outarg)
+		outarg = getenv("LSLOCKS_COLUMNS");
 	if (outarg && string_add_to_idarray(outarg, columns, ARRAY_SIZE(columns),
 					 &ncolumns, column_name_to_id) < 0)
 		return EXIT_FAILURE;

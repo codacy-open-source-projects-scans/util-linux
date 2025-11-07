@@ -44,6 +44,7 @@ Note the following restrictions (detailed in *capabilities*(7)) regarding modifi
 * A capability can be added to the ambient set only if it is currently present in both the permitted and inheritable sets.
 * Notwithstanding the syntax offered by *setpriv*, the kernel does not permit capabilities to be added to the bounding set.
 
++
 If you drop a capability from the bounding set without also dropping it from the inheritable set, you are likely to become confused. Do not do that.
 
 *--keep-groups*::
@@ -100,6 +101,9 @@ Block all file deletions and directory creations:
 *setpriv --landlock-access fs:remove-file,make-dir*
 +
 For a complete set of supported access categories use *setpriv --help*.
++
+The generic placeholder "fs" are subject to change and maybe be extended in future versoions
+to support new access types.
 
 *--landlock-rule* _rule_::
 
@@ -120,9 +124,12 @@ Load raw BPF seccomp filter code from a file.
 Filters can for example be created with *enosys*.
 
 *--reset-env*::
-Clears all the environment variables except *TERM*; initializes the environment variables *HOME*, *SHELL*, *USER*, *LOGNAME* according to the user's passwd entry; sets *PATH* to _/usr/local/bin:/bin:/usr/bin_ for a regular user and to _/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin_ for root.
+* clears all the environment variables except *TERM* environment variable
+* initializes the environment variables *HOME*, *SHELL*, *USER*, *LOGNAME* according to the user's passwd entry
+* the environment variable *SHELL* defaults to */bin/sh* if none is given in the user's passwd entry.
+* resets *PATH* environment variable according to setting in _/etc/login.defs_ (*ENV_PATH*, *ENV_SUPATH* or *ENV_ROOTPATH* variables), or defaults to _/usr/local/bin:/bin:/usr/bin_ for a regular user and to _/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin_ for root.
 +
-The environment variable *PATH* may be different on systems where _/bin_ and _/sbin_ are merged into _/usr_. The environment variable *SHELL* defaults to */bin/sh* if none is given in the user's passwd entry.
+The environment variable *PATH* may be different on systems where _/bin_ and _/sbin_ are merged into _/usr_.
 
 include::man-common/help-version.adoc[]
 
@@ -151,7 +158,7 @@ mailto:luto@amacapital.net[Andy Lutomirski]
 *runuser*(1),
 *su*(1),
 *prctl*(2),
-*capabilities*(7)
+*capabilities*(7),
 *landlock*(7)
 
 include::man-common/bugreports.adoc[]

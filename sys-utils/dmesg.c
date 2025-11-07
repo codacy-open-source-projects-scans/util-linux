@@ -29,6 +29,7 @@
 #include <fcntl.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "colors.h"
 #include "nls.h"
 #include "strutils.h"
@@ -460,7 +461,7 @@ static int parse_level(const char *str, size_t len)
 		for (i = 0; i < ARRAY_SIZE(level_names); i++) {
 			const char *n = level_names[i].name;
 
-			if (strncasecmp(str, n, len) == 0 && *(n + len) == '\0')
+			if (c_strncasecmp(str, n, len) == 0 && *(n + len) == '\0')
 				return i + offset;
 		}
 	}
@@ -498,7 +499,7 @@ static int parse_facility(const char *str, size_t len)
 		for (i = 0; i < ARRAY_SIZE(facility_names); i++) {
 			const char *n = facility_names[i].name;
 
-			if (strncasecmp(str, n, len) == 0 && *(n + len) == '\0')
+			if (c_strncasecmp(str, n, len) == 0 && *(n + len) == '\0')
 				return i;
 		}
 	}
@@ -600,11 +601,6 @@ static const char *parse_kmsg_timestamp(const char *str0, struct timeval *tv)
 		return str0;
 
 	return end + 1;	/* skip separator */
-}
-
-static double time_diff(struct timeval *a, struct timeval *b)
-{
-	return (a->tv_sec - b->tv_sec) + (a->tv_usec - b->tv_usec) / (double) USEC_PER_SEC;
 }
 
 static int get_syslog_buffer_size(void)
@@ -925,11 +921,7 @@ static int get_next_syslog_record(struct dmesg_control *ctl,
 		if (*begin == '[' && (*(begin + 1) == ' ' ||
 				      isdigit(*(begin + 1)))) {
 
-			if (!is_time_fmt_set(ctl, DMESG_TIMEFTM_NONE))
-				begin = parse_syslog_timestamp(begin + 1, &rec->tv);
-			else
-				begin = skip_item(begin, end, "]");
-
+			begin = parse_syslog_timestamp(begin + 1, &rec->tv);
 			if (begin < end && *begin == ' ')
 				begin++;
 		}
@@ -1281,7 +1273,7 @@ full_output:
 		} else {
 			char cidbuf[PID_CHARS_MAX+3] = {'\0'};
 
-			sprintf(cidbuf, "[%*s] ",
+			snprintf(cidbuf, sizeof(cidbuf), "[%*s] ",
 				(char)ctl->caller_id_size, rec->caller_id);
 			ctl->indent += strnlen(cidbuf, sizeof(cidbuf));
 			fputs(cidbuf, stdout);
@@ -1466,10 +1458,7 @@ static int parse_kmsg_record(struct dmesg_control *ctl,
 		goto mesg;
 
 	/* C) timestamp */
-	if (is_time_fmt_set(ctl, DMESG_TIMEFTM_NONE))
-		p = skip_item(p, end, ",;");
-	else
-		p = parse_kmsg_timestamp(p, &rec->tv);
+	p = parse_kmsg_timestamp(p, &rec->tv);
 	if (LAST_KMSG_FIELD(p))
 		goto mesg;
 
@@ -1767,8 +1756,7 @@ int main(int argc, char *argv[])
 		case 'L':
 			colormode = UL_COLORMODE_AUTO;
 			if (optarg)
-				colormode = colormode_or_err(optarg,
-						_("unsupported color mode"));
+				colormode = colormode_or_err(optarg);
 			break;
 		case 'l':
 			ctl.fltr_lev= 1;
@@ -1829,13 +1817,13 @@ int main(int argc, char *argv[])
 			break;
 		case OPT_SINCE:
 		{
-			if (parse_timestamp(optarg, &ctl.since) < 0)
+			if (ul_parse_timestamp(optarg, &ctl.since) < 0)
 				errx(EXIT_FAILURE, _("invalid time value \"%s\""), optarg);
 			break;
 		}
 		case OPT_UNTIL:
 		{
-			if (parse_timestamp(optarg, &ctl.until) < 0)
+			if (ul_parse_timestamp(optarg, &ctl.until) < 0)
 				errx(EXIT_FAILURE, _("invalid time value \"%s\""), optarg);
 			break;
 		}
@@ -1939,7 +1927,7 @@ int main(int argc, char *argv[])
 			;
 		else
 			break;
-		/* fallthrough */
+		FALLTHROUGH;
 	case SYSLOG_ACTION_CLEAR:
 		if (klogctl(SYSLOG_ACTION_CLEAR, NULL, 0) < 0)
 			err(EXIT_FAILURE, _("clear kernel buffer failed"));

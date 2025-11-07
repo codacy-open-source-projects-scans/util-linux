@@ -15,9 +15,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 #include <stdio.h>
 #include <errno.h>
@@ -40,6 +39,7 @@
 #include <blkid.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "pathnames.h"
 #include "blkdev.h"
 #include "canonicalize.h"
@@ -67,7 +67,9 @@ static int column_id_to_number(int id);
 
 /* column IDs */
 enum {
-	COL_ALIOFF = 0,
+	COL_NAME,	/* Keep it first to make --output-all readable */
+
+	COL_ALIOFF,
 	COL_IDLINK,
 	COL_ID,
 	COL_DALIGN,
@@ -96,7 +98,6 @@ enum {
 	COL_MODE,
 	COL_MODEL,
 	COL_MQ,
-	COL_NAME,
 	COL_OPTIO,
 	COL_OWNER,
 	COL_PARTFLAGS,
@@ -350,7 +351,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 
@@ -362,7 +363,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 		for (i = 0; i < ARRAY_SIZE(infos); i++) {
 			if (scols_shellvar_name(infos[i].name, &buf, &bufsz) != 0)
 				continue;
-			if (!strncasecmp(name, buf, namesz) && !*(buf + namesz)) {
+			if (!c_strncasecmp(name, buf, namesz) && !*(buf + namesz)) {
 				free(buf);
 				return i;
 			}
@@ -400,7 +401,7 @@ static char *get_device_path(struct lsblk_device *dev)
 	assert(dev->name);
 
 	if (is_dm(dev->name))
-		return __canonicalize_dm_name(lsblk->sysroot, dev->name);
+		return ul_canonicalize_dm_name_prefixed(lsblk->sysroot, dev->name);
 
 	snprintf(path, sizeof(path), "/dev/%s", dev->name);
 	sysfs_devname_sys_to_dev(path);
@@ -463,7 +464,7 @@ static char *get_type(struct lsblk_device *dev)
 
 			if (dm_uuid_prefix) {
 				/* kpartx hack to remove partition number */
-				if (strncasecmp(dm_uuid_prefix, "part", 4) == 0)
+				if (c_strncasecmp(dm_uuid_prefix, "part", 4) == 0)
 					dm_uuid_prefix[4] = '\0';
 
 				res = xstrdup(dm_uuid_prefix);
@@ -482,8 +483,12 @@ static char *get_type(struct lsblk_device *dev)
 		char *md_level = NULL;
 
 		ul_path_read_string(dev->sysfs, &md_level, "md/level");
-		res = md_level ? md_level : xstrdup("md");
-
+		if (md_level && *md_level)
+			res = md_level;
+		else {
+			free(md_level);		/* may be unused empty string */
+			res = xstrdup("md");
+		}
 	} else {
 		const char *type = NULL;
 		int x = 0;
@@ -2223,7 +2228,7 @@ static void set_column_type(const struct colinfo *ci, struct libscols_column *cl
 		/* See init_scols_filter(), it may overwrite the type */
 		if (!lsblk->bytes)
 			break;
-		/* fallthrough */
+		FALLTHROUGH;
 	case COLTYPE_NUM:
 		scols_column_set_json_type(cl, SCOLS_JSON_NUMBER);
 		scols_column_set_data_type(cl, SCOLS_DATA_U64);
@@ -2328,6 +2333,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -d, --nodeps         don't print slaves or holders\n"), out);
 	fputs(_(" -e, --exclude <list> exclude devices by major number (default: RAM disks)\n"), out);
 	fputs(_(" -f, --fs             output info about filesystems\n"), out);
+	fputs(_("     --hyperlink[=<when>]\n"
+		"                      print paths as hyperlinks (always|never|auto)\n"), out);
 	fputs(_(" -i, --ascii          use ascii characters only\n"), out);
 	fputs(_(" -l, --list           use list format output\n"), out);
 	fputs(_(" -m, --perms          output info about permissions\n"), out);
@@ -2346,7 +2353,7 @@ static void __attribute__((__noreturn__)) usage(void)
 		"                      methods used to gather data (default: file,udev,blkid)\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(_(" -H, --list-columns   list the available columns\n"), out);
+	fprintf(out, USAGE_LIST_COLUMNS_OPTION(22));
 	fprintf(out, USAGE_HELP_OPTIONS(22));
 
 	fprintf(out, USAGE_MAN_TAIL("lsblk(8)"));
@@ -2355,7 +2362,7 @@ static void __attribute__((__noreturn__)) usage(void)
 }
 
 
-static void __attribute__((__noreturn__)) list_colunms(void)
+static void __attribute__((__noreturn__)) list_columns(void)
 {
 	size_t i;
 	struct libscols_table *tb = xcolumn_list_table_new("lsblk-columns", stdout,
@@ -2674,8 +2681,7 @@ int main(int argc, char *argv[])
 				errtryhelp(EXIT_FAILURE);
 			break;
 		case OPT_HYPERLINK:
-			if (hyperlinkwanted_or_err(optarg,
-					_("invalid hyperlink argument")))
+			if (hyperlinkwanted(optarg))
 				lsblk->uri = xgethosturi(NULL);
 			break;
 		case 'H':
@@ -2691,7 +2697,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (collist)
-		list_colunms();        /* print end exit */
+		list_columns();        /* print end exit */
 
 	if (force_tree)
 		lsblk->flags |= LSBLK_TREE;
@@ -2708,6 +2714,7 @@ int main(int argc, char *argv[])
 		add_column(COL_TARGETS);
 	}
 
+	outarg = outarg == NULL ? getenv("LSBLK_COLUMNS") : outarg;
 	if (outarg && string_add_to_idarray(outarg, columns, ARRAY_SIZE(columns),
 					 &ncolumns, column_name_to_id) < 0)
 		return EXIT_FAILURE;

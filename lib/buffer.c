@@ -207,6 +207,11 @@ size_t ul_buffer_get_bufsiz(struct ul_buffer *buf)
 	return buf->sz;
 }
 
+size_t ul_buffer_get_datasiz(struct ul_buffer *buf)
+{
+	return buf->end - buf->begin;
+}
+
 /* encode data by mbs_safe_encode() to avoid control and non-printable chars */
 char *ul_buffer_get_safe_data(struct ul_buffer *buf, size_t *sz, size_t *width, const char *safechars)
 {
@@ -226,7 +231,7 @@ char *ul_buffer_get_safe_data(struct ul_buffer *buf, size_t *sz, size_t *width, 
 		buf->encoded_sz = encsz;
 	}
 
-	res = mbs_safe_encode_to_buffer(data, &wsz, buf->encoded, safechars);
+	res = mbs_safe_encode_to_buffer(data, &wsz, buf->encoded, buf->encoded_sz, safechars);
 	if (!res || !wsz || wsz == (size_t) -1)
 		goto nothing;
 

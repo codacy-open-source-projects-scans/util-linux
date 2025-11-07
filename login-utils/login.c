@@ -1194,6 +1194,8 @@ static void init_environ(struct login_context *cxt)
 	int len, i;
 
 	saved = env_list_add_getenv(NULL, "TERM", "dumb");
+	saved = env_list_add_getenv(saved, "COLORTERM", NULL);
+	saved = env_list_add_getenv(saved, "NO_COLOR", NULL);
 
 	/* destroy environment unless user has requested preservation (-p) */
 	if (!cxt->keep_env) {
@@ -1212,14 +1214,8 @@ static void init_environ(struct login_context *cxt)
 	xsetenv("USER", pwd->pw_name, 1);
 	xsetenv("SHELL", pwd->pw_shell, 1);
 
-	if (pwd->pw_uid) {
-		if (logindefs_setenv("PATH", "ENV_PATH", _PATH_DEFPATH) != 0)
-			err(EXIT_FAILURE, _("failed to set the %s environment variable"), "PATH");
-
-	} else if (logindefs_setenv("PATH", "ENV_ROOTPATH", NULL) != 0 &&
-		   logindefs_setenv("PATH", "ENV_SUPATH", _PATH_DEFPATH_ROOT) != 0) {
-			err(EXIT_FAILURE, _("failed to set the %s environment variable"), "PATH");
-	}
+	if (logindefs_setenv_path(pwd->pw_uid) != 0)
+		err(EXIT_FAILURE, _("failed to set the PATH environment variable"));
 
 	/* mailx will give a funny error msg if you forget this one */
 	len = snprintf(tmp, sizeof(tmp), "%s/%s", _PATH_MAILDIR, pwd->pw_name);
@@ -1344,7 +1340,7 @@ static void initialize(int argc, char **argv, struct login_context *cxt)
 	timeout = (unsigned int)getlogindefs_num("LOGIN_TIMEOUT", LOGIN_TIMEOUT);
 
 	/* TRANSLATORS: The standard value for %u is 60. */
-	xasprintf(&timeout_msg, _("%s: timed out after %u seconds"),
+	xasprintf(&timeout_msg, _("%s: timed out after %u seconds\n"),
 				  program_invocation_short_name, timeout);
 
 	signal(SIGALRM, timedout);
@@ -1416,10 +1412,76 @@ static void initialize(int argc, char **argv, struct login_context *cxt)
 		ul_close_all_fds(STDERR_FILENO + 1, ~0U);
 }
 
+static bool build_shell_argv(char *shell, char **child_argv)
+{
+	bool script;
+	int child_argc = 0;
+
+	/* if the shell field has a space: treat it like a shell script */
+	script = strchr(shell, ' ') != NULL;
+
+	if (script) {
+		char *buff;
+
+		xasprintf(&buff, "exec %s", shell);
+		child_argv[child_argc++] = "/bin/sh";
+		child_argv[child_argc++] = "-sh";
+		child_argv[child_argc++] = "-c";
+		child_argv[child_argc++] = buff;
+	} else {
+		char *buff, *p;
+
+		xasprintf(&buff, "-%.*s", PATH_MAX,
+				((p = strrchr(shell, '/')) ?
+				p + 1 : shell));
+		child_argv[child_argc++] = shell;
+		child_argv[child_argc++] = buff;
+	}
+
+	child_argv[child_argc++] = NULL;
+
+	return script;
+}
+
+static void login_shell_fallback(char **child_argv)
+{
+#if defined (HAVE_LIBECONF) && defined (USE_VENDORDIR)
+	size_t size = 0;
+	econf_err error;
+	char **keys = NULL;
+	econf_file *key_file = open_etc_shells();
+
+	if (!key_file)
+		return;
+
+	error = econf_getKeys(key_file, NULL, &size, &keys);
+	if (error) {
+		econf_free(key_file);
+		errx(EXIT_FAILURE,
+			_("Cannot evaluate entries in shells files: %s"),
+			econf_errString(error));
+	}
+
+	for (size_t i = 0; i < size; i++) {
+		build_shell_argv(keys[i], child_argv);
+		execvp(child_argv[0], child_argv + 1);
+	}
+	econf_free(keys);
+	econf_free(key_file);
+#else
+	char *s;
+	setusershell();
+	while ((s = getusershell())) {
+		build_shell_argv(s, child_argv);
+		execvp(child_argv[0], child_argv + 1);
+	}
+	endusershell();
+#endif
+}
+
 int main(int argc, char **argv)
 {
 	char *child_argv[10];
-	int child_argc = 0;
 	struct passwd *pwd;
 	struct login_context cxt = {
 		.tty_mode = TTY_MODE,		  /* tty chmod() */
@@ -1493,7 +1555,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	cxt.quiet = get_hushlogin_status(pwd, 1) == 1 ? 1 : 0;
+	cxt.quiet = get_hushlogin_status(pwd, pam_getenv(cxt.pamh, "HOME"), 1) == 1 ? 1 : 0;
 
 	/*
 	 * Open PAM session (after successful authentication and account check).
@@ -1543,8 +1605,9 @@ int main(int argc, char **argv)
 	}
 
 	/* wait until here to change directory! */
-	if (chdir(pwd->pw_dir) < 0) {
-		warn(_("%s: change directory failed"), pwd->pw_dir);
+	const char *home = getenv("HOME") ?: pwd->pw_dir;
+	if (chdir(home) < 0) {
+		warn(_("%s: change directory failed"), home);
 
 		if (!getlogindefs_bool("DEFAULT_HOME", 1))
 			exit(0);
@@ -1554,38 +1617,21 @@ int main(int argc, char **argv)
 		printf(_("Logging in with home = \"/\".\n"));
 	}
 
-	/* if the shell field has a space: treat it like a shell script */
-	script = strchr(pwd->pw_shell, ' ') != NULL;
-
-	if (script) {
-		char *buff;
-
-		xasprintf(&buff, "exec %s", pwd->pw_shell);
-		child_argv[child_argc++] = "/bin/sh";
-		child_argv[child_argc++] = "-sh";
-		child_argv[child_argc++] = "-c";
-		child_argv[child_argc++] = buff;
-	} else {
-		char *buff, *p;
-
-		xasprintf(&buff, "-%.*s", PATH_MAX,
-			  ((p = strrchr(pwd->pw_shell, '/')) ?
-			  p + 1 : pwd->pw_shell));
-		child_argv[child_argc++] = pwd->pw_shell;
-		child_argv[child_argc++] = buff;
-	}
-
-	child_argv[child_argc++] = NULL;
-
 	/* http://www.linux-pam.org/Linux-PAM-html/adg-interface-by-app-expected.html#adg-pam_end */
 	(void) pam_end(cxt.pamh, PAM_SUCCESS|PAM_DATA_SILENT);
 
+	script = build_shell_argv(pwd->pw_shell, child_argv);
 	execvp(child_argv[0], child_argv + 1);
 
-	if (script)
-		warn(_("couldn't exec shell script"));
-	else
-		warn(_("no shell"));
+	if (getlogindefs_bool("LOGIN_SHELL_FALLBACK", 0)) {
+		login_shell_fallback(child_argv);
+		warn(_("no available shell"));
+	} else {
+		if (script)
+			warn(_("couldn't exec shell script"));
+		else
+			warn(_("no shell"));
+	}
 
 	exit(EXIT_SUCCESS);
 }

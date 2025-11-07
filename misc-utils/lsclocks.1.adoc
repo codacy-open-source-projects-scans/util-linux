@@ -18,8 +18,14 @@ lsclocks - display system clocks
 
 *lsclocks* is a simple command to display system clocks.
 
-It allows to display information like current time and resolution of clocks like
-CLOCK_MONOTONIC, CLOCK_REALTIME and CLOCK_BOOTTIME.
+It allows to display information like current time and resolution of clocks.
+Different kinds of clocks are supported.
+
+* POSIX clocks: *CLOCK_MONOTONIC*, *CLOCK_REALTIME*, *CLOCK_BOOTTIME*, etc.
+* CPU clocks: *clock_getcpuclockid()*.
+* PTP clocks: */dev/ptp0*.
+* RTC clocks: */dev/rtc0*.
+* Auxiliary clocks: *CLOCK_AUX0*, *CLOCK_AUX1*, etc.
 
 == OPTIONS
 
@@ -39,7 +45,7 @@ Output all columns.
 *-r*, *--raw*::
 Use raw output format.
 
-*-r*, *--time* _clock_::
+*-t*, *--time* _clock_::
 Show current time of one specific clock.
 
 *--no-discover-dynamic*::
@@ -59,6 +65,11 @@ Can be specified multiple times.
 *-c*, *--cpu-clock* _pid_::
 Also display CPU clock of specified process.
 Can be specified multiple times.
+
+== ENVIRONMENT
+
+LSCLOCKS_COLUMNS=::
+Specifies a comma-separated list of output columns to print. All columns listed in *OUTPUT COLUMNS* can be used.
 
 include::man-common/help-version.adoc[]
 

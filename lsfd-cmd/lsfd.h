@@ -101,6 +101,7 @@ enum {
 	COL_OWNER,		/* file */
 	COL_PACKET_IFACE,
 	COL_PACKET_PROTOCOL,
+	COL_PACKET_PROTOCOL_RAW,
 	COL_PARTITION,
 	COL_PID,
 	COL_PIDFD_COMM,
@@ -110,6 +111,7 @@ enum {
 	COL_POS,
 	COL_PTMX_TTY_INDEX,
 	COL_RAW_PROTOCOL,
+	COL_RAW_PROTOCOL_RAW,
 	COL_RDEV,
 	COL_SIGNALFD_MASK,
 	COL_SIZE,
@@ -140,8 +142,15 @@ enum {
 	COL_UDPLITE_LPORT,
 	COL_UDPLITE_RPORT,
 	COL_UID,		/* process */
+	COL_UNIX_IPEER,
 	COL_UNIX_PATH,
 	COL_USER,		/* process */
+	COL_VSOCK_LADDR,
+	COL_VSOCK_RADDR,
+	COL_VSOCK_LCID,
+	COL_VSOCK_RCID,
+	COL_VSOCK_LPORT,
+	COL_VSOCK_RPORT,
 	COL_XMODE,
 	LSFD_N_COLS		/* This must be at last. */
 };
@@ -281,6 +290,7 @@ enum decode_source_level {
 
 void decode_source(char *buf, size_t bufsize, unsigned int dev_major, unsigned int dev_minor,
 		   enum decode_source_level level);
+
 /*
  * Name managing
  */

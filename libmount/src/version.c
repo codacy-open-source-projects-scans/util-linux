@@ -19,7 +19,6 @@
 #include <ctype.h>
 
 #include "mountP.h"
-#include "mount-api-utils.h"
 
 static const char *lib_version = LIBMOUNT_VERSION;
 static const char *lib_features[] = {
@@ -44,8 +43,14 @@ static const char *lib_features[] = {
 #ifdef USE_LIBMOUNT_MOUNTFD_SUPPORT
 	"fd-based-mount",
 #endif
+#ifdef HAVE_STATMOUNT_API
+	"statmount",
+#endif
 #if defined(HAVE_STATX) && defined(HAVE_STRUCT_STATX) && defined(AT_STATX_DONT_SYNC)
 	"statx",
+#endif
+#ifdef HAVE_STRUCT_FANOTIFY_EVENT_INFO_HEADER
+	"fanotify",
 #endif
 #if !defined(NDEBUG)
 	"assert",	/* libc assert.h stuff */

@@ -23,6 +23,9 @@ TS_DESC="-Q, --filter option"
 
 ts_init "$*"
 
+# https://github.com/util-linux/util-linux/pull/3205
+TS_KNOWN_FAIL="yes"
+
 ts_check_test_command "$TS_CMD_LSNS"
 ts_check_test_command "$TS_CMD_LSFD"
 
@@ -30,6 +33,8 @@ ts_check_test_command "$TS_HELPER_MKFDS"
 
 # unshare(2) used in userns factory of test_mkfds reports "Invalid argument".
 ts_skip_qemu_user
+
+lsfd_check_userns
 
 ts_cd "$TS_OUTDIR"
 PID=

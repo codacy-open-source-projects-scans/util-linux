@@ -23,7 +23,6 @@
 #include <grp.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
-#include <stdbool.h>
 
 #include <sys/ioctl.h>
 #include <linux/sockios.h>
@@ -197,9 +196,11 @@ static void enable_namespace(int nstype, const char *path)
 {
 	struct namespace_file *nsfile = get_nsfile(nstype);
 
-	if (nsfile)
+	if (nsfile) {
+		if (path && *path == '=')	/* used in getopt_long() block */
+			path++;
 		enable_nsfile(nsfile, path);
-	else
+	} else
 		assert(nsfile);
 }
 
@@ -621,12 +622,16 @@ int main(int argc, char *argv[])
 				do_rd = true;
 			break;
 		case 'w':
-			if (optarg)
+			if (optarg) {
+				if (*optarg == '=')
+					optarg++;
 				open_target_fd(&wd_fd, "cwd", optarg);
-			else
+			} else
 				do_wd = true;
 			break;
 		case 'W':
+			if (optarg && *optarg == '=')
+				optarg++;
 			wdns = optarg;
 			break;
 		case 'e':
@@ -836,9 +841,9 @@ int main(int argc, char *argv[])
 		if (force_gid && setgroups(0, NULL) != 0 && setgroups_nerrs)	/* drop supplementary groups */
 			err(EXIT_FAILURE, _("setgroups failed"));
 		if (force_gid && setgid(gid) < 0)		/* change GID */
-			err(EXIT_FAILURE, _("setgid failed"));
+			err(EXIT_FAILURE, _("setgid() failed"));
 		if (force_uid && setuid(uid) < 0)		/* change UID */
-			err(EXIT_FAILURE, _("setuid failed"));
+			err(EXIT_FAILURE, _("setuid() failed"));
 	}
 
 	if (keepcaps && (namespaces & CLONE_NEWUSER))

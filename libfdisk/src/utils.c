@@ -128,7 +128,7 @@ char *fdisk_partname(const char *dev, size_t partno)
 
 	/* It is impossible to predict /dev/dm-N partition names. */
 	if (strncmp(dev, "/dev/dm-", sizeof("/dev/dm-") - 1) == 0) {
-		dev_mapped = canonicalize_dm_name (dev + 5);
+		dev_mapped = ul_canonicalize_dm_name (dev + 5);
 		if (dev_mapped)
 			dev = dev_mapped;
 	}
@@ -143,7 +143,7 @@ char *fdisk_partname(const char *dev, size_t partno)
 
 	/* devfs kludge - note: fdisk partition names are not supposed
 	   to equal kernel names, so there is no reason to do this */
-	if (endswith(dev, "disc")) {
+	if (ul_endswith(dev, "disc")) {
 		w -= 4;
 		p = "part";
 	}

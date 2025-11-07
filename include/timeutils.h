@@ -47,7 +47,7 @@ typedef uint64_t nsec_t;
 #define FORMAT_TIMESTAMP_RELATIVE_MAX 256
 #define FORMAT_TIMESPAN_MAX 64
 
-int parse_timestamp(const char *t, usec_t *usec);
+int ul_parse_timestamp(const char *t, usec_t *usec);
 int get_gmtoff(const struct tm *tp);
 
 /* flags and masks for strxxx_iso() functions */
@@ -112,4 +112,8 @@ static inline bool is_timespecset(const struct timespec *t)
 	return t->tv_sec || t->tv_nsec;
 }
 
+static inline double time_diff(const struct timeval *a, const struct timeval *b)
+{
+	return (a->tv_sec - b->tv_sec) + (a->tv_usec - b->tv_usec) / (double) USEC_PER_SEC;
+}
 #endif /* UTIL_LINUX_TIME_UTIL_H */

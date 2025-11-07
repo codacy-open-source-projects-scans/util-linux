@@ -266,6 +266,73 @@ int mnt_is_readonly(const char *path)
 	return 0;
 }
 
+#if defined(HAVE_STATX) && defined(HAVE_STRUCT_STATX) && defined(HAVE_STRUCT_STATX_STX_MNT_ID)
+static int get_mnt_id(	int fd, const char *path,
+			uint64_t *uniq_id, int *id)
+{
+	int rc;
+	struct statx sx = { 0 };
+	int flags = AT_STATX_DONT_SYNC | AT_NO_AUTOMOUNT;
+
+	if (!path || !*path)
+		flags |= AT_EMPTY_PATH;
+
+	if (id) {
+		rc = statx(fd, path ? path : "", flags,
+				STATX_MNT_ID, &sx);
+		if (rc)
+			return rc;
+		*id = sx.stx_mnt_id;
+	}
+	if (uniq_id) {
+# ifdef STATX_MNT_ID_UNIQUE
+		errno = 0;
+		rc = statx(fd, path ? path : "", flags,
+				STATX_MNT_ID_UNIQUE, &sx);
+
+		if (rc && errno == EINVAL)
+			return -ENOSYS;		/* *_ID_UNIQUE unsupported? */
+		if (rc)
+			return rc;
+		*uniq_id = sx.stx_mnt_id;
+# else
+		return -ENOSYS;
+# endif
+	}
+	return 0;
+}
+#else /* HAVE_STATX && HAVE_STRUCT_STATX && AVE_STRUCT_STATX_STX_MNT_ID */
+static int get_mnt_id(	int fd __attribute__((__unused__)),
+			const char *path __attribute__((__unused__)),
+			uint64_t *uniq_id __attribute__((__unused__)),
+			int *id __attribute__((__unused__)))
+{
+	return -ENOSYS;
+}
+#endif
+
+int mnt_id_from_fd(int fd, uint64_t *uniq_id, int *id)
+{
+	return get_mnt_id(fd, NULL, uniq_id, id);
+}
+
+/**
+ * mnt_id_from_path:
+ * @path: mountpoint
+ * @uniq_id: returns STATX_MNT_ID_UNIQUE (optional)
+ * @id: returns STATX_MNT_ID (optional)
+ *
+ * Converts @path to ID.
+ *
+ * Returns: 0 on success, <0 on error
+ *
+ * Since: 2.41
+ */
+int mnt_id_from_path(const char *path, uint64_t *uniq_id, int *id)
+{
+	return get_mnt_id(-1, path, uniq_id, id);
+}
+
 /**
  * mnt_mangle:
  * @str: string
@@ -329,6 +396,7 @@ int mnt_fstype_is_pseudofs(const char *type)
 		"fuse.gvfs-fuse-daemon", /* Old name, not used by gvfs any more. */
 		"fuse.gvfsd-fuse",
 		"fuse.lxcfs",
+		"fuse.portal",
 		"fuse.rofiles-fuse",
 		"fuse.vmware-vmblock",
 		"fuse.xwmfs",
@@ -438,7 +506,7 @@ const char *mnt_statfs_get_fstype(struct statfs *vfs)
 	case STATFS_NCP_MAGIC:		return "ncp";
 	case STATFS_NFS_MAGIC:		return "nfs";
 	case STATFS_NILFS_MAGIC:	return "nilfs2";
-	case STATFS_NTFS_MAGIC:		return "ntfs";
+	case STATFS_NTFS_MAGIC:		return "ntfs3";
 	case STATFS_OCFS2_MAGIC:	return "ocfs2";
 	case STATFS_OMFS_MAGIC:		return "omfs";
 	case STATFS_OPENPROMFS_MAGIC:	return "openpromfs";
@@ -1325,7 +1393,7 @@ static int test_startswith(struct libmnt_test *ts __attribute__((unused)),
 	char *optstr = argv[1];
 	char *pattern = argv[2];
 
-	printf("%s\n", startswith(optstr, pattern) ? "YES" : "NOT");
+	printf("%s\n", ul_startswith(optstr, pattern) ? "YES" : "NOT");
 	return 0;
 }
 
@@ -1338,7 +1406,7 @@ static int test_endswith(struct libmnt_test *ts __attribute__((unused)),
 	char *optstr = argv[1];
 	char *pattern = argv[2];
 
-	printf("%s\n", endswith(optstr, pattern) ? "YES" : "NOT");
+	printf("%s\n", ul_endswith(optstr, pattern) ? "YES" : "NOT");
 	return 0;
 }
 
@@ -1348,7 +1416,7 @@ static int test_mountpoint(struct libmnt_test *ts __attribute__((unused)),
 	if (argc != 2)
 		return -1;
 
-	char *path = canonicalize_path(argv[1]),
+	char *path = ul_canonicalize_path(argv[1]),
 	     *mnt = path ? mnt_get_mountpoint(path) :  NULL;
 
 	printf("%s: %s\n", argv[1], mnt ? : "unknown");
@@ -1383,7 +1451,7 @@ static int test_chdir(struct libmnt_test *ts __attribute__((unused)),
 		return -1;
 
 	int rc;
-	char *path = canonicalize_path(argv[1]),
+	char *path = ul_canonicalize_path(argv[1]),
 	     *last = NULL;
 
 	if (!path)

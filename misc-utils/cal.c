@@ -421,8 +421,7 @@ int main(int argc, char **argv)
 		case OPT_COLOR:
 			ctl.colormode = UL_COLORMODE_AUTO;
 			if (optarg)
-				ctl.colormode = colormode_or_err(optarg,
-						_("unsupported color mode"));
+				ctl.colormode = colormode_or_err(optarg);
 			break;
 		case OPT_REFORM:
 			ctl.reform_year = parse_reform_year(optarg);
@@ -467,7 +466,7 @@ int main(int argc, char **argv)
 	if (argc == 1 && !isdigit_string(*argv)) {
 		usec_t x;
 		/* cal <timestamp> */
-		if (parse_timestamp(*argv, &x) == 0)
+		if (ul_parse_timestamp(*argv, &x) == 0)
 			now = (time_t) (x / 1000000);
 		/* cal <monthname> */
 		else if ((ctl.req.month = monthname_to_number(&ctl, *argv)) > 0)
@@ -485,7 +484,7 @@ int main(int argc, char **argv)
 		ctl.req.day = strtos32_or_err(*argv++, _("illegal day value"));
 		if (ctl.req.day < 1 || DAYS_IN_MONTH < ctl.req.day)
 			errx(EXIT_FAILURE, _("illegal day value: use 1-%d"), DAYS_IN_MONTH);
-		/* fallthrough */
+		FALLTHROUGH;
 	case 2:
 		if (isdigit(**argv))
 			ctl.req.month = strtos32_or_err(*argv++, _("illegal month value: use 1-12"));
@@ -497,7 +496,7 @@ int main(int argc, char **argv)
 		}
 		if (ctl.req.month < 1 || MONTHS_IN_YEAR < ctl.req.month)
 			errx(EXIT_FAILURE, _("illegal month value: use 1-12"));
-		/* fallthrough */
+		FALLTHROUGH;
 	case 1:
 		ctl.req.year = strtos32_or_err(*argv++, _("illegal year value"));
 		if (ctl.req.year < SMALLEST_YEAR)

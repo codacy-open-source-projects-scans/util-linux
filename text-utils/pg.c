@@ -146,7 +146,9 @@ static long startline;			/* start line from argv[] */
 static int nextfile = 1;		/* files to advance */
 static jmp_buf jmpenv;			/* jump from signal handlers */
 static int canjump;			/* jmpenv is valid */
+#ifdef HAVE_WIDECHAR
 static wchar_t wbuf[READBUF];		/* used in several widechar routines */
+#endif
 
 static char *copyright;
 static const char *helpscreen = N_("\
@@ -656,7 +658,7 @@ static void prompt(long long pageno)
 					break;
 				case SEARCH_FIN:
 					state = SEARCH;
-					/* fallthrough */
+					FALLTHROUGH;
 				case SEARCH:
 					if (cmd.cmdline[cmd.cmdlen - 1] == '\\') {
 						escape = 1;
@@ -735,7 +737,7 @@ static void prompt(long long pageno)
 					continue;
 				}
 				state = COUNT;
-				/* fallthrough */
+				FALLTHROUGH;
 			case COUNT:
 				break;
 			case ADDON_FIN:
@@ -746,6 +748,10 @@ static void prompt(long long pageno)
 			}
 		}
 		write_all(STDOUT_FILENO, &key, 1);
+
+		if (cmd.cmdlen + 1 >= sizeof(cmd.cmdline))
+			goto endprompt;
+
 		cmd.cmdline[cmd.cmdlen++] = key;
 		cmd.cmdline[cmd.cmdlen] = '\0';
 		if (nflag && state == CMD_FIN)

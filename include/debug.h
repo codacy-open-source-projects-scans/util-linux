@@ -1,11 +1,6 @@
 /*
- * SPDX-License-Identifier: LGPL-2.1-or-later
- *
- * Copyright (C) 2014 Ondrej Oprala <ooprala@redhat.com>
- * Copyright (C) 2014 Karel Zak <kzak@redhat.com>
- *
- * This file may be distributed under the terms of the
- * GNU Lesser General Public License.
+ * No copyright is claimed.  This code is in the public domain; do with
+ * it what you wish.
  */
 #ifndef UTIL_LINUX_DEBUG_H
 #define UTIL_LINUX_DEBUG_H
@@ -41,6 +36,8 @@
 
 #include <stdarg.h>
 #include <string.h>
+
+#include "c.h"
 
 struct ul_debug_maskname {
 	const char *name;
@@ -94,7 +91,7 @@ struct ul_debug_maskname {
 		} else \
 			lib ## _debug_mask = mask; \
 		if (lib ## _debug_mask) { \
-			if (getuid() != geteuid() || getgid() != getegid()) { \
+			if (is_privileged_execution()) { \
 				lib ## _debug_mask |= __UL_DEBUG_FL_NOADDR; \
 				fprintf(stderr, "%d: %s: don't print memory addresses (SUID executable).\n", getpid(), # lib); \
 			} \

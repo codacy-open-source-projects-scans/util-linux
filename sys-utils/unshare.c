@@ -13,9 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 
 #include <errno.h>
@@ -413,7 +412,7 @@ static struct map_range get_map_range(const char *s)
  * @filename: The file to look up the range from. This should be either
  *            ``/etc/subuid`` or ``/etc/subgid``.
  * @uid: The uid of the user whose range we should look up.
- * @identity: (boolean) If true identity map the range, otherwise map to 0
+ * @identity: (boolean) If true, identity map the range, otherwise map to 0.
  *
  * This finds the first subid range matching @uid in @filename.
  */
@@ -470,6 +469,7 @@ static struct map_range read_subid_range(char *filename, uid_t uid, int identity
 		fclose(idmap);
 		free(pw);
 		free(pwbuf);
+		free(line);
 
 		return map;
 	}
@@ -737,7 +737,7 @@ static int is_fixed(const char *interp)
 
 	flags = strrchr(interp, ':');
 
-	return strchr(flags, 'F') != NULL;
+	return flags && strchr(flags, 'F') != NULL;
 }
 
 static void load_interp(const char *binfmt_mnt, const char *interp)
@@ -781,33 +781,35 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" -C, --cgroup[=<file>]     unshare cgroup namespace\n"), out);
 	fputs(_(" -T, --time[=<file>]       unshare time namespace\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	fputs(_(" -f, --fork                fork before launching <program>\n"), out);
-	fputs(_(" --map-user=<uid>|<name>   map current user to uid (implies --user)\n"), out);
-	fputs(_(" --map-group=<gid>|<name>  map current group to gid (implies --user)\n"), out);
+	fputs(_(" --mount-proc[=<dir>]      mount proc filesystem first (implies --mount)\n"), out);
+	fputs(_(" --mount-binfmt[=<dir>]    mount binfmt filesystem first (implies --user and --mount)\n"), out);
+	fputs(_(" -l, --load-interp <file>  load binfmt definition in the namespace (implies --mount-binfmt)\n"), out);
+	fputs(_(" --propagation slave|shared|private|unchanged\n"
+	        "                           modify mount propagation in mount namespace\n"), out);
+	fputs(_(" -R, --root <dir>          run the command with root directory set to <dir>\n"), out);
+	fputs(_(" -w, --wd <dir>            change working directory to <dir>\n"), out);
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_(" -S, --setuid <uid>        set uid in entered namespace\n"), out);
+	fputs(_(" -G, --setgid <gid>        set gid in entered namespace\n"), out);
+	fputs(_(" --map-user <uid>|<name>   map current user to uid (implies --user)\n"), out);
+	fputs(_(" --map-group <gid>|<name>  map current group to gid (implies --user)\n"), out);
 	fputs(_(" -r, --map-root-user       map current user to root (implies --user)\n"), out);
 	fputs(_(" -c, --map-current-user    map current user to itself (implies --user)\n"), out);
 	fputs(_(" --map-auto                map users and groups automatically (implies --user)\n"), out);
-	fputs(_(" --map-users=<inneruid>:<outeruid>:<count>\n"
+	fputs(_(" --map-users <inneruid>:<outeruid>:<count>\n"
 		"                           map count users from outeruid to inneruid (implies --user)\n"), out);
-	fputs(_(" --map-groups=<innergid>:<outergid>:<count>\n"
+	fputs(_(" --map-groups <innergid>:<outergid>:<count>\n"
 		"                           map count groups from outergid to innergid (implies --user)\n"), out);
 	fputs(USAGE_SEPARATOR, out);
+	fputs(_(" -f, --fork                fork before launching <program>\n"), out);
 	fputs(_(" --kill-child[=<signame>]  when dying, kill the forked child (implies --fork)\n"
 		"                             defaults to SIGKILL\n"), out);
-	fputs(_(" --mount-proc[=<dir>]      mount proc filesystem first (implies --mount)\n"), out);
-	fputs(_(" --mount-binfmt[=<dir>]    mount binfmt filesystem first (implies --user and --mount)\n"), out);
-	fputs(_(" --propagation slave|shared|private|unchanged\n"
-	        "                           modify mount propagation in mount namespace\n"), out);
+	fputs(USAGE_SEPARATOR, out);
 	fputs(_(" --setgroups allow|deny    control the setgroups syscall in user namespaces\n"), out);
 	fputs(_(" --keep-caps               retain capabilities granted in user namespaces\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	fputs(_(" -R, --root=<dir>          run the command with root directory set to <dir>\n"), out);
-	fputs(_(" -w, --wd=<dir>            change working directory to <dir>\n"), out);
-	fputs(_(" -S, --setuid <uid>        set uid in entered namespace\n"), out);
-	fputs(_(" -G, --setgid <gid>        set gid in entered namespace\n"), out);
 	fputs(_(" --monotonic <offset>      set clock monotonic offset (seconds) in time namespaces\n"), out);
 	fputs(_(" --boottime <offset>       set clock boottime offset (seconds) in time namespaces\n"), out);
-	fputs(_(" -l, --load-interp <file>  load binfmt definition in the namespace (implies --mount-binfmt)\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
 	fprintf(out, USAGE_HELP_OPTIONS(27));
@@ -887,7 +889,7 @@ int main(int argc, char *argv[])
 	pid_t pid_bind = 0, pid_idmap = 0;
 	const char *newinterp = NULL;
 	pid_t pid = 0;
-#ifdef UL_HAVE_PIDFD
+#ifdef HAVE_PIDFD_OPEN
 	int fd_parent_pid = -1;
 #endif
 	int fd_idmap, fd_bind = -1;
@@ -1003,7 +1005,7 @@ int main(int argc, char *argv[])
 				insert_map_range(&groupmap,
 						 read_subid_range(_PATH_SUBGID, real_euid, 0));
 			else if (!strcmp(optarg, "subids"))
-				insert_map_range(&usermap,
+				insert_map_range(&groupmap,
 						 read_subid_range(_PATH_SUBGID, real_euid, 1));
 			else if (!strcmp(optarg, "all"))
 				read_kernel_map(&groupmap, _PATH_PROC_GIDMAP);
@@ -1114,7 +1116,7 @@ int main(int argc, char *argv[])
 			sigaddset(&sigset, SIGTERM) != 0 ||
 			sigprocmask(SIG_BLOCK, &sigset, &oldsigset) != 0)
 			err(EXIT_FAILURE, _("sigprocmask block failed"));
-#ifdef UL_HAVE_PIDFD
+#ifdef HAVE_PIDFD_OPEN
 		if (kill_child_signo != 0) {
 			/* make a connection to the original process (parent) */
 			fd_parent_pid = pidfd_open(getpid(), 0);
@@ -1180,7 +1182,7 @@ int main(int argc, char *argv[])
 	if (kill_child_signo != 0) {
 		if (prctl(PR_SET_PDEATHSIG, kill_child_signo) < 0)
 			err(EXIT_FAILURE, "prctl failed");
-#ifdef UL_HAVE_PIDFD
+#ifdef HAVE_PIDFD_OPEN
 		/* Use poll() to check that there is still the original parent. */
 		if (fd_parent_pid != -1) {
 			struct pollfd pollfds[1] = {
@@ -1239,7 +1241,7 @@ int main(int argc, char *argv[])
 		newdir = newdir ?: "/";
 	}
 	if (newdir && chdir(newdir))
-		err(EXIT_FAILURE, _("cannot chdir to '%s'"), newdir);
+		err(EXIT_FAILURE, _("cannot change directory to %s"), newdir);
 
 	if (procmnt) {
 		/* When not changing root and using the default propagation flags
@@ -1270,10 +1272,10 @@ int main(int argc, char *argv[])
 		if (setgroups(0, NULL) != 0)	/* drop supplementary groups */
 			err(EXIT_FAILURE, _("setgroups failed"));
 		if (setgid(gid) < 0)		/* change GID */
-			err(EXIT_FAILURE, _("setgid failed"));
+			err(EXIT_FAILURE, _("setgid() failed"));
 	}
 	if (force_uid && setuid(uid) < 0)	/* change UID */
-		err(EXIT_FAILURE, _("setuid failed"));
+		err(EXIT_FAILURE, _("setuid() failed"));
 
 	if (keepcaps && (unshare_flags & CLONE_NEWUSER))
 		cap_permitted_to_ambient();

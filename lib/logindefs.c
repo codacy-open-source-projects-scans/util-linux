@@ -32,6 +32,7 @@
 #include <pwd.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "closestream.h"
 #include "logindefs.h"
 #include "nls.h"
@@ -171,7 +172,7 @@ static struct item *search(const char *name)
 
 	ptr = list;
 	while (ptr != NULL) {
-		if (strcasecmp(name, ptr->name) == 0)
+		if (c_strcasecmp(name, ptr->name) == 0)
 			return ptr;
 		ptr = ptr->next;
 	}
@@ -185,7 +186,7 @@ static const char *search_config(const char *name)
 
 	ptr = list;
 	while (ptr != NULL) {
-		if (strcasecmp(name, ptr->name) == 0)
+		if (c_strcasecmp(name, ptr->name) == 0)
 			return ptr->path;
 		ptr = ptr->next;
 	}
@@ -196,7 +197,7 @@ static const char *search_config(const char *name)
 int getlogindefs_bool(const char *name, int dflt)
 {
 	struct item *ptr = search(name);
-	return ptr && ptr->value ? (strcasecmp(ptr->value, "yes") == 0) : dflt;
+	return ptr && ptr->value ? (c_strcasecmp(ptr->value, "yes") == 0) : dflt;
 }
 
 unsigned long getlogindefs_num(const char *name, unsigned long dflt)
@@ -424,6 +425,22 @@ int logindefs_setenv(const char *name, const char *conf, const char *dflt)
 }
 
 /*
+ * logindefs based setenv("PATH")
+ */
+int logindefs_setenv_path(uid_t uid)
+{
+	int rc = 0;
+
+	if (uid)
+		rc = logindefs_setenv("PATH", "ENV_PATH", _PATH_DEFPATH);
+
+	else if ((rc = logindefs_setenv("PATH", "ENV_SUPATH", NULL)) != 0)
+		rc = logindefs_setenv("PATH", "ENV_ROOTPATH", _PATH_DEFPATH_ROOT);
+
+	return rc;
+}
+
+/*
  * We need to check the effective UID/GID. For example, $HOME could be on a
  * root-squashed NFS or on an NFS with UID mapping, and access(2) uses the
  * real UID/GID.  Then open(2) seems as the surest solution.
@@ -467,7 +484,7 @@ int effective_access(const char *path, int mode)
  * BSD setreuid().
  */
 
-int get_hushlogin_status(struct passwd *pwd, int force_check)
+int get_hushlogin_status(struct passwd *pwd, const char *override_home, int force_check)
 {
 	const char *files[] = { _PATH_HUSHLOGINS, _PATH_HUSHLOGIN, NULL };
 	const char *file;
@@ -520,7 +537,7 @@ int get_hushlogin_status(struct passwd *pwd, int force_check)
 		if (strlen(pwd->pw_dir) + strlen(file) + 2 > sizeof(buf))
 			continue;
 
-		if (snprintf(buf, sizeof(buf), "%s/%s", pwd->pw_dir, file) < 0)
+		if (snprintf(buf, sizeof(buf), "%s/%s", override_home ?: pwd->pw_dir, file) < 0)
 			continue;
 
 		if (force_check) {

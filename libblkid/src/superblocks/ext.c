@@ -164,6 +164,7 @@ static struct ext2_super_block *ext_get_super(
 		 * then declare a checksum mismatch.
 		 */
 		if (!blkid_probe_verify_csum(pr, csum, le32_to_cpu(es->s_checksum))) {
+#ifdef O_DIRECT
 			if (blkid_probe_reset_buffers(pr))
 				return NULL;
 
@@ -175,7 +176,19 @@ static struct ext2_super_block *ext_get_super(
 			csum = crc32c(~0, es, offsetof(struct ext2_super_block, s_checksum));
 			if (!blkid_probe_verify_csum(pr, csum, le32_to_cpu(es->s_checksum)))
 				return NULL;
+#else
+			return NULL;
+#endif
 		}
+	} else {
+		/*
+		 * For legacy fs without checksum, additionally verify the
+		 * block size to reduce false positive. Currently max allowed
+		 * block size is 64KiB (s_log_block_size <= 6), check for 256
+		 * to be more future proof.
+		 */
+		if (le32_to_cpu(es->s_log_block_size) >= 256)
+			return NULL;
 	}
 	if (fc)
 		*fc = le32_to_cpu(es->s_feature_compat);

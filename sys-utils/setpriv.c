@@ -13,9 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 
 #include <cap-ng.h>
@@ -45,6 +44,8 @@
 #include "env.h"
 #include "setpriv-landlock.h"
 #include "seccomp.h"
+
+#include "logindefs.h"
 
 #ifndef PR_SET_NO_NEW_PRIVS
 # define PR_SET_NO_NEW_PRIVS 38
@@ -134,8 +135,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -d, --dump                  show current state (and do not exec)\n"), out);
 	fputs(_(" --nnp, --no-new-privs       disallow granting new privileges\n"), out);
-	fputs(_(" --ambient-caps <caps,...>   set ambient capabilities\n"), out);
-	fputs(_(" --inh-caps <caps,...>       set inheritable capabilities\n"), out);
+	fputs(_(" --ambient-caps <caps>       set ambient capabilities\n"), out);
+	fputs(_(" --inh-caps <caps>           set inheritable capabilities\n"), out);
 	fputs(_(" --bounding-set <caps>       set capability bounding set\n"), out);
 	fputs(_(" --ruid <uid|user>           set real uid\n"), out);
 	fputs(_(" --euid <uid|user>           set effective uid\n"), out);
@@ -146,7 +147,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" --clear-groups              clear supplementary groups\n"), out);
 	fputs(_(" --keep-groups               keep supplementary groups\n"), out);
 	fputs(_(" --init-groups               initialize supplementary groups\n"), out);
-	fputs(_(" --groups <group,...>        set supplementary groups by UID or name\n"), out);
+	fputs(_(" --groups <group>[,...]      set supplementary group(s) by GID or name\n"), out);
 	fputs(_(" --securebits <bits>         set securebits\n"), out);
 	fputs(_(" --pdeathsig keep|clear|<signame>\n"
 	        "                             set or clear parent death signal\n"), out);
@@ -158,14 +159,14 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_(" --seccomp-filter <file>     load seccomp filter from file\n"), out);
 	fputs(_(" --reset-env                 clear all environment and initialize\n"
 		"                               HOME, SHELL, USER, LOGNAME and PATH\n"), out);
-
 	fputs(USAGE_SEPARATOR, out);
 	fprintf(out, USAGE_HELP_OPTIONS(29));
-	fputs(USAGE_SEPARATOR, out);
-	fputs(_(" This tool can be dangerous.  Read the manpage, and be careful.\n"), out);
-	fprintf(out, USAGE_MAN_TAIL("setpriv(1)"));
 
-	usage_setpriv(out);
+	usage_landlock(out);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("This tool can be dangerous.  Read the manpage, and be careful."), out);
+	fprintf(out, USAGE_MAN_TAIL("setpriv(1)"));
 
 	exit(EXIT_SUCCESS);
 }
@@ -294,19 +295,15 @@ static void dump_label(const char *name)
 static void dump_groups(void)
 {
 	int n = getgroups(0, NULL);
-	gid_t *groups;
+	gid_t *groups = NULL;
 
-	if (n < 0) {
-		warn("getgroups failed");
-		return;
-	}
-
-	groups = xmalloc(n * sizeof(gid_t));
-	n = getgroups(n, groups);
-	if (n < 0) {
-		free(groups);
-		warn("getgroups failed");
-		return;
+	if (n < 0)
+		goto failed;
+	if (n) {
+		groups = xmalloc(n * sizeof(gid_t));
+		n = getgroups(n, groups);
+		if (n < 0)
+			goto failed;
 	}
 
 	printf(_("Supplementary groups: "));
@@ -322,6 +319,10 @@ static void dump_groups(void)
 	}
 	printf("\n");
 	free(groups);
+	return;
+failed:
+	free(groups);
+	warn("getgroups failed");
 }
 
 static void dump_pdeathsig(void)
@@ -329,7 +330,7 @@ static void dump_pdeathsig(void)
 	int pdeathsig;
 
 	if (prctl(PR_GET_PDEATHSIG, &pdeathsig) != 0) {
-		warn(_("get pdeathsig failed"));
+		warn(_("failed to get parent death signal"));
 		return;
 	}
 
@@ -448,7 +449,7 @@ static void parse_groups(struct privctx *opts, const char *str)
 	while ((c = strsep(&groups, ",")))
 		opts->groups[i++] = get_group(c, _("Invalid supplementary group id"));
 
-	free(groups);
+	free(buf);
 }
 
 static void parse_pdeathsig(struct privctx *opts, const char *str)
@@ -471,7 +472,7 @@ static void parse_ptracer(struct privctx *opts, const char *str)
 	} else if (!strcmp(str, "none")) {
 		opts->ptracer = 0;
 	} else {
-		opts->ptracer = strtopid_or_err(str, _("failed to parse ptracer pid"));
+		opts->ptracer = strtopid_or_err(str, _("invalid PID argument"));
 	}
 }
 
@@ -721,18 +722,20 @@ static void do_seccomp_filter(const char *file)
 
 static void do_reset_environ(struct passwd *pw)
 {
-	char *term = getenv("TERM");
+	struct ul_env_list *saved;
 
-	if (term)
-		term = xstrdup(term);
+	saved = env_list_add_getenv(NULL, "TERM", NULL);
+	saved = env_list_add_getenv(saved, "COLORTERM", NULL);
+	saved = env_list_add_getenv(saved, "NO_COLOR", NULL);
+
 #ifdef HAVE_CLEARENV
 	clearenv();
 #else
 	environ = NULL;
 #endif
-	if (term) {
-		xsetenv("TERM", term, 1);
-		free(term);
+	if (saved) {
+		env_list_setenv(saved, 1);
+		env_list_free(saved);
 	}
 
 	if (pw->pw_shell && *pw->pw_shell)
@@ -744,10 +747,7 @@ static void do_reset_environ(struct passwd *pw)
 	xsetenv("USER", pw->pw_name, 1);
 	xsetenv("LOGNAME", pw->pw_name, 1);
 
-	if (pw->pw_uid)
-		xsetenv("PATH", _PATH_DEFPATH, 1);
-	else
-		xsetenv("PATH", _PATH_DEFPATH_ROOT, 1);
+	logindefs_setenv_path(pw->pw_uid);
 }
 
 static uid_t get_user(const char *s, const char *err)
@@ -1025,7 +1025,7 @@ int main(int argc, char **argv)
 		case SECCOMP_FILTER:
 			if (opts.seccomp_filter)
 				errx(EXIT_FAILURE,
-				     _("duplicate --secccomp-filter option"));
+				     _("duplicate --seccomp-filter option"));
 			opts.seccomp_filter = optarg;
 			break;
 		case RESET_ENV:

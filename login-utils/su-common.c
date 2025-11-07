@@ -13,10 +13,10 @@
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.  You should have received a copy of the GNU General Public
- * License along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301,
- * USA.
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  *
  *
  * Based on an implementation by David MacKenzie <djm@gnu.ai.mit.edu>.
@@ -61,7 +61,6 @@
 #include "pathnames.h"
 #include "env.h"
 #include "closestream.h"
-#include "strv.h"
 #include "strutils.h"
 #include "ttyutils.h"
 #include "pwdutils.h"
@@ -675,22 +674,6 @@ static void create_watching_parent(struct su_context *su)
 	exit(status);
 }
 
-static void setenv_path(const struct passwd *pw)
-{
-	int rc;
-
-	DBG(MISC, ul_debug("setting PATH"));
-
-	if (pw->pw_uid)
-		rc = logindefs_setenv("PATH", "ENV_PATH", _PATH_DEFPATH);
-
-	else if ((rc = logindefs_setenv("PATH", "ENV_SUPATH", NULL)) != 0)
-		rc = logindefs_setenv("PATH", "ENV_ROOTPATH", _PATH_DEFPATH_ROOT);
-
-	if (rc)
-		err(EXIT_FAILURE, _("failed to set the PATH environment variable"));
-}
-
 static void modify_environment(struct su_context *su, const char *shell)
 {
 	const struct passwd *pw = su->pwd;
@@ -704,8 +687,10 @@ static void modify_environment(struct su_context *su, const char *shell)
 	 * --whitelist-environment if specified.
 	 */
 	if (su->simulate_login) {
-		/* leave TERM unchanged */
+		/* leave unchanged */
 		su->env_whitelist = env_list_add_getenv(su->env_whitelist, "TERM", NULL);
+		su->env_whitelist = env_list_add_getenv(su->env_whitelist, "COLORTERM", NULL);
+		su->env_whitelist = env_list_add_getenv(su->env_whitelist, "NO_COLOR", NULL);
 
 		/* Note that original su(1) has allocated environ[] by malloc
 		 * to the number of expected variables. This seems unnecessary
@@ -723,7 +708,8 @@ static void modify_environment(struct su_context *su, const char *shell)
 		if (shell)
 			xsetenv("SHELL", shell, 1);
 
-		setenv_path(pw);
+		if (logindefs_setenv_path(pw->pw_uid) != 0)
+			err(EXIT_FAILURE, _("failed to set the PATH environment variable"));
 
 		xsetenv("HOME", pw->pw_dir, 1);
 		xsetenv("USER", pw->pw_name, 1);
@@ -740,8 +726,9 @@ static void modify_environment(struct su_context *su, const char *shell)
 		if (shell)
 			xsetenv("SHELL", shell, 1);
 
-		if (getlogindefs_bool("ALWAYS_SET_PATH", 0))
-			setenv_path(pw);
+		if (getlogindefs_bool("ALWAYS_SET_PATH", 0)
+		    && logindefs_setenv_path(pw->pw_uid) != 0)
+			err(EXIT_FAILURE, _("failed to set the PATH environment variable"));
 
 		if (pw->pw_uid) {
 			xsetenv("USER", pw->pw_name, 1);
@@ -939,10 +926,9 @@ static void load_config(void *data)
 static int is_not_root(void)
 {
 	const uid_t ruid = getuid();
-	const uid_t euid = geteuid();
 
 	/* if we're really root and aren't running setuid */
-	return (uid_t) 0 == ruid && ruid == euid ? 0 : 1;
+	return (uid_t) 0 == ruid && !is_privileged_execution() ? 0 : 1;
 }
 
 /* Don't rely on PAM and reset the most important limits. */
@@ -1154,7 +1140,7 @@ int su_main(int argc, char **argv, int mode)
 				errx(EXIT_FAILURE, _("no command was specified"));
 			break;
 		}
-		/* fallthrough */
+		FALLTHROUGH;
 	case SU_MODE:
 		if (optind < argc)
 			su->new_user = argv[optind++];

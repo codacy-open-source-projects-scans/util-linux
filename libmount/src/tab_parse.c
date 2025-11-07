@@ -188,6 +188,7 @@ static int mnt_parse_mountinfo_line(struct libmnt_fs *fs, const char *s)
 	char *p;
 
 	fs->flags |= MNT_FS_KERNEL;
+	mnt_fs_mark_attached(fs);
 
 	/* (1) id */
 	s = next_s32(s, &fs->id, &rc);
@@ -323,7 +324,14 @@ static int mnt_parse_utab_line(struct libmnt_fs *fs, const char *s)
 		if (!*p)
 			break;
 
-		if (!fs->id && !strncmp(p, "ID=", 3)) {
+		if (!fs->uniq_id && !strncmp(p, "UNIQID=", 7)) {
+			int rc = 0;
+
+			end = next_u64(p + 7, &fs->uniq_id, &rc);
+			if (!end || rc)
+				return rc;
+
+		} else if (!fs->id && !strncmp(p, "ID=", 3)) {
 			int rc = 0;
 
 			end = next_s32(p + 3, &fs->id, &rc);
@@ -388,7 +396,7 @@ static int mnt_parse_swaps_line(struct libmnt_fs *fs, const char *s)
 	/* (1) source */
 	p = unmangle(s, &s);
 	if (p) {
-		char *x = (char *) endswith(p, PATH_DELETED_SUFFIX);
+		char *x = (char *) ul_endswith(p, PATH_DELETED_SUFFIX);
 		if (x && *x)
 			*x = '\0';
 	}
@@ -748,9 +756,9 @@ int mnt_table_parse_stream(struct libmnt_table *tb, FILE *f, const char *filenam
 	 * parser sets the flag properly
 	 */
 	if (tb->fmt == MNT_FMT_SWAPS)
-		flags = MNT_FS_SWAP;
+		flags = MNT_FS_SWAP | MNT_FS_STATUS_ATTACH;
 	else if (filename && strcmp(filename, _PATH_PROC_MOUNTS) == 0)
-		flags = MNT_FS_KERNEL;
+		flags = MNT_FS_KERNEL | MNT_FS_STATUS_ATTACH;
 
 	do {
 		struct libmnt_fs *fs;
@@ -1178,6 +1186,7 @@ static struct libmnt_fs *mnt_table_merge_user_fs(struct libmnt_table *tb, struct
 	struct libmnt_iter itr;
 	const char *optstr, *src, *target, *root, *attrs;
 	int id;
+	uint64_t uniq_id;
 
 	if (!tb || !uf)
 		return NULL;
@@ -1190,6 +1199,7 @@ static struct libmnt_fs *mnt_table_merge_user_fs(struct libmnt_table *tb, struct
 	attrs = mnt_fs_get_attributes(uf);
 	root = mnt_fs_get_root(uf);
 	id = mnt_fs_get_id(uf);
+	uniq_id = mnt_fs_get_uniq_id(uf);
 
 	if (!src || !target || !root || (!attrs && !optstr))
 		return NULL;
@@ -1202,10 +1212,16 @@ static struct libmnt_fs *mnt_table_merge_user_fs(struct libmnt_table *tb, struct
 		if (fs->flags & MNT_FS_MERGED)
 			continue;
 
-		if (id > 0 && mnt_fs_get_id(fs)) {
+		if (uniq_id > 0 && mnt_fs_get_uniq_id(fs)) {
+			DBG(TAB, ul_debugobj(tb, " using uniq ID"));
+			if (mnt_fs_get_uniq_id(fs) == uniq_id)
+				break;
+
+		} else if (id > 0 && mnt_fs_get_id(fs)) {
 			DBG(TAB, ul_debugobj(tb, " using ID"));
 			if (mnt_fs_get_id(fs) == id)
 				break;
+
 		} else if (r && strcmp(r, root) == 0
 		    && mnt_fs_streq_target(fs, target)
 		    && mnt_fs_streq_srcpath(fs, src))

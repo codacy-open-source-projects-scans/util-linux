@@ -25,10 +25,11 @@ but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://gnu.org/licenses/>.
 ////
+ifdef::neverdefined[---]
+
 = mount(8)
 :doctype: manpage
 :man manual: System Administration
@@ -47,15 +48,16 @@ mount - mount a filesystem
 
 *mount* [*-l*] [*-t* _fstype_]
 
-*mount* *-a* [*-fFnrsvw*] [*-t* _fstype_] [*-O* _optlist_]
+*mount* *-a* [*-F*] [*-fnrsvw*] [*-t* _fstype_] [*-O* _optlist_]
 
 *mount* [*-fnrsvw*] [*-o* _options_] _device_|_mountpoint_
 
-*mount* [*-fnrsvw*] [*-t* _fstype_] [*-o* _options_] _device mountpoint_
+*mount* [*-fnrsvw*] [*-o* _options_] [*-t* _fstype_] _device mountpoint_
 
 *mount* *--bind*|*--rbind*|*--move* _olddir newdir_
 
-*mount* *--make-*[*shared*|*slave*|*private*|*unbindable*|*rshared*|*rslave*|*rprivate*|*runbindable*] _mountpoint_
+*mount* *--make-*[*r*]{*shared*|*slave*|*private*|*unbindable*} _mountpoint_
+
 
 == DESCRIPTION
 
@@ -305,7 +307,9 @@ The *mount* command does not pass all command-line options to the **/sbin/mount.
 Command-line options available for the *mount* command are:
 
 *-a*, *--all*::
-Mount all filesystems (of the given types) mentioned in _fstab_ (except for those whose line contains the *noauto* keyword). The filesystems are mounted following their order in _fstab_. The *mount* command compares filesystem source, target (and fs root for bind mount or btrfs) to detect already mounted filesystems. The kernel table with already mounted filesystems is cached during *mount --all*. This means that all duplicated _fstab_ entries will be mounted.
+Mount all filesystems (of the given types) mentioned in _fstab_ (except for those whose line contains the *noauto* keyword). This option was originally designed for use in init scripts. Note that many modern systemd-based distributions do not use *mount -a* on boot and instead mount filesystems in a more sophisticated way using systemd units.
++
+The filesystems are mounted following their order in _fstab_. The *mount* command compares filesystem source, target (and fs root for bind mount or btrfs) to detect already mounted filesystems. The kernel table with already mounted filesystems is cached during *mount --all*. This means that all duplicated _fstab_ entries will be mounted.
 +
 The correct functionality depends on _/proc_ (to detect already mounted filesystems) and on _/sys_ (to evaluate filesystem tags like UUID= or LABEL=). It's strongly recommended to mount _/proc_ and _/sys_ filesystems before *mount -a* is executed, or keep /proc and /sys at the beginning of _fstab_.
 +
@@ -313,7 +317,21 @@ The option *--all* is possible to use for remount operation too. In this case al
 +
 Since version 2.35 it is possible to use the command line option *-o* to alter mount options from _fstab_ (see also *--options-mode*).
 +
+Note that swap entries in _fstab_ are silently ignored by *mount -a*. Use *swapon -a* to enable swap devices and files. See *swapon*(8).
++
 Note that it is a bad practice to use *mount -a* for _fstab_ checking. The recommended solution is *findmnt --verify*.
+
+*--beneath*::
+Mount the filesystem beneath the top mount of the specified target (mountpoint), allowing the  top mount to be unmounted. This option replaces the filesystem at the mountpoint in an atomic manner, ensuring there is no moment when the filesystem is absent.
++
+For example update from a Btrfs filesystem to an XFS filesystem without ever revealing the underlying mountpoint:
+____
+....
+mount           -t btrfs /dev/sdA /mnt
+mount --beneath -t xfs   /dev/sdB /mnt
+umount /mnt
+....
+____
 
 *-B*, *--bind*::
 Remount a subtree somewhere else (so that its contents are available in both places). See above, under *Bind mount operation*.
@@ -322,6 +340,18 @@ Remount a subtree somewhere else (so that its contents are available in both pla
 Do not canonicalize any paths or tags during the mount process. The *mount* command automatically canonicalizes all paths (from the command line or _fstab_). This option can be used in conjunction with the *-f* flag for paths that are already canonicalized. This option is intended for mount helpers that call *mount -i*. It is highly recommended to not use this command-line option for regular mount operations. See also the X-mount.nocanonicalize mount options.
 +
 Note that *mount* does not pass this option to the **/sbin/mount.**__type__ helpers.
+
+*--exclusive*::
+Ensures that the filesystem is mounted as a unique instance and that the
+filesystem superblock is not reused by the kernel. The filesystem may be reused
+later if mounted without the option. The option affects only the current mount
+and is allowed for non-root users as well.
++
+See also the **--onlyonce** option. The difference between *--onlyonce* and
+*--exclusive* is that "onlyonce" ensures the same source is not mounted on the
+same mount point; this means mounting twice on /A is not allowed, but mounting
+on /A and /B is allowed. The "exclusive" mount ensures the filesystem itself is
+not reused, regardless of the mount point.
 
 *-F*, *--fork*::
 (Used in conjunction with *-a*.) Fork off a new incarnation of *mount* for each device. This will do the mounts on different devices or different NFS servers in parallel. This has the advantage that it is faster; also NFS timeouts proceed in parallel. A disadvantage is that the order of the mount operations is undefined. Thus, you cannot use this option if you want to mount both _/usr_ and _/usr/spool_.
@@ -345,7 +375,7 @@ Add the labels in the mount output. *mount* must have permission to read the dis
 *-M*, *--move*::
 Move a subtree to some other place. See above, the subsection *The move operation*.
 
-*-m*, **--mkdir**[=__mode__]::
+*-m*, *--mkdir*[**=**__mode__]::
 Allow to make a target directory (mountpoint) if it does not exist yet. Alias to "-o X-mount.mkdir[=mode]", the default mode is 0755. For more details see *X-mount.mkdir* below.
 
 *--map-groups*, *--map-users* _inner_:_outer_:_count_::
@@ -384,12 +414,16 @@ Use the specified mount options. The _opts_ argument is a comma-separated list. 
 +
 *mount LABEL=mydisk -o noatime,nodev,nosuid*
 +
-Note that the order of the options matters, as the last option wins if there are conflicting ones. The options from the command line also overwrite options from fstab by default.
+Note that the order of the options matters, as the last option wins if there are conflicting ones.
+Also, options on the command line override options from fstab.
 +
 For more details, see the *FILESYSTEM-INDEPENDENT MOUNT OPTIONS* and *FILESYSTEM-SPECIFIC MOUNT OPTIONS* sections.
 
 *--onlyonce*::
-Forces *mount* command to check if the filesystem is already mounted. This behavior is the default for *--all*; otherwise, it depends on the kernel filesystem driver. Some filesystems may be mounted more than once on the same mount point (e.g. tmpfs).
+Forces *mount* command to check if the filesystem is already mounted on
+specified mountpoint. This behavior is the default for *--all*; otherwise, it
+depends on the kernel filesystem driver. Some filesystems may be mounted more
+than once on the same mount point (e.g. tmpfs). See also *--exclusive*.
 
 *--options-mode* _mode_::
 Controls how to combine options from _fstab_/_mtab_ with options from the command line. _mode_ can be one of *ignore*, *append*, *prepend* or *replace*. For example, *append* means that options from _fstab_ are appended to options from the command line. The default value is *prepend* -- it means command line options are evaluated after _fstab_ options. Note that the last option wins if there are conflicting ones.
@@ -453,7 +487,7 @@ For most types all the *mount* program has to do is issue a simple *mount*(2) sy
 Mount the partition that has the specified _uuid_.
 
 *-v*, *--verbose*::
-Verbose mode.
+Enables verbose mode. Starting from version 2.41, if the new kernel mount API is available, it will also print kernel info messages.
 
 *-w*, *--rw*, *--read-write*::
 Mount the filesystem read/write. Read-write is the kernel default and the *mount* default is to try read-only if the previous *mount*(2) syscall with read-write flags on write-protected devices failed.
@@ -567,6 +601,7 @@ mount -t tmpfs none /mnt -o \
 ....
 ____
 
++
 For more details, see *selinux*(8).
 
 *defaults*::
@@ -691,19 +726,19 @@ After this call, *mount* reads _fstab_ and merges these options with the options
 +
 remounts all already mounted vfat filesystems in read-only mode. Each of the filesystems is remounted by *mount -o remount,ro* _/dir_ semantic. This means the *mount* command reads _fstab_ or _mtab_ and merges these options with the options from the command line.
 
-*ro*[=_recursive_,_vfs_,_fs_]::
+*ro*[**=**(*recursive*|*vfs*|*fs*)]::
 Mount the filesystem read-only. The optional argument is an experimental feature supported only by
 the file-descriptor based kernel mount API and it is silently ignored for the old *mount*(2) syscall.
 +
-The _recursive_ argument forces the VFS attribute to be applied recursively.
+The *recursive* argument forces the VFS attribute to be applied recursively.
 +
-The _vfs_ and _fs_ arguments specify the layer where the read-only flag should be applied. The _fs_ specifies
-the filesystem superblock (unique filesystem instance in the kernel), and _vfs_ specifies the mount node. If no attribute is specified, then
+The *vfs* and *fs* arguments specify the layer where the read-only flag should be applied. The *fs* specifies
+the filesystem superblock (unique filesystem instance in the kernel), and *vfs* specifies the mount node. If no attribute is specified, then
 both layers are set to read-only.
 +
 For more details, please refer to the *Read-only Setting Notes* section.
 
-*rw*[=_recursive_,_vfs_,_fs_]::
+*rw*[**=**(*recursive*|*vfs*|*fs*)]::
 Mount the filesystem read-write.
 
 *sync*::
@@ -722,7 +757,7 @@ Allow any user to mount and to unmount the filesystem, even when some other ordi
 All options prefixed with "X-" are interpreted as comments or as userspace application-specific options. These options are not stored in user space (e.g., _mtab_ file), nor sent to the mount._type_ helpers nor to the *mount*(2) system call. The suggested format is **X-**__appname__._option_.
 
 *x-**::
-The same as *X-** options, but stored permanently in user space. This means the options are also available for *umount*(8) or other operations. Note that maintaining mount options in user space is tricky, because it's necessary use libmount-based tools and there is no guarantee that the options will be always available (for example after a move mount operation or in unshared namespace).
+The same as *X-** options, but stored permanently in user space. This means the options are also available for *umount*(8) or other operations. Note that maintaining mount options in user space is tricky, because it's necessary to use libmount-based tools and there is no guarantee that the options will be always available (for example after a move mount operation or in unshared namespace).
 +
 Note that before util-linux v2.30 the x-* options have not been maintained by libmount and stored in user space (functionality was the same as for X-* now), but due to the growing number of use-cases (in initrd, systemd etc.) the functionality has been extended to keep existing _fstab_ configurations usable without a change.
 
@@ -746,25 +781,28 @@ and xfs.
 Note that comma is used as a separator between mount options, it means
 that auto-fstypes values have to be properly quoted, don’t forget that the shell
 strips off quotes and thus double quoting is required. For example:
++
 ____
 mount -t auto -o'X-mount.auto-fstypes="noext2,ext3"'  /dev/sdc1 /mnt/test
 ____
 
-*X-mount.mkdir*[=_mode_]::
+*X-mount.mkdir*[**=**_mode_]::
 Allow to make a target directory (mountpoint) if it does not exist yet. The optional argument _mode_ specifies the filesystem access mode used for *mkdir*(2) in octal notation. The default mode is 0755. This functionality is supported only for root users or when *mount* is executed without suid permissions. The option is also supported as *x-mount.mkdir*, but this notation is deprecated since v2.30. See also *--mkdir* command line option.
 
-*X-mount.nocanonicalize*[=_type_]::
-Allows disabling of canonicalization for mount source and target paths. By default, the `mount` command resolves all paths to their absolute paths without symlinks. However, this behavior may not be desired in certain situations, such as when binding a mount over a symlink, or a symlink over a directory or another symlink. The optional argument _type_ can be either "source" or "target" (mountpoint). If no _type_ is specified, then canonicalization is disabled for both types. This mount option does not affect the conversion of source tags (e.g. LABEL= or UUID=) and fstab processing.
+*X-mount.nocanonicalize*[**=**_type_]::
+Allows disabling of canonicalization for mount source and target paths. By default, the `mount` command resolves all paths to their absolute paths without symlinks. However, this behavior may not be desired in certain situations, such as when binding a mount over a symlink, or a symlink over a directory or another symlink. The optional argument _type_ can be either "source" or "target" (mountpoint). If no _type_ is specified, then canonicalization is disabled for both types. This mount option does not affect the conversion of source tags (e.g. *LABEL=* or *UUID=*) and _fstab_ processing.
 +
-The command line option *--no-canonicalize* overrides this mount option and affects all path and tag conversions in all situations, but it does not modify flags for open_tree syscalls.
+The command-line option *--no-canonicalize* overrides this mount option and affects all path and tag conversions in all situations, but for backward compatibility, it does not modify open_tree syscall flags and does not allow the bind-mount over a symlink use case.
 +
 Note that *mount*(8) still sanitizes and canonicalizes the source and target paths specified on the command line by non-root users, regardless of the X-mount.nocanonicalize setting.
 
 *X-mount.noloop*::
 Do not create and mount a loop device, even if the source of the mount is a regular file.
 
-*X-mount.subdir=*__directory__::
-Allow mounting sub-directory from a filesystem instead of the root directory. For now, this feature is implemented by temporary filesystem root directory mount in unshared namespace and then bind the sub-directory to the final mount point and umount the root of the filesystem. The sub-directory mount shows up atomically for the rest of the system although it is implemented by multiple *mount*(2) syscalls.
+**X-mount.subdir=**_directory_::
+Allow mounting a subdirectory of a filesystem instead of the root directory. This is effective only when a new instance of a filesystem is attached to the system. The option is silently ignored for operations like remount, bind mount, or move.
++
+For now, this feature is implemented by a temporary filesystem root-directory mount in an unshared namespace and then binding the sub-directory to the final mount point and unmounting the root of the filesystem. The sub-directory mount shows up atomically for the rest of the system although it is implemented by multiple *mount*(2) syscalls.
 +
 Note that this feature will not work in session with an unshared private mount namespace (after *unshare --mount*) on old kernels or with *mount*(8) without support for file-descriptors-based mount kernel API. In this case, you need *unshare --mount --propagation shared*.
 +
@@ -790,7 +828,8 @@ The __id-mount__ parameter indicates the starting ID in the new mount.
 The __id-host__ parameter indicates the starting ID in the filesystem.
 The __id-range__ parameter indicates how many IDs are to be mapped.
 It is possible to specify multiple ID-mappings.
-The individual ID-mappings must be separated by spaces.
++
+The individual ID mappings must be separated by spaces. Please note that in the __/etc/fstab__ file, spaces are interpreted as separators between fields. To avoid this, you must escape them using \040. For example, X-mount.idmap=0:0:1\040500:1000:1.
 +
 For example, the ID-mapping *X-mount.idmap=u:1000:0:1 g:1001:1:2 5000:1000:2* creates an idmapped mount where
 UID 0 is mapped to UID 1000, GID 1 is mapped to GUID 1001, GID 2 is mapped to GID 1002, UID and GID 1000 are mapped to 5000, and UID and GID 1001 are mapped to 5001 in the mount.
@@ -932,17 +971,23 @@ Set the umask applied to directories only. The default is the umask of the curre
 Set the umask applied to regular files only. The default is the umask of the current process. The value is given in octal.
 
 **allow_utime=**__value__::
-This option controls the permission check of mtime/atime.
+This option controls the permission check of mtime/atime.  Possible values:
 
 *20*;;
-If current process is in group of file's group ID, you can change timestamp.
-
+If the current process is in the group of the file's group ID,
+you can change the timestamp.
++
 *2*;;
-Other users can change timestamp.
+Other users can change the timestamp.
 
-The default is set from 'dmask' option. (If the directory is writable, *utime*(2) is also allowed. I.e. ~dmask & 022)
-
-Normally *utime*(2) checks that the current process is owner of the file, or that it has the *CAP_FOWNER* capability. But FAT filesystems don't have UID/GID on disk, so the normal check is too inflexible. With this option you can relax it.
++
+The default is set from the above *dmask* option. (If the directory
+is writable, *utime*(2) is also allowed.  That is: ~dmask & 022.)
+ +
+Normally *utime*(2) checks that the current process is the owner of the
+file, or that it has the *CAP_FOWNER* capability. But FAT filesystems
+don't have UID/GID on disk, so the normal check is too inflexible.
+With this option you can relax it.
 
 **check=**__value__::
 Three different levels of pickiness can be chosen:
@@ -1141,25 +1186,50 @@ See mount options for fat. If the _msdos_ filesystem detects an inconsistency, i
 
 Just like _nfs_, the _ncpfs_ implementation expects a binary argument (a _struct ncp_mount_data_) to the *mount*(2) system call. This argument is constructed by *ncpmount*(8) and the current version of *mount* (2.12) does not know anything about ncpfs.
 
-=== Mount options for ntfs
+=== Mount options for ntfs3
+
+The ntfs3 kernel driver provides below mount options - as documented in https://docs.kernel.org/filesystems/ntfs3.html
 
 **iocharset=**__name__::
-Character set to use when returning file names. Unlike VFAT, NTFS suppresses names that contain nonconvertible characters. Deprecated.
+This option informs the driver how to interpret path strings and translate them to Unicode and back. If this option is not set, the default codepage will be used (CONFIG_NLS_DEFAULT).
 
-**nls=**__name__::
-New name for the option earlier called _iocharset_.
+Example: iocharset=utf8
 
-*utf8*::
-Use UTF-8 for converting file names.
+**uid=**|**gid=**|**umask=**::
+Controls the default permissions for files/directories created after the NTFS volume is mounted.
 
-*uni_xlate=*{**0**|**1**|*2*}::
-For 0 (or 'no' or 'false'), do not use escape sequences for unknown Unicode characters. For 1 (or 'yes' or 'true') or 2, use vfat-style 4-byte escape sequences starting with ":". Here 2 gives a little-endian encoding and 1 a byteswapped bigendian encoding.
+**dmask=**|**fmask=**::
+Instead of specifying umask which applies both to files and directories, fmask applies only to files and dmask only to directories.
 
-*posix=[0|1]*::
-If enabled (posix=1), the filesystem distinguishes between upper and lower case. The 8.3 alias names are presented as hard links instead of being suppressed. This option is obsolete.
+**nohidden**::
+Files with the Windows-specific HIDDEN (FILE_ATTRIBUTE_HIDDEN) attribute will not be shown under Linux.
 
-**uid=**__value__, **gid=**__value__ and **umask=**__value__::
-Set the file permission on the filesystem. The umask value is given in octal. By default, the files are owned by root and not readable by somebody else.
+**sys_immutable**::
+Files with the Windows-specific SYSTEM (FILE_ATTRIBUTE_SYSTEM) attribute will be marked as system immutable files.
+
+**hide_dot_files**::
+Updates the Windows-specific HIDDEN (FILE_ATTRIBUTE_HIDDEN) attribute when creating and moving or renaming files. Files whose names start with a dot will have the HIDDEN attribute set and files whose names do not start with a dot will have it unset.
+
+**windows_names**::
+Prevents the creation of files and directories with a name not allowed by Windows, either because it contains some not allowed character (which are the characters “ * / : < > ? \ | and those whose code is less than 0x20), because the name (with or without extension) is a reserved file name (CON, AUX, NUL, PRN, LPT1-9, COM1-9) or because the last character is a space or a dot. Existing such files can still be read and renamed.
+
+**discard**::
+Enable support of the TRIM command for improved performance on delete operations, which is recommended for use with the solid-state drives (SSD).
+
+**force**::
+Forces the driver to mount partitions even if volume is marked dirty. Not recommended for use.
+
+**sparse**::
+Create new files as sparse.
+
+**showmeta**::
+Use this parameter to show all meta-files (System Files) on a mounted NTFS partition. By default, all meta-files are hidden.
+
+**prealloc**::
+Preallocate space for files excessively when file size is increasing on writes. Decreases fragmentation in case of parallel write operations to different files.
+
+**acl**::
+Support POSIX ACLs (Access Control Lists). Effective if supported by Kernel. Not to be confused with NTFS ACLs. The option specified as acl enables support for POSIX ACLs.
 
 === Mount options for overlay
 
@@ -1504,7 +1574,7 @@ Set behavior on error:
 *panic*;;
 If an error is encountered, cause a kernel panic.
 
-[**lock**|**umount**|*repair*];;
+**lock**|**umount**|*repair*;;
 These mount options don't do anything at present; when an error is encountered only a console message is printed.
 
 === Mount options for umsdos
@@ -1581,13 +1651,13 @@ Parity bytes for FEC (default: 2). Optional.
 **verity.roothashsig=**__path__::
 Path to *pkcs7*(1ssl) signature of root hash hex string. Requires crypt_activate_by_signed_key() from cryptsetup and kernel built with *CONFIG_DM_VERITY_VERIFY_ROOTHASH_SIG*. For device reuse, signatures have to be either used by all mounts of a device or by none. Optional.
 
-**verity.oncorruption=**__ignore__|__restart__|__panic__::
+**verity.oncorruption=**{*ignore*|*restart*|*panic*}::
 Instruct the kernel to ignore, reboot or panic when corruption is detected. By default the I/O operation simply fails. Requires Linux 4.1 or newer, and libcrypsetup 2.3.4 or newer. Optional.
-
++
 Supported since util-linux v2.35.
-
-For example commands:
-
++
+For example, the commands:
++
 ....
 mksquashfs /etc /tmp/etc.raw
 veritysetup format /tmp/etc.raw /tmp/etc.verity --root-hash-file=/tmp/etc.roothash
@@ -1597,6 +1667,7 @@ mount -o verity.hashdevice=/tmp/etc.verity,verity.roothashfile=/tmp/etc.roothash
 verity.roothashsig=/tmp/etc.roothash.p7s /tmp/etc.raw /mnt
 ....
 
++
 create squashfs image from _/etc_ directory, verity hash device and mount verified filesystem image to _/mnt_. The kernel will verify that the root hash is signed by a key from the kernel keyring if roothashsig is used.
 
 == LOOP-DEVICE SUPPORT

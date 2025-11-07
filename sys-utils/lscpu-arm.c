@@ -93,10 +93,18 @@ static const struct id_part arm_part[] = {
     { 0xd80, "Cortex-A520" },
     { 0xd81, "Cortex-A720" },
     { 0xd82, "Cortex-X4" },
+    { 0xd83, "Neoverse-V3AE" },
     { 0xd84, "Neoverse-V3" },
     { 0xd85, "Cortex-X925" },
     { 0xd87, "Cortex-A725" },
+    { 0xd88, "Cortex-A520AE" },
+    { 0xd89, "Cortex-A720AE" },
+    { 0xd8a, "C1-Nano" },
+    { 0xd8b, "C1-Pro" },
+    { 0xd8c, "C1-Ultra" },
     { 0xd8e, "Neoverse-N3" },
+    { 0xd8f, "Cortex-A320" },
+    { 0xd90, "C1-Premium" },
     { -1, "unknown" },
 };
 
@@ -167,6 +175,7 @@ static const struct id_part nvidia_part[] = {
     { 0x000, "Denver" },
     { 0x003, "Denver 2" },
     { 0x004, "Carmel" },
+    { 0x010, "Olympus" },
     { -1, "unknown" },
 };
 
@@ -250,6 +259,7 @@ static const struct id_part intel_part[] = {
 
 static const struct id_part fujitsu_part[] = {
     { 0x001, "A64FX" },
+    { 0x003, "MONAKA" },
     { -1, "unknown" },
 };
 

@@ -9,6 +9,8 @@ Copyright 1994 Salvatore Valente (svalente@mit.edu)
 Copyright 1992 Rickard E. Faith (faith@cs.unc.edu)
 May be distributed under the GNU General Public License
 ////
+ifdef::neverdefined[---]
+
 = lslocks(8)
 :doctype: manpage
 :man manual: System Administration
@@ -35,7 +37,8 @@ lslocks - list local system locks
 include::man-common/in-bytes.adoc[]
 
 *-H*, *--list-columns*::
-List the available columns, use with *--json* or *--raw* to get output in machine-readable format.
+List the columns that can be specified with the *--output* option.
+Can be used with *--json* or *--raw* to get the list in a machine-readable format.
 
 *-i*, *--noinaccessible*::
 Ignore lock files which are inaccessible for the current user.
@@ -109,6 +112,11 @@ The holder(s) of the lock.  The format of the holder is _PID_,_COMMAND_,_FD_.
 If a lock is an open file description-oriented lock, there can be more than one holder for the lock.
 See the NOTES below.
 
+== ENVIRONMENT
+
+LSLOCKS_COLUMNS=::
+Specifies a comma-separated list of output columns to print. All columns listed by *--list-columns* can be used.
+
 == NOTES
 
 The *lslocks* command is meant to replace the *lslk*(8) command, originally written by mailto:abe@purdue.edu[Victor A. Abell] and unmaintained since 2001.
@@ -120,9 +128,12 @@ description on which they are acquired.  With *fork*(2) and/or
 the holder process of a lease (or a lock) is not uniquely determined.
 *lslocks* shows the one of the holder processes in COMMAND and PID columns.
 
+The default output is subject to change. So whenever possible, you should avoid using default output in your scripts.
+
 == AUTHORS
 
 mailto:dave@gnu.org[Davidlohr Bueso]
+mailto:cgoesc2@wgu.edu[Christian Goeschel Ndjomouo]
 
 == SEE ALSO
 

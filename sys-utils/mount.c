@@ -31,6 +31,7 @@
 #include "closestream.h"
 #include "canonicalize.h"
 #include "pathnames.h"
+#include "strv.h"
 
 #define XALLOC_EXIT_CODE MNT_EX_SYSERR
 #include "xalloc.h"
@@ -333,6 +334,16 @@ static void selinux_warning(struct libmnt_context *cxt, const char *tgt)
 
 
 #ifdef USE_SYSTEMD
+/*
+* Note that this mount(8) message may generate thousands of lines of output
+* when mount(8) is called from any script in systems with large fstab, etc.
+*
+* The goal is to avoid spamming system logs (don't print on stderr) and hide
+* the hint if stderr is redirected/piped (in this case mount(8) is probably
+* executed in a script).
+*
+* The target audience is users on a terminal who directly use mount(8).
+*/
 static void systemd_hint(void)
 {
 	static int fstab_check_done = 0;
@@ -341,6 +352,7 @@ static void systemd_hint(void)
 		struct stat a, b;
 
 		if (isatty(STDERR_FILENO) &&
+		    isatty(STDOUT_FILENO) &&
 		    stat(_PATH_SD_UNITSLOAD, &a) == 0 &&
 		    stat(_PATH_MNTTAB, &b) == 0 &&
 		    cmp_stat_mtime(&a, &b, <))
@@ -355,6 +367,51 @@ static void systemd_hint(void)
 # define systemd_hint()
 #endif
 
+static size_t libmount_mesgs(struct libmnt_context *cxt, char type)
+{
+	size_t n = mnt_context_get_nmesgs(cxt, type);
+	char **mesgs = mnt_context_get_mesgs(cxt);
+	char **s;
+
+	if (!n)
+		return 0;
+
+	/* Header */
+	switch (type) {
+		case 'e':
+			fputs(P_("mount error:\n", "mount errors:\n", n), stderr);
+			break;
+		case 'w':
+			fputs(P_("mount warning:\n", "mount warnings:\n", n), stdout);
+			break;
+		case 'i':
+			fputs(P_("mount info:\n", "mount infos:\n", n), stdout);
+			break;
+	}
+
+	/* Messages */
+	UL_STRV_FOREACH(s, mesgs) {
+		switch (type) {
+		case 'e':
+			if (!ul_startswith(*s, "e "))
+				break;
+			fprintf(stderr, "      * %s\n", (*s) + 2);
+			break;
+		case 'w':
+			if (!ul_startswith(*s, "w "))
+				break;
+			fprintf(stdout, "      * %s\n", (*s) + 2);
+			break;
+		case 'i':
+			if (!ul_startswith(*s, "i "))
+				break;
+			fprintf(stdout, "      * %s\n", (*s) + 2);
+			break;
+		}
+	}
+
+	return n;
+}
 
 /*
  * Returns exit status (MNT_EX_*) and/or prints error message.
@@ -367,6 +424,12 @@ static int mk_exit_code(struct libmnt_context *cxt, int rc)
 	rc = mnt_context_get_excode(cxt, rc, buf, sizeof(buf));
 	tgt = mnt_context_get_target(cxt);
 
+	/* error messages
+	 *
+	 * Note that mnt_context_get_excode() is used for backward compatibility and
+	 * will fill @buf with error messages from mnt_context_get_mesgs(). Therefore,
+	 * calling libmount_mesgs(cxt, 'e') is currently unnecessary.
+	 */
 	if (*buf) {
 		const char *spec = tgt;
 		if (!spec)
@@ -380,6 +443,14 @@ static int mk_exit_code(struct libmnt_context *cxt, int rc)
 			fprintf(stderr, _("       dmesg(1) may have more information after failed mount system call.\n"));
 	}
 
+	/* warning messages */
+	libmount_mesgs(cxt, 'w');
+
+	/* info messages */
+	if (mnt_context_is_verbose(cxt))
+		libmount_mesgs(cxt, 'i');
+
+	/* extra mount(8) messages */
 	if (rc == MNT_EX_SUCCESS && mnt_context_get_status(cxt) == 1) {
 		selinux_warning(cxt, tgt);
 	}
@@ -425,7 +496,7 @@ static int sanitize_paths(struct libmnt_context *cxt)
 
 	p = mnt_fs_get_target(fs);
 	if (p) {
-		char *np = canonicalize_path_restricted(p);
+		char *np = ul_canonicalize_path_restricted(p);
 		if (!np)
 			return -EPERM;
 		mnt_fs_set_target(fs, np);
@@ -434,7 +505,7 @@ static int sanitize_paths(struct libmnt_context *cxt)
 
 	p = mnt_fs_get_srcpath(fs);
 	if (p) {
-		char *np = canonicalize_path_restricted(p);
+		char *np = ul_canonicalize_path_restricted(p);
 		if (!np)
 			return -EPERM;
 		mnt_fs_set_source(fs, np);
@@ -488,6 +559,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -a, --all               mount all filesystems mentioned in fstab\n"), out);
 	fputs(_(" -c, --no-canonicalize   don't canonicalize paths\n"), out);
+	fputs(_("     --beneath           attach the filesystem beneath the top mount\n"), out);
+	fputs(_("     --exclusive         allow only one filesystem instance\n"), out);
 	fputs(_(" -f, --fake              dry run; skip the mount(2) syscall\n"), out);
 	fputs(_(" -F, --fork              fork off for each device (use with -a)\n"), out);
 	fputs(_(" -T, --fstab <path>      alternative file to /etc/fstab\n"), out);
@@ -507,7 +580,7 @@ static void __attribute__((__noreturn__)) usage(void)
 		"                         mount options source\n"), out);
 	fputs(_("     --options-source-force\n"
 		"                         force use of options from fstab/mtab\n"), out);
-	fputs(_("     --onlyonce          check if filesystem is already mounted\n"), out);
+	fputs(_("     --onlyonce          check if filesystem is already mounted on target\n"), out);
 	fputs(_(" -o, --options <list>    comma-separated list of mount options\n"), out);
 	fputs(_(" -O, --test-opts <list>  limit the set of filesystems (use with -a)\n"), out);
 	fputs(_(" -r, --read-only         mount the filesystem read-only (same as -o ro)\n"), out);
@@ -637,11 +710,15 @@ int main(int argc, char **argv)
 		MOUNT_OPT_OPTMODE,
 		MOUNT_OPT_OPTSRC,
 		MOUNT_OPT_OPTSRC_FORCE,
-		MOUNT_OPT_ONLYONCE
+		MOUNT_OPT_ONLYONCE,
+		MOUNT_OPT_EXCL,
+		MOUNT_OPT_BENEATH,
 	};
 
 	static const struct option longopts[] = {
 		{ "all",              no_argument,       NULL, 'a'                   },
+		{ "beneath",          no_argument,       NULL, MOUNT_OPT_BENEATH     },
+		{ "exclusive",        no_argument,       NULL, MOUNT_OPT_EXCL        },
 		{ "fake",             no_argument,       NULL, 'f'                   },
 		{ "fstab",            required_argument, NULL, 'T'                   },
 		{ "fork",             no_argument,       NULL, 'F'                   },
@@ -715,7 +792,8 @@ int main(int argc, char **argv)
 		if (mnt_context_is_restricted(cxt) &&
 		    !strchr("hlLUVvrist", c) &&
 		    c != MOUNT_OPT_TARGET &&
-		    c != MOUNT_OPT_SOURCE)
+		    c != MOUNT_OPT_SOURCE &&
+		    c != MOUNT_OPT_EXCL)
 			suid_drop(cxt);
 
 		err_exclusive_options(c, longopts, excl, excl_st);
@@ -904,6 +982,13 @@ int main(int argc, char **argv)
 		case MOUNT_OPT_ONLYONCE:
 			mnt_context_enable_onlyonce(cxt, 1);
 			break;
+		case MOUNT_OPT_EXCL:
+			mnt_context_enable_exclusive(cxt, 1);
+			break;
+		case MOUNT_OPT_BENEATH:
+			mnt_context_enable_beneath(cxt, 1);
+			break;
+
 		case 'h':
 			mnt_free_context(cxt);
 			usage();

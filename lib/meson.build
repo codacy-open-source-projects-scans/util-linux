@@ -5,7 +5,7 @@ lib_common_sources = '''
 	color-names.c
 	crc32.c
 	crc32c.c
-        crc64.c
+	crc64.c
 	c_strtod.c
 	encode.c
 	env.c
@@ -17,6 +17,9 @@ lib_common_sources = '''
 	mbsalign.c
 	mbsedit.c
 	md5.c
+	netaddrq.c
+	netlink.c
+	pidutils.c
 	procfs.c
 	pwdutils.c
 	randutils.c
@@ -28,6 +31,7 @@ lib_common_sources = '''
 	timeutils.c
 	ttyutils.c
 	xxhash.c
+	configs.c
 '''.split()
 
 idcache_c = files('idcache.c')
@@ -106,3 +110,5 @@ lib_tcolors = static_library(
   lib_color_sources,
   include_directories : dir_include,
   dependencies : curses_libs)
+
+lib_tcolors_manadocs = files('terminal-colors.d.5.adoc')

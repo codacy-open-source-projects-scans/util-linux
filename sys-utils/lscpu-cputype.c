@@ -91,6 +91,7 @@ void lscpu_unref_cputype(struct lscpu_cputype *ct)
 		free(ct->bios_vendor);
 		free(ct->machinetype);	/* s390 */
 		free(ct->family);
+		free(ct->microcode);
 		free(ct->model);
 		free(ct->modelname);
 		free(ct->bios_modelname);
@@ -140,6 +141,8 @@ static void fprintf_cputypes(FILE *f, struct lscpu_cxt *cxt)
 			fprintf(f, " machinetype: %s\n", ct->machinetype);
 		if (ct->family)
 			fprintf(f, " family: %s\n", ct->family);
+		if (ct->microcode)
+			fprintf(f, " microcode: %s\n", ct->microcode);
 		if (ct->model)
 			fprintf(f, " model: %s\n", ct->model);
 		if (ct->modelname)
@@ -183,6 +186,7 @@ enum {
 	PAT_FLAGS,
 	PAT_IMPLEMENTER,
 	PAT_MAX_THREAD_ID,
+	PAT_MICROCODE,
 	PAT_MHZ,
 	PAT_MHZ_DYNAMIC,
 	PAT_MHZ_STATIC,
@@ -233,8 +237,10 @@ static const struct cpuinfo_pattern type_patterns[] =
 	DEF_PAT_CPUTYPE( "family",		PAT_FAMILY,	family),
 	DEF_PAT_CPUTYPE( "features",		PAT_FEATURES,	flags),		/* s390 */
 	DEF_PAT_CPUTYPE( "flags",		PAT_FLAGS,	flags),		/* x86 */
+	DEF_PAT_CPUTYPE( "isa",			PAT_ISA,	isa),		/* riscv */
 	DEF_PAT_CPUTYPE( "marchid",		PAT_FAMILY,	family),	/* riscv */
 	DEF_PAT_CPUTYPE( "max thread id",	PAT_MAX_THREAD_ID, mtid),	/* s390 */
+	DEF_PAT_CPUTYPE( "microcode",	        PAT_MICROCODE, microcode),
 	DEF_PAT_CPUTYPE( "mimpid",		PAT_MODEL,	model),		/* riscv */
 	DEF_PAT_CPUTYPE( "model",		PAT_MODEL,	model),
 	DEF_PAT_CPUTYPE( "model name",		PAT_MODEL_NAME,	modelname),
@@ -287,7 +293,7 @@ static const struct cpuinfo_pattern cache_patterns[] =
 	DEF_PAT_CACHE("cache",	PAT_CACHE),
 };
 
-#define CPUTYPE_PATTERN_BUFSZ	32
+#define CPUTYPE_PATTERN_BUFSZ	128
 
 static int cmp_pattern(const void *a0, const void *b0)
 {
@@ -461,8 +467,7 @@ static const struct cpuinfo_pattern *cpuinfo_parse_line(char *str, char **value,
 		return NULL;
 
 	/* prepare name of the field */
-	xstrncpy(buf, p, sizeof(buf));
-	buf[v - p] = '\0';
+	xstrncpy(buf, p, min((size_t)(v - p)+1, sizeof(buf)));
 	v++;
 
 	/* prepare value */
@@ -773,7 +778,9 @@ struct lscpu_arch *lscpu_read_architecture(struct lscpu_cxt *cxt)
 		char buf[BUFSIZ];
 
 		snprintf(buf, sizeof(buf), " %s ", ct->isa);
-		if (strstr(buf, " loongarch32 "))
+		if (strstr(buf, " loongarch32 ")
+		    || strstr(buf, " loongarch32s ")
+		    || strstr(buf, " loongarch32r "))
 			ar->bit32 = 1;
 		if (strstr(buf, " loongarch64 "))
 			ar->bit64 = 1;
@@ -960,14 +967,14 @@ int lscpu_read_vulnerabilities(struct lscpu_cxt *cxt)
 		/* Name */
 		vu->name = xstrdup(d->d_name);
 		*vu->name = toupper(*vu->name);
-		strrep(vu->name, '_', ' ');
+		ul_strrep(vu->name, '_', ' ');
 
 		/* Description */
 		vu->text = str;
-		p = (char *) startswith(vu->text, "Mitigation");
+		p = (char *) ul_startswith(vu->text, "Mitigation");
 		if (p) {
 			*p = ';';
-			strrem(vu->text, ':');
+			ul_strrem(vu->text, ':');
 		}
 	}
 	closedir(dir);

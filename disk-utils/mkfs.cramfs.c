@@ -15,9 +15,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 
 /*
@@ -128,26 +127,32 @@ struct entry {
 static void __attribute__((__noreturn__)) usage(void)
 {
 	fputs(USAGE_HEADER, stdout);
-	fprintf(stdout, _(" %s [-h] [-v] [-b blksize] [-e edition] [-N endian] [-i file] [-n name] dirname outfile\n"),
-		program_invocation_short_name);
+	fprintf(stdout, _(" %s [options] dirname outfile\n"), program_invocation_short_name);
+
 	fputs(USAGE_SEPARATOR, stdout);
-	fputsln(_("Make compressed ROM file system."), stdout);
+	fputsln(_("Make a compressed ROM file system."), stdout);
+
+	fputs(USAGE_SEPARATOR, stdout);
+	fputsln(_(" dirname        root of the filesystem to be compressed"), stdout);
+	fputsln(_(" outfile        output file"), stdout);
+
 	fputs(USAGE_OPTIONS, stdout);
-	fputsln(_(  " -v             be verbose"), stdout);
-	fputsln(_(  " -E             make all warnings errors (non-zero exit status)"), stdout);
-	fputsln(_(  " -b blksize     use this blocksize, must equal page size"), stdout);
-	fputsln(_(  " -e edition     set edition number (part of fsid)"), stdout);
-	fprintf(stdout, _(" -N endian      set cramfs endianness (%s|%s|%s), default %s\n"), "big", "little", "host", "host");
-	fputsln(_(  " -i file        insert a file image into the filesystem"), stdout);
-	fputsln(_(  " -n name        set name of cramfs filesystem"), stdout);
-	fprintf(stdout, _(" -p             pad by %d bytes for boot code\n"), PAD_SIZE);
-	fputsln(_(  " -s             sort directory entries (old option, ignored)"), stdout);
-	fputsln(_(  " -z             make explicit holes"), stdout);
-	fputsln(_(  " -l[=<mode>]    use exclusive device lock (yes, no or nonblock)"), stdout);
-	fputsln(_(  " dirname        root of the filesystem to be compressed"), stdout);
-	fputsln(_(  " outfile        output file"), stdout);
+	fputsln(_(" -v             be verbose"), stdout);
+	fputsln(_(" -E             make all warnings errors (non-zero exit status)"), stdout);
+	fputsln(_(" -b blksize     use this blocksize, must equal page size"), stdout);
+	fputsln(_(" -e edition     set edition number (part of fsid)"), stdout);
+	fprintf(stdout,
+	        _(" -N endian      set cramfs endianness (%s|%s|%s), default %s\n"), "big", "little", "host", "host");
+	fputsln(_(" -i file        insert a file image into the filesystem"), stdout);
+	fputsln(_(" -n name        set name of cramfs filesystem"), stdout);
+	fprintf(stdout,
+	        _(" -p             pad by %d bytes for boot code\n"), PAD_SIZE);
+	fputsln(_(" -z             make explicit holes"), stdout);
+	fputsln(_(" -l[=<mode>]    use exclusive device lock (yes, no or nonblock)"), stdout);
+
 	fputs(USAGE_SEPARATOR, stdout);
 	fprintf(stdout, USAGE_HELP_OPTIONS(16));
+
 	fprintf(stdout, USAGE_MAN_TAIL("mkfs.cramfs(8)"));
 	exit(MKFS_EX_OK);
 }
@@ -239,14 +244,6 @@ identical_file(struct entry *e1, struct entry *e2){
 	return equal;
 }
 
-/*
- * The longest file name component to allow for in the input directory tree.
- * Ext2fs (and many others) allow up to 255 bytes.  A couple of filesystems
- * allow longer (e.g. smbfs 1024), but there isn't much use in supporting
- * >255-byte names in the input directory tree given that such names get
- * truncated to 255 bytes when written to cramfs.
- */
-#define MAX_INPUT_NAMELEN 255
 
 static int find_identical_file(struct entry *orig, struct entry *new, loff_t *fslen_ub)
 {
@@ -293,7 +290,7 @@ static int cramsort (const struct dirent **a, const struct dirent **b)
 
 static unsigned int parse_directory(struct entry *root_entry, const char *name, struct entry **prev, loff_t *fslen_ub)
 {
-	struct dirent **dirlist;
+	struct dirent **dirlist = NULL;
 	int totalsize = 0, dircount, dirindex;
 	char *path, *endpath;
 	size_t len = strlen(name);

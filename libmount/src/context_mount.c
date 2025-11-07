@@ -20,6 +20,7 @@
 
 #include "mountP.h"
 #include "strutils.h"
+#include "strv.h"
 
 #if defined(HAVE_SMACK)
 static int is_option(const char *name, const char *const *names)
@@ -197,15 +198,11 @@ static int evaluate_permissions(struct libmnt_context *cxt)
 		/*
 		 * superuser mount
 		 *
-		 * Let's convert user, users, owenr and groups to MS_* flags
+		 * Let's convert user, users, owner and groups to MS_* flags
 		 * to be compatible with non-root execution.
 		 *
 		 * The old deprecated way is to use mnt_optstr_get_flags().
 		 */
-		if (user_flags & (MNT_MS_OWNER | MNT_MS_GROUP))
-			rc = mnt_optlist_remove_flags(ol,
-					MNT_MS_OWNER | MNT_MS_GROUP, cxt->map_userspace);
-
 		if (!rc && (user_flags & MNT_MS_OWNER))
 			rc = mnt_optlist_insert_flags(ol,
 					MS_OWNERSECURE, cxt->map_linux,
@@ -225,6 +222,10 @@ static int evaluate_permissions(struct libmnt_context *cxt)
 		if (!rc && (user_flags & MNT_MS_USERS))
 			rc = mnt_optlist_insert_flags(ol, MS_SECURE, cxt->map_linux,
 					MNT_MS_USERS, cxt->map_userspace);
+
+		if (user_flags & (MNT_MS_OWNER | MNT_MS_GROUP))
+			rc = mnt_optlist_remove_flags(ol,
+					MNT_MS_OWNER | MNT_MS_GROUP, cxt->map_userspace);
 
 		DBG(CXT, ul_debugobj(cxt, "perms: superuser [rc=%d]", rc));
 		if (rc)
@@ -429,33 +430,31 @@ static int exec_helper(struct libmnt_context *cxt)
 		type = mnt_fs_get_fstype(cxt->fs);
 
 		args[i++] = cxt->helper;		/* 1 */
+		args[i++] = mnt_fs_get_srcpath(cxt->fs);/* 2 */
+		args[i++] = mnt_fs_get_target(cxt->fs);	/* 3 */
 
 		if (mnt_context_is_sloppy(cxt))
-			args[i++] = "-s";		/* 2 */
+			args[i++] = "-s";		/* 4 */
 		if (mnt_context_is_fake(cxt))
-			args[i++] = "-f";		/* 3 */
+			args[i++] = "-f";		/* 5 */
 		if (mnt_context_is_nomtab(cxt))
-			args[i++] = "-n";		/* 4 */
+			args[i++] = "-n";		/* 6 */
 		if (mnt_context_is_verbose(cxt))
-			args[i++] = "-v";		/* 5 */
+			args[i++] = "-v";		/* 7 */
 		if (o) {
-			args[i++] = "-o";		/* 6 */
-			args[i++] = o;			/* 7 */
+			args[i++] = "-o";		/* 8 */
+			args[i++] = o;			/* 9 */
 		}
 		if (type
 		    && strchr(type, '.')
-		    && !endswith(cxt->helper, type)) {
-			args[i++] = "-t";		/* 8 */
-			args[i++] = type;		/* 9 */
+		    && !ul_endswith(cxt->helper, type)) {
+			args[i++] = "-t";		/* 10 */
+			args[i++] = type;		/* 11 */
 		}
 		if (namespace) {
-			args[i++] = "-N";		/* 10 */
-			args[i++] = namespace;		/* 11 */
+			args[i++] = "-N";		/* 12 */
+			args[i++] = namespace;		/* 13 */
 		}
-
-		args[i++] = mnt_fs_get_srcpath(cxt->fs);/* 12 */
-		args[i++] = mnt_fs_get_target(cxt->fs);	/* 13 */
-
 		args[i] = NULL;				/* 14 */
 		for (i = 0; args[i]; i++)
 			DBG(CXT, ul_debugobj(cxt, "argv[%d] = \"%s\"",
@@ -1445,6 +1444,31 @@ done:
 	return rc;
 }
 
+static void join_err_mesgs(struct libmnt_context *cxt, char *buf, size_t bufsz)
+{
+	char **s;
+	int n = 0;
+
+	if (!cxt || !buf || ul_strv_isempty(cxt->mesgs))
+		return;
+
+	UL_STRV_FOREACH(s, cxt->mesgs) {
+		size_t len;
+
+		if (!bufsz)
+			break;
+		if (!ul_startswith(*s, "e "))
+			continue;
+		if (n) {
+			len = xstrncpy(buf, "; ", bufsz);
+			buf += len, bufsz -= len;
+		}
+		len = xstrncpy(buf, (*s) + 2, bufsz);
+		buf += len, bufsz -= len;
+		n++;
+	}
+}
+
 int mnt_context_get_mount_excode(
 			struct libmnt_context *cxt,
 			int rc,
@@ -1490,8 +1514,10 @@ int mnt_context_get_mount_excode(
 	mnt_context_get_user_mflags(cxt, &uflags);	/* userspace flags */
 
 	if (!mnt_context_syscall_called(cxt)) {
-		if (buf && cxt->errmsg) {
-			xstrncpy(buf, cxt->errmsg, bufsz);
+
+		/* libmount errors already added to context log */
+		if (buf && mnt_context_get_nmesgs(cxt, 'e')) {
+			join_err_mesgs(cxt, buf, bufsz);
 			return MNT_EX_USAGE;
 		}
 
@@ -1634,16 +1660,26 @@ int mnt_context_get_mount_excode(
 	 */
 	syserr = mnt_context_get_syscall_errno(cxt);
 
-	if (buf && cxt->errmsg) {
-		if (cxt->syscall_name)
-			snprintf(buf, bufsz, _("%s system call failed: %s"),
-					cxt->syscall_name, cxt->errmsg);
-		else
-			xstrncpy(buf, cxt->errmsg, bufsz);
+	/* Error with already generated messages (by kernel or libmount) */
+	if (buf && mnt_context_get_nmesgs(cxt, 'e')) {
+		if (syserr == ENOENT
+		    && uflags & MNT_MS_NOFAIL
+		    && cxt->syscall_name && strcmp(cxt->syscall_name, "fsconfig") == 0
+		    && src && !mnt_is_path(src))
+			return MNT_EX_SUCCESS;
+
+		if (cxt->syscall_name) {
+			size_t len = snprintf(buf, bufsz,
+					_("%s() failed: "),
+					cxt->syscall_name);
+			join_err_mesgs(cxt, buf + len, bufsz - len);
+		} else
+			join_err_mesgs(cxt, buf, bufsz);
 
 		return MNT_EX_FAIL;
 	}
 
+	/* Classic mount(2) errors */
 	switch(syserr) {
 	case EPERM:
 		if (!buf)
@@ -1803,13 +1839,13 @@ int mnt_context_get_mount_excode(
 			snprintf(buf, bufsz, _("cannot mount; probably corrupted filesystem on %s"), src);
 			break;
 		}
-		/* fallthrough */
+		FALLTHROUGH;
 
 	default:
 	generic_error:
 		if (buf) {
 			errno = syserr;
-			snprintf(buf, bufsz, _("%s system call failed: %m"),
+			snprintf(buf, bufsz, _("%s() failed: %m"),
 					cxt->syscall_name ? : "mount");
 		}
 		break;

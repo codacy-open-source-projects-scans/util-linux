@@ -27,7 +27,6 @@
 
 #ifdef INCLUDE_VMWARE_BDOOR
 # include <stdint.h>
-# include <signal.h>
 # include <strings.h>
 # include <setjmp.h>
 # ifdef HAVE_SYS_IO_H
@@ -258,8 +257,7 @@ static int read_hypervisor_dmi(void)
 
 	if (sizeof(uint8_t) != 1
 	    || sizeof(uint16_t) != 2
-	    || sizeof(uint32_t) != 4
-	    || '\0' != 0)
+	    || sizeof(uint32_t) != 4)
 		return VIRT_VENDOR_NONE;
 
 	/* -1 : no DMI in /sys,

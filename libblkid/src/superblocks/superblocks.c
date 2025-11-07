@@ -48,7 +48,7 @@
  *
  * @UUID: filesystem UUID (lower case)
  *
- * @UUID_SUB: subvolume uuid (e.g. btrfs)
+ * @UUID_SUB: pool member UUID or device item UUID, etc. (e.g., zfs, btrfs, ...)
  *
  * @LOGUUID: external log UUID (e.g. xfs)
  *
@@ -158,6 +158,8 @@ static const struct blkid_idinfo *idinfos[] =
 	&refs_idinfo,
 	&cramfs_idinfo,
 	&romfs_idinfo,
+	&scoutfs_meta_idinfo,
+	&scoutfs_data_idinfo,
 	&minix_idinfo,
 	&gfs_idinfo,
 	&gfs2_idinfo,

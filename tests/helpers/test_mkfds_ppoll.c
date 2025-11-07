@@ -12,9 +12,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  *
  */
 
@@ -35,6 +34,8 @@
  * This file is for defining the poll multiplexer only with <asm/poll.h>.
  *
  */
+#ifdef HAVE_SIGSET_T		/* defined in config.h */
+
 #include "test_mkfds.h"
 
 #include <string.h>		/* memset */
@@ -77,3 +78,5 @@ DEFUN_WAIT_EVENT_POLL(ppoll,
 		      clear_sigset(&sigset);,
 		      syscall(__NR_ppoll, pfds, n, NULL, &sigset, sizeof(sigset)))
 #endif
+
+#endif	/* HAVE_SIGSET_T */

@@ -9,6 +9,10 @@ _column_module()
 			COMPREPLY=( $(compgen -W "number" -- $cur) )
 			return 0
 			;;
+		'--color')
+			COMPREPLY=( $(compgen -W "auto never always" -- $cur) )
+			return 0
+			;;
 		'-s'|'--separator'|'-o'|'--output-separator'|'-n'|'--table-name'|'-O')
 			COMPREPLY=( $(compgen -W "string" -- $cur) )
 			return 0
@@ -29,8 +33,10 @@ _column_module()
 		-*)
 			OPTS="--columns
 				--table
+				--table-colorscheme
 				--table-name
 				--table-order
+				--table-column
 				--table-columns
 				--table-columns-limit
 				--table-noextreme
@@ -49,8 +55,10 @@ _column_module()
 				--output-width
 				--separator
 				--output-separator
+				--wrap-separator
 				--fillrows
 				--use-spaces
+				--color
 				--help
 				--version"
 			COMPREPLY=( $(compgen -W "${OPTS[*]}" -- $cur) )

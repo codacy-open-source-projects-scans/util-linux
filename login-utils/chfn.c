@@ -33,6 +33,7 @@
 #include <unistd.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "env.h"
 #include "closestream.h"
 #include "islocal.h"
@@ -245,7 +246,7 @@ static char *ask_new_field(struct chfn_control *ctl, const char *question,
 			free(buf);
 			return xstrdup(def_val);
 		}
-		if (!strcasecmp(buf, "none")) {
+		if (!c_strcasecmp(buf, "none")) {
 			free(buf);
 			ctl->changed = 1;
 			return xstrdup("");
@@ -268,7 +269,7 @@ static void get_login_defs(struct chfn_control *ctl)
 	int broken = 0;
 
 	/* real root does not have restrictions */
-	if (geteuid() == getuid() && getuid() == 0) {
+	if (!is_privileged_execution() && getuid() == 0) {
 		ctl->allow_fullname = ctl->allow_room = ctl->allow_work = ctl->allow_home = 1;
 		return;
 	}
@@ -448,7 +449,7 @@ int main(int argc, char **argv)
 
 #ifdef HAVE_LIBUSER
 	/* If we're setuid and not really root, disallow the password change. */
-	if (geteuid() != getuid() && uid != ctl.pw->pw_uid) {
+	if (is_privileged_execution() && uid != ctl.pw->pw_uid) {
 #else
 	if (uid != 0 && uid != ctl.pw->pw_uid) {
 #endif

@@ -13,9 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 
 #include <stdio.h>
@@ -31,6 +30,7 @@
 #include <linux/rtc.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "nls.h"
 #include "strutils.h"
 #include "timeutils.h"
@@ -40,44 +40,70 @@
 #include "all-io.h"
 #include "list.h"
 
+#define CLOCKFD 3
+
+static inline clockid_t FD_TO_CLOCKID(int fd)
+{
+	return (~(unsigned int) fd << 3) | CLOCKFD;
+}
+
 #ifndef CLOCK_REALTIME
-#define CLOCK_REALTIME			0
+# define CLOCK_REALTIME			0
 #endif
 
 #ifndef CLOCK_MONOTONIC
-#define CLOCK_MONOTONIC			1
+# define CLOCK_MONOTONIC			1
 #endif
 
 #ifndef CLOCK_MONOTONIC_RAW
-#define CLOCK_MONOTONIC_RAW		4
+# define CLOCK_MONOTONIC_RAW		4
 #endif
 
 #ifndef CLOCK_REALTIME_COARSE
-#define CLOCK_REALTIME_COARSE		5
+# define CLOCK_REALTIME_COARSE		5
 #endif
 
 #ifndef CLOCK_MONOTONIC_COARSE
-#define CLOCK_MONOTONIC_COARSE		6
+# define CLOCK_MONOTONIC_COARSE		6
 #endif
 
 #ifndef CLOCK_BOOTTIME
-#define CLOCK_BOOTTIME			7
+# define CLOCK_BOOTTIME			7
 #endif
 
 #ifndef CLOCK_REALTIME_ALARM
-#define CLOCK_REALTIME_ALARM		8
+# define CLOCK_REALTIME_ALARM		8
 #endif
 
 #ifndef CLOCK_BOOTTIME_ALARM
-#define CLOCK_BOOTTIME_ALARM		9
+# define CLOCK_BOOTTIME_ALARM		9
 #endif
 
 #ifndef CLOCK_TAI
-#define CLOCK_TAI			11
+# define CLOCK_TAI			11
 #endif
+
+#ifndef CLOCK_AUX
+# define CLOCK_AUX			16
+#endif
+
+#define CLOCK_AUX0			(CLOCK_AUX + 0)
+#define CLOCK_AUX1			(CLOCK_AUX + 1)
+#define CLOCK_AUX2			(CLOCK_AUX + 2)
+#define CLOCK_AUX3			(CLOCK_AUX + 3)
+#define CLOCK_AUX4			(CLOCK_AUX + 4)
+#define CLOCK_AUX5			(CLOCK_AUX + 5)
+#define CLOCK_AUX6			(CLOCK_AUX + 6)
+#define CLOCK_AUX7			(CLOCK_AUX + 7)
+
+static inline bool is_aux_clock(clockid_t clockid)
+{
+	return clockid >= CLOCK_AUX0 && clockid <= CLOCK_AUX7;
+}
 
 enum CLOCK_TYPE {
 	CT_SYS,
+	CT_AUX,
 	CT_PTP,
 	CT_CPU,
 	CT_RTC,
@@ -88,6 +114,8 @@ static const char *clock_type_name(enum CLOCK_TYPE type)
 	switch (type) {
 	case CT_SYS:
 		return "sys";
+	case CT_AUX:
+		return "aux";
 	case CT_PTP:
 		return "ptp";
 	case CT_CPU:
@@ -119,6 +147,14 @@ static const struct clockinfo clocks[] = {
 	{ CT_SYS, CLOCK_REALTIME_ALARM,   "CLOCK_REALTIME_ALARM",   "realtime-alarm"   },
 	{ CT_SYS, CLOCK_BOOTTIME_ALARM,   "CLOCK_BOOTTIME_ALARM",   "boottime-alarm"   },
 	{ CT_SYS, CLOCK_TAI,              "CLOCK_TAI",              "tai"              },
+	{ CT_AUX, CLOCK_AUX0,             "CLOCK_AUX0",             "auxiliary-0"      },
+	{ CT_AUX, CLOCK_AUX1,             "CLOCK_AUX1",             "auxiliary-1"      },
+	{ CT_AUX, CLOCK_AUX2,             "CLOCK_AUX2",             "auxiliary-2"      },
+	{ CT_AUX, CLOCK_AUX3,             "CLOCK_AUX3",             "auxiliary-3"      },
+	{ CT_AUX, CLOCK_AUX4,             "CLOCK_AUX4",             "auxiliary-4"      },
+	{ CT_AUX, CLOCK_AUX5,             "CLOCK_AUX5",             "auxiliary-5"      },
+	{ CT_AUX, CLOCK_AUX6,             "CLOCK_AUX6",             "auxiliary-6"      },
+	{ CT_AUX, CLOCK_AUX7,             "CLOCK_AUX7",             "auxiliary-7"      },
 };
 
 /* column IDs */
@@ -165,7 +201,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -251,7 +287,7 @@ static int64_t get_namespace_offset(const char *name)
 		line = strtok_r(tokstr, "\n", &saveptr);
 		if (!line)
 			continue;
-		line = (char *) startswith(line, name);
+		line = (char *) ul_startswith(line, name);
 		if (!line || line[0] != ' ')
 			continue;
 
@@ -259,7 +295,7 @@ static int64_t get_namespace_offset(const char *name)
 		space = strchr(line, ' ');
 		if (space)
 			*space = '\0';
-		ret = strtos64_or_err(line, _("Invalid offset"));
+		ret = strtos64_or_err(line, _("invalid offset"));
 		break;
 	}
 
@@ -351,8 +387,12 @@ static void add_posix_clock_line(struct libscols_table *tb, const int *columns,
 	int rc;
 
 	rc = clock_gettime(clockinfo->id, &now);
-	if (rc)
+	if (rc) {
+		if (is_aux_clock(clockinfo->id) && errno == EINVAL)
+			return; /* auxclocks are not supported */
+
 		now.tv_nsec = -1;
+	}
 
 	rc = clock_getres(clockinfo->id, &resolution);
 	if (rc)
@@ -380,6 +420,7 @@ static void add_dynamic_clock_from_path(struct libscols_table *tb,
 
 	struct clockinfo clockinfo = {
 		.type = CT_PTP,
+		.id = FD_TO_CLOCKID(fd),
 		.no_id = true,
 		.id_name = path,
 		.name = path,
@@ -584,7 +625,7 @@ int main(int argc, char **argv)
 			break;
 		case 'c':
 			cpu_clock = xmalloc(sizeof(*cpu_clock));
-			cpu_clock->pid = strtopid_or_err(optarg, _("failed to parse pid"));
+			cpu_clock->pid = strtopid_or_err(optarg, _("invalid PID argument"));
 			snprintf(cpu_clock->name, sizeof(cpu_clock->name),
 				 "%jd", (intmax_t) cpu_clock->pid);
 			list_add(&cpu_clock->head, &cpu_clocks);
@@ -626,6 +667,8 @@ int main(int argc, char **argv)
 		columns[ncolumns++] = COL_ISO_TIME;
 	}
 
+	if (!outarg)
+		outarg = getenv("LSCLOCKS_COLUMNS");
 	if (outarg && string_add_to_idarray(outarg, columns, ARRAY_SIZE(columns),
 					    &ncolumns, column_name_to_id) < 0)
 		return EXIT_FAILURE;

@@ -250,7 +250,11 @@ extern void scols_unref_column(struct libscols_column *cl);
 extern struct libscols_column *scols_copy_column(const struct libscols_column *cl);
 extern int scols_column_set_whint(struct libscols_column *cl, double whint);
 extern double scols_column_get_whint(const struct libscols_column *cl);
+
 extern struct libscols_cell *scols_column_get_header(struct libscols_column *cl);
+extern int scols_column_set_headercolor(struct libscols_column *cl, const char *color);
+extern const char *scols_column_get_headercolor(struct libscols_column *cl);
+
 extern int scols_column_set_color(struct libscols_column *cl, const char *color);
 extern const char *scols_column_get_color(const struct libscols_column *cl);
 extern struct libscols_table *scols_column_get_table(const struct libscols_column *cl);
@@ -262,6 +266,9 @@ extern int scols_column_set_name(struct libscols_column *cl, const char *name);
 extern const char *scols_column_get_name(struct libscols_column *cl);
 extern const char *scols_column_get_name_as_shellvar(struct libscols_column *cl);
 extern int scols_shellvar_name(const char *name, char **buf, size_t *bufsz);
+
+extern int scols_column_refer_annotation(struct libscols_column *cl, const char *annotation);
+extern const char *scols_column_get_annotation(struct libscols_column *cl);
 
 extern int scols_column_set_properties(struct libscols_column *cl, const char *opts);
 
@@ -452,6 +459,8 @@ extern int scols_line_apply_filter(struct libscols_line *ln,
 
 extern int scols_filter_next_holder(struct libscols_filter *fltr,
                         struct libscols_iter *itr, const char **name, int type);
+extern int scols_filter_has_holder(struct libscols_filter *fltr, const char *name);
+
 extern int scols_filter_assign_column(struct libscols_filter *fltr,
 			struct libscols_iter *itr,
                         const char *name, struct libscols_column *col);

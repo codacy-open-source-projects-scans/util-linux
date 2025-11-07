@@ -19,10 +19,11 @@ but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://gnu.org/licenses/>.
 ////
+ifdef::neverdefined[---]
+
 = chrt(1)
 :doctype: manpage
 :man manual: User Commands
@@ -37,18 +38,18 @@ chrt - manipulate the real-time attributes of a process
 
 == SYNOPSIS
 
-*chrt* [options] _priority command argument_ ...
+*chrt* [options] [_priority_] _command_ [_argument_...]
 
-*chrt* [options] *-p* [_priority_] _PID_
+*chrt --pid* [options] [_priority_] _PID_
 
 == DESCRIPTION
 
 *chrt* sets or retrieves the real-time scheduling attributes of an existing _PID_, or runs _command_ with the given attributes.
 
-== POLICIES
+== POLICY OPTIONS
 
 *-o*, *--other*::
-Set scheduling policy to *SCHED_OTHER* (time-sharing scheduling). This is the default Linux scheduling policy.
+Set scheduling policy to *SCHED_OTHER* (time-sharing scheduling). This is the default Linux scheduling policy. Since util-linux v2.42, the priority argument is optional; if specified, it must be set to zero.
 
 *-f*, *--fifo*::
 Set scheduling policy to *SCHED_FIFO* (first in-first out).
@@ -57,18 +58,21 @@ Set scheduling policy to *SCHED_FIFO* (first in-first out).
 Set scheduling policy to *SCHED_RR* (round-robin scheduling). When no policy is defined, the *SCHED_RR* is used as the default.
 
 *-b*, *--batch*::
-Set scheduling policy to *SCHED_BATCH* (scheduling batch processes). Linux-specific, supported since 2.6.16. The priority argument has to be set to zero.
+Set scheduling policy to *SCHED_BATCH* (scheduling batch processes). Linux-specific, supported since 2.6.16. Since util-linux v2.42, the priority argument is optional; if specified, it must be set to zero.
 
 *-i*, *--idle*::
-Set scheduling policy to *SCHED_IDLE* (scheduling very low priority jobs). Linux-specific, supported since 2.6.23. The priority argument has to be set to zero.
+Set scheduling policy to *SCHED_IDLE* (scheduling very low priority jobs). Linux-specific, supported since 2.6.23. Since util-linux v2.42, the priority argument is optional; if specified, it must be set to zero.
 
 *-d*, *--deadline*::
-Set scheduling policy to *SCHED_DEADLINE* (sporadic task model deadline scheduling). Linux-specific, supported since 3.14. The priority argument has to be set to zero. See also *--sched-runtime*, *--sched-deadline* and *--sched-period*. The relation between the options required by the kernel is runtime <= deadline <= period. *chrt* copies _period_ to _deadline_ if *--sched-deadline* is not specified and _deadline_ to _runtime_ if *--sched-runtime* is not specified. It means that at least *--sched-period* has to be specified. See *sched*(7) for more details.
+Set scheduling policy to *SCHED_DEADLINE* (sporadic task model deadline scheduling). Linux-specific, supported since 3.14. Since util-linux v2.42, the priority argument is optional; if specified, it must be set to zero. See also *--sched-runtime*, *--sched-deadline* and *--sched-period*. The relation between the options required by the kernel is runtime <= deadline <= period. *chrt* copies _period_ to _deadline_ if *--sched-deadline* is not specified and _deadline_ to _runtime_ if *--sched-runtime* is not specified. It means that at least *--sched-period* has to be specified. See *sched*(7) for more details.
+
+*-e*, *--ext*::
+Set scheduling policy to *SCHED_EXT* (BPF program-defined scheduling). Linux-specific, supported since 6.12. Since util-linux v2.42, the priority argument is optional; if specified, it must be set to zero.
 
 == SCHEDULING OPTIONS
 
 *-T*, *--sched-runtime* _nanoseconds_::
-Specifies runtime parameter for *SCHED_DEADLINE* policy (Linux-specific).
+Specifies runtime parameter for *SCHED_DEADLINE* and custom slice length for *SCHED_OTHER* and *SCHED_BATCH* policies (Linux-specific). Note that custom slice length via the runtime parameter is supported since Linux 6.12.
 
 *-P*, *--sched-period* _nanoseconds_::
 Specifies period parameter for *SCHED_DEADLINE* policy (Linux-specific). Note that the kernel's lower limit is 100 milliseconds.
@@ -113,20 +117,24 @@ ____
 //TRANSLATORS: Keep {colon} untranslated
 You can also retrieve the real-time attributes of an existing task{colon}::
 ____
-*chrt -p* _PID_
+*chrt --pid* _PID_
 ____
 //TRANSLATORS: Keep {colon} untranslated
 Or set them{colon}::
 ____
-*chrt -r -p* _priority PID_
+*chrt --pid* _policy-option priority PID_
 ____
-This, for example, sets real-time scheduling to priority _30_ for the process _PID_ with the *SCHED_RR* (round-robin) class{colon}::
+For example, to set the scheduling policy to *SCHED_RR* (round-robin) and the priority to *30* for process *1234*{colon}::
 ____
-*chrt -r -p 30* _PID_
+*chrt --pid -r 30 1234*
 ____
 Reset priorities to default for a process{colon}::
 ____
-*chrt -o -p 0* _PID_
+*chrt --pid -o 0* _PID_
+____
+Set a custom slice of 1 ms for a *SCHED_OTHER* task (priority is optional for policies other than *SCHED_FIFO* and *SCHED_RR*){colon}::
+____
+*chrt --pid -o -T 1000000* _PID_
 ____
 See *sched*(7) for a detailed discussion of the different scheduler classes and how they interact.
 

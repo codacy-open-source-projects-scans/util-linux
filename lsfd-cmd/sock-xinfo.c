@@ -23,6 +23,7 @@
 #include <fcntl.h>		/* open(2) */
 #include <ifaddrs.h>		/* getifaddrs */
 #include <inttypes.h>		/* SCNu16 */
+#include <netdb.h>		/* getprotobyname */
 #include <net/if.h>		/* if_nametoindex */
 #include <linux/if_ether.h>	/* ETH_P_* */
 #include <linux/net.h>		/* SS_* */
@@ -33,6 +34,8 @@
 #include <linux/un.h>		/* UNIX_PATH_MAX */
 #include <linux/unix_diag.h>	/* UNIX_DIAG_*, UDIAG_SHOW_*,
 				   struct unix_diag_req */
+#include <linux/vm_sockets.h>	/* VMADDR_CID* */
+#include <linux/vm_sockets_diag.h> /* vsock_diag_req/vsock_diag_msg */
 #include <sched.h>		/* for setns(2) */
 #include <search.h>		/* tfind, tsearch */
 #include <stdint.h>
@@ -62,12 +65,18 @@ static void load_xinfo_from_proc_netlink(ino_t netns_inode);
 static void load_xinfo_from_proc_packet(ino_t netns_inode);
 
 static void load_xinfo_from_diag_unix(int diag, ino_t netns_inode);
+static void load_xinfo_from_diag_vsock(int diag, ino_t netns_inode);
+
+static void fill_peers_of_unix_oneway_ipcs(void);
 
 static int self_netns_fd = -1;
 static struct stat self_netns_sb;
 
 static void *xinfo_tree;	/* for tsearch/tfind */
 static void *netns_tree;
+
+static struct list_head unix_ipcs;
+static void *unix_oneway_ipc_tree;	/* for tsearch/tfind */
 
 struct iface {
 	unsigned int index;
@@ -186,6 +195,7 @@ static void load_sock_xinfo_no_nsswitch(struct netns *nsobj)
 				(diagsd >= 0)? "successful": strerror(errno)));
 	if (diagsd >= 0) {
 		load_xinfo_from_diag_unix(diagsd, netns);
+		load_xinfo_from_diag_vsock(diagsd, netns);
 		close(diagsd);
 		DBG(ENDPOINTS, ul_debug("close the diagnose socket"));
 	}
@@ -261,6 +271,8 @@ void initialize_sock_xinfos(void)
 	DIR *dir;
 	struct dirent *d;
 
+	INIT_LIST_HEAD(&unix_ipcs);
+
 	self_netns_fd = open("/proc/self/ns/net", O_RDONLY);
 
 	if (self_netns_fd < 0)
@@ -286,10 +298,8 @@ void initialize_sock_xinfos(void)
 	if (!pc)
 		err(EXIT_FAILURE, _("failed to alloc path context for /var/run/netns"));
 	dir = ul_path_opendir(pc, NULL);
-	if (dir == NULL) {
-		ul_unref_path(pc);
-		return;
-	}
+	if (dir == NULL)
+		goto out;
 	while ((d = readdir(dir))) {
 		struct stat sb;
 		int fd;
@@ -306,7 +316,10 @@ void initialize_sock_xinfos(void)
 		close(fd);
 	}
 	closedir(dir);
+ out:
 	ul_unref_path(pc);
+
+	fill_peers_of_unix_oneway_ipcs();
 }
 
 static void free_sock_xinfo(void *node)
@@ -317,12 +330,17 @@ static void free_sock_xinfo(void *node)
 	free(node);
 }
 
+static void do_nothing(void *node __attribute__((__unused__)))
+{
+}
+
 void finalize_sock_xinfos(void)
 {
 	if (self_netns_fd != -1)
 		close(self_netns_fd);
 	tdestroy(netns_tree, netns_free);
 	tdestroy(xinfo_tree, free_sock_xinfo);
+	tdestroy(unix_oneway_ipc_tree, do_nothing);
 }
 
 static int xinfo_compare(const void *a, const void *b)
@@ -457,6 +475,7 @@ struct unix_ipc {
 	struct ipc ipc;
 	ino_t inode;
 	ino_t ipeer;
+	struct list_head unix_ipcs;
 };
 
 struct unix_xinfo {
@@ -625,6 +644,22 @@ static struct ipc *unix_get_peer_ipc(struct unix_xinfo *ux,
 	return get_ipc(&dummy_peer_sock.file);
 }
 
+static void unix_fill_column_append_endpoints(struct ipc *peer_ipc, char **str)
+{
+	struct list_head *e;
+
+	list_for_each_backwardly(e, &peer_ipc->endpoints) {
+		struct sock *peer_sock = list_entry(e, struct sock, endpoint.endpoints);
+		char *estr;
+
+		if (*str)
+			xstrputc(str, '\n');
+		estr = unix_xstrendpoint(peer_sock);
+		xstrappend(str, estr);
+		free(estr);
+	}
+}
+
 static bool unix_fill_column(struct proc *proc __attribute__((__unused__)),
 			     struct sock_xinfo *sock_xinfo,
 			     struct sock *sock,
@@ -635,7 +670,6 @@ static bool unix_fill_column(struct proc *proc __attribute__((__unused__)),
 {
 	struct unix_xinfo *ux = (struct unix_xinfo *)sock_xinfo;
 	struct ipc *peer_ipc;
-	struct list_head *e;
 	char shutdown_chars[3] = { 0 };
 
 	switch (column_id) {
@@ -645,21 +679,32 @@ static bool unix_fill_column(struct proc *proc __attribute__((__unused__)),
 			return true;
 		}
 		break;
+	case COL_UNIX_IPEER:
+		if (ux->unix_ipc) {
+			xasprintf(str, "%llu", (unsigned long long)ux->unix_ipc->ipeer);
+			return true;
+		}
+		break;
 	case COL_ENDPOINTS:
-		peer_ipc = unix_get_peer_ipc(ux, sock);
-		if (!peer_ipc)
+		if (ux->unix_ipc == NULL)
 			break;
 
-		list_for_each_backwardly(e, &peer_ipc->endpoints) {
-			struct sock *peer_sock = list_entry(e, struct sock, endpoint.endpoints);
-			char *estr;
+		peer_ipc = unix_get_peer_ipc(ux, sock);
+		if (!peer_ipc && ux->unix_ipc->ipeer != 0)
+			break;
 
-			if (*str)
-				xstrputc(str, '\n');
-			estr = unix_xstrendpoint(peer_sock);
-			xstrappend(str, estr);
-			free(estr);
+		if (peer_ipc)
+			unix_fill_column_append_endpoints(peer_ipc, str);
+
+		if (ux->unix_ipc->ipeer == 0) {
+			struct list_head *e;
+			list_for_each(e, &ux->unix_ipc->unix_ipcs) {
+				struct unix_ipc *peer_unix_ipc = list_entry(e, struct unix_ipc, unix_ipcs);
+				peer_ipc = &peer_unix_ipc->ipc;
+				unix_fill_column_append_endpoints(peer_ipc, str);
+			}
 		}
+
 		if (*str)
 			return true;
 		break;
@@ -768,6 +813,33 @@ static void unix_refill_name(struct sock_xinfo *xinfo, const char *name, size_t 
 	ux->path[min_len] = '\0';
 }
 
+static int unix_oneway_ipc_compare(const void *a, const void *b)
+{
+	return ((struct unix_ipc *)a)->inode - ((struct unix_ipc *)b)->inode;
+}
+
+static void add_unix_oneway_ipc(struct unix_ipc *unix_oneway_ipc)
+{
+	struct unix_ipc **tmp = tsearch(unix_oneway_ipc,
+					&unix_oneway_ipc_tree,
+					unix_oneway_ipc_compare);
+
+	if (tmp == NULL)
+		errx(EXIT_FAILURE, _("failed to allocate memory"));
+}
+
+static struct unix_ipc *get_unix_oneway_ipc(ino_t inode)
+{
+	struct unix_ipc key = { .inode = inode };
+	struct unix_ipc  **unix_oneway_ipc = tfind(&key,
+						   &unix_oneway_ipc_tree,
+						   unix_oneway_ipc_compare);
+
+	if (unix_oneway_ipc)
+		return *unix_oneway_ipc;
+	return NULL;
+}
+
 static bool handle_diag_unix(ino_t netns __attribute__((__unused__)),
 			     size_t nlmsg_len, void *nlmsg_data)
 {
@@ -776,6 +848,8 @@ static bool handle_diag_unix(ino_t netns __attribute__((__unused__)),
 	ino_t inode;
 	struct sock_xinfo *xinfo;
 	struct unix_xinfo *unix_xinfo;
+	bool peer_added = false;
+	bool maybe_oneway = false;
 
 	if (diag->udiag_family != AF_UNIX)
 		return false;
@@ -815,6 +889,7 @@ static bool handle_diag_unix(ino_t netns __attribute__((__unused__)),
 		switch (attr->rta_type) {
 		case UNIX_DIAG_NAME:
 			unix_refill_name(xinfo, RTA_DATA(attr), len);
+			maybe_oneway = true;
 			break;
 
 		case UNIX_DIAG_SHUTDOWN:
@@ -832,10 +907,27 @@ static bool handle_diag_unix(ino_t netns __attribute__((__unused__)),
 			unix_xinfo->unix_ipc = (struct unix_ipc *)new_ipc(&unix_ipc_class);
 			unix_xinfo->unix_ipc->inode = inode;
 			unix_xinfo->unix_ipc->ipeer = (ino_t)(*(uint32_t *)RTA_DATA(attr));
+
+			INIT_LIST_HEAD(&unix_xinfo->unix_ipc->unix_ipcs);
+			list_add(&unix_xinfo->unix_ipc->unix_ipcs, &unix_ipcs);
+
 			add_ipc(&unix_xinfo->unix_ipc->ipc, inode % UINT_MAX);
+			peer_added = true;
 			break;
 		}
 	}
+
+	if (!peer_added && maybe_oneway) {
+		assert(unix_xinfo->unix_ipc == NULL);
+		unix_xinfo->unix_ipc = (struct unix_ipc *)new_ipc(&unix_ipc_class);
+		unix_xinfo->unix_ipc->inode = inode;
+		unix_xinfo->unix_ipc->ipeer = 0;
+
+		INIT_LIST_HEAD(&unix_xinfo->unix_ipc->unix_ipcs);
+		add_unix_oneway_ipc(unix_xinfo->unix_ipc);
+
+		add_ipc(&unix_xinfo->unix_ipc->ipc, inode % UINT_MAX);
+	};
 	return true;
 }
 
@@ -848,6 +940,25 @@ static void load_xinfo_from_diag_unix(int diagsd, ino_t netns)
 	};
 
 	send_diag_request(diagsd, &udr, sizeof(udr), handle_diag_unix, netns);
+}
+
+static void fill_peers_of_unix_oneway_ipcs(void)
+{
+	struct list_head *e, *enext;
+
+	list_for_each_safe(e, enext, &unix_ipcs) {
+		struct unix_ipc *unix_ipc = list_entry(e, struct unix_ipc, unix_ipcs);
+		struct unix_ipc *unix_oneway_ipc;
+
+		list_del_init(e);
+		if (unix_ipc->ipeer == 0)
+			continue;
+
+		unix_oneway_ipc = get_unix_oneway_ipc(unix_ipc->ipeer);
+		if (unix_oneway_ipc == NULL)
+			continue;
+		list_add(e, &unix_oneway_ipc->unix_ipcs);
+	};
 }
 
 /*
@@ -1047,7 +1158,7 @@ static bool tcp_get_listening(struct sock_xinfo *sock_xinfo,
 			n = class->get_addr(l4, L4_LOCAL);		\
 			has_laddr = true;				\
 			p = tcp->local_port;				\
-			/* FALL THROUGH */				\
+			FALLTHROUGH;					\
 		case COL_##L4##_RADDR:					\
 			if (!has_laddr) {				\
 				n = class->get_addr(l4, L4_REMOTE);	\
@@ -1063,7 +1174,7 @@ static bool tcp_get_listening(struct sock_xinfo *sock_xinfo,
 		case COL_##L4##_LPORT:					\
 			p = tcp->local_port;				\
 			has_lport = true;				\
-			/* FALL THROUGH */				\
+			FALLTHROUGH;					\
 		case COL_##L4##_RPORT:					\
 			if (!has_lport)					\
 				p = tcp->remote_port;			\
@@ -1326,9 +1437,102 @@ struct raw_xinfo {
 	uint16_t protocol;
 };
 
+static const char *raw_decode_protocol(uint16_t proto, bool decoded_as_ipv6)
+{
+	struct protoent *pent;
+
+	if (proto == 0) {
+		if (decoded_as_ipv6)
+			return "hopopts"; /* IPPROTO_HOPOPTS */
+		else
+			return "ip"; /* IPPROTO_IP */
+	}
+
+	switch (proto) {
+	case IPPROTO_ICMP:
+		return "icmp";
+	case IPPROTO_IGMP:
+		return "igmp";
+	case IPPROTO_IPIP:
+		return "ipip";
+	case IPPROTO_TCP:
+		return "tcp";
+	case IPPROTO_EGP:
+		return "egp";
+	case IPPROTO_PUP:
+		return "pup";
+	case IPPROTO_UDP:
+		return "udp";
+	case IPPROTO_IDP:
+		return "idp";
+	case IPPROTO_TP:
+		return "tp";
+	case IPPROTO_DCCP:
+		return "dccp";
+	case IPPROTO_IPV6:
+		return "ipv6";
+	case IPPROTO_RSVP:
+		return "rsvp";
+	case IPPROTO_GRE:
+		return "gre";
+	case IPPROTO_ESP:
+		return "esp";
+	case IPPROTO_AH:
+		return "ah";
+	case IPPROTO_MTP:
+		return "mtp";
+	case IPPROTO_BEETPH:
+		return "beetph";
+	case IPPROTO_ENCAP:
+		return "encap";
+	case IPPROTO_PIM:
+		return "pim";
+	case IPPROTO_COMP:
+		return "comp";
+#ifdef IPPROTO_L2TP
+	case IPPROTO_L2TP:
+		return "l2tp";
+#endif
+	case IPPROTO_SCTP:
+		return "sctp";
+	case IPPROTO_UDPLITE:
+		return "udplite";
+	case IPPROTO_MPLS:
+		return "mpls";
+#ifdef IPPROTO_ETHERNET
+	case IPPROTO_ETHERNET:
+		return "ethernet";
+#endif
+	case IPPROTO_RAW:
+		return "raw";
+#ifdef IPPROTO_MPTCP
+	case IPPROTO_MPTCP:
+		return "mptcp";
+#endif
+	case IPPROTO_ROUTING:
+		return "routing";
+	case IPPROTO_FRAGMENT:
+		return "fragment";
+	case IPPROTO_ICMPV6:
+		return "icmpv6";
+	case IPPROTO_NONE:
+		return "none";
+	case IPPROTO_DSTOPTS:
+		return "dstopts";
+	case IPPROTO_MH:
+		return "mh";
+	}
+
+	pent = getprotobynumber(proto);
+	if (pent && pent->p_name)
+		return pent->p_name;
+
+	return NULL;
+}
+
 static char *raw_get_name_common(struct sock_xinfo *sock_xinfo,
 				 struct sock *sock  __attribute__((__unused__)),
-				 const char *port_label)
+				 const char *port_label, bool decode_as_protocol)
 {
 	char *str = NULL;
 	struct l4_xinfo_class *class = (struct l4_xinfo_class *)sock_xinfo->class;
@@ -1342,30 +1546,73 @@ static char *raw_get_name_common(struct sock_xinfo *sock_xinfo,
 
 	if (!inet_ntop(class->family, laddr, local_s, sizeof(local_s)))
 		xasprintf(&str, "state=%s", st_str);
-	else if (class->is_any_addr(raddr)
-		 || !inet_ntop(class->family, raddr, remote_s, sizeof(remote_s)))
-		xasprintf(&str, "state=%s %s=%"PRIu16" laddr=%s",
-			  st_str,
-			  port_label,
-			  raw->protocol, local_s);
-	else
-		xasprintf(&str, "state=%s %s=%"PRIu16" laddr=%s raddr=%s",
-			  st_str,
-			  port_label,
-			  raw->protocol, local_s, remote_s);
+	else {
+		const char *protocol_str = NULL;
+		char protocol_buf[ sizeof ("unknown(")
+				   + sizeof (stringify_value(UINT16_MA))
+				   + sizeof (")") ];
+
+		if (decode_as_protocol) {
+			protocol_str = raw_decode_protocol(raw->protocol,
+							   class->family == AF_INET6);
+			if (protocol_str == NULL) {
+				snprintf(protocol_buf, sizeof(protocol_buf),
+					 "unknown(%"PRIu16")", raw->protocol);
+				protocol_str = protocol_buf;
+			}
+		} else {
+			snprintf(protocol_buf, sizeof(protocol_buf), "%"PRIu16, raw->protocol);
+			protocol_str = protocol_buf;
+		}
+
+		if (class->is_any_addr(raddr)
+		    || !inet_ntop(class->family, raddr, remote_s, sizeof(remote_s)))
+			xasprintf(&str, "state=%s %s=%s laddr=%s",
+				  st_str,
+				  port_label,
+				  protocol_str, local_s);
+		else
+			xasprintf(&str, "state=%s %s=%s laddr=%s raddr=%s",
+				  st_str,
+				  port_label,
+				  protocol_str, local_s, remote_s);
+	}
 	return str;
 }
 
 static char *raw_get_name(struct sock_xinfo *sock_xinfo,
 			  struct sock *sock  __attribute__((__unused__)))
 {
-	return raw_get_name_common(sock_xinfo, sock, "protocol");
+	return raw_get_name_common(sock_xinfo, sock, "protocol", true);
 }
 
 static char *raw_get_type(struct sock_xinfo *sock_xinfo __attribute__((__unused__)),
 			  struct sock *sock __attribute__((__unused__)))
 {
 	return xstrdup("raw");
+}
+
+static bool raw_fill_column_common(struct raw_xinfo *raw,
+				   int column_id,
+				   char **str,
+				   bool decoded_as_ipv6)
+{
+	const char *pname;
+
+	switch (column_id) {
+	case COL_RAW_PROTOCOL:
+		pname = raw_decode_protocol(raw->protocol, decoded_as_ipv6);
+		if (pname) {
+			*str = xstrdup(pname);
+			return true;
+		}
+		FALLTHROUGH;
+	case COL_RAW_PROTOCOL_RAW:
+		xasprintf(str, "%"PRIu16, raw->protocol);
+		return true;
+	}
+
+	return false;
 }
 
 static bool raw_fill_column(struct proc *proc __attribute__((__unused__)),
@@ -1379,13 +1626,8 @@ static bool raw_fill_column(struct proc *proc __attribute__((__unused__)),
 	if (l3_fill_column_handler(INET, sock_xinfo, column_id, str))
 		return true;
 
-	if (column_id == COL_RAW_PROTOCOL) {
-		xasprintf(str, "%"PRIu16,
-			  ((struct raw_xinfo *)sock_xinfo)->protocol);
-		return true;
-	}
-
-	return false;
+	return raw_fill_column_common((struct raw_xinfo *)sock_xinfo,
+				      column_id, str, false);
 }
 
 static struct sock_xinfo *raw_xinfo_scan_line(const struct sock_xinfo_class *class,
@@ -1454,7 +1696,7 @@ static void load_xinfo_from_proc_raw(ino_t netns_inode, enum sysfs_byteorder byt
 static char *ping_get_name(struct sock_xinfo *sock_xinfo,
 			  struct sock *sock  __attribute__((__unused__)))
 {
-	return raw_get_name_common(sock_xinfo, sock, "id");
+	return raw_get_name_common(sock_xinfo, sock, "id", false);
 }
 
 static char *ping_get_type(struct sock_xinfo *sock_xinfo __attribute__((__unused__)),
@@ -1735,18 +1977,11 @@ static bool raw6_fill_column(struct proc *proc  __attribute__((__unused__)),
 			     size_t column_index  __attribute__((__unused__)),
 			     char **str)
 {
-	struct raw_xinfo *raw;
-
 	if (l3_fill_column_handler(INET6, sock_xinfo, column_id, str))
 		return true;
 
-	raw = (struct raw_xinfo *)sock_xinfo;
-	if (column_id == COL_RAW_PROTOCOL) {
-		xasprintf(str, "%"PRIu16, raw->protocol);
-		return true;
-	}
-
-	return false;
+	return raw_fill_column_common((struct raw_xinfo *)sock_xinfo,
+				      column_id, str, true);
 }
 
 static const struct l4_xinfo_class raw6_xinfo_class = {
@@ -2000,8 +2235,6 @@ struct packet_xinfo {
 static const char *packet_decode_protocol(uint16_t proto)
 {
 	switch (proto) {
-	case 0:
-		return NULL;
 	case ETH_P_802_3:
 		return "802_3";
 	case ETH_P_AX25:
@@ -2262,9 +2495,9 @@ static const char *packet_decode_protocol(uint16_t proto)
 	case ETH_P_802_3_MIN:
 		return "802_3_min";
 #endif
-	default:
-		return "unknown";
 	}
+
+	return NULL;
 }
 
 static char *packet_get_name(struct sock_xinfo *sock_xinfo,
@@ -2273,21 +2506,22 @@ static char *packet_get_name(struct sock_xinfo *sock_xinfo,
 	struct packet_xinfo *pkt = (struct packet_xinfo *)sock_xinfo;
 	char *str = NULL;
 	const char *type = sock_decode_type(pkt->type);
-	const char *proto = packet_decode_protocol(pkt->protocol);
+	const char *proto_str = packet_decode_protocol(pkt->protocol);
+	char proto_buf[ sizeof("unknown(") + sizeof (stringify_value(UINT16_MAX)) + sizeof (")") ];
 	const char *iface = get_iface_name(sock_xinfo->netns_inode,
 					   pkt->iface);
 
-	if (iface && proto)
+	if (proto_str == NULL) {
+		snprintf(proto_buf, sizeof(proto_buf), "unknown(%"PRIu16")", pkt->protocol);
+		proto_str = proto_buf;
+	}
+
+	if (iface)
 		xasprintf(&str, "type=%s protocol=%s iface=%s",
-			  type, proto, iface);
-	else if (proto)
-		xasprintf(&str, "type=%s protocol=%s",
-			  type, proto);
-	else if (iface)
-		xasprintf(&str, "type=%s iface=%s",
-			  type, iface);
+			  type, proto_str, iface);
 	else
-		xasprintf(&str, "type=%s", type);
+		xasprintf(&str, "type=%s protocol=%s",
+			  type, proto_str);
 
 	return str;
 }
@@ -2326,12 +2560,15 @@ static bool packet_fill_column(struct proc *proc __attribute__((__unused__)),
 	case COL_PACKET_PROTOCOL: {
 		const char *proto;
 		proto = packet_decode_protocol(pkt->protocol);
-		if (proto) {
+		if (proto)
 			*str = xstrdup(proto);
-			return true;
-		}
-		break;
+		else
+			xstrfappend(str, "unknown(%"PRIu16")", pkt->protocol);
+		return true;
 	}
+	case COL_PACKET_PROTOCOL_RAW:
+		xasprintf(str, "%"PRIu16, pkt->protocol);
+		return true;
 	default:
 		break;
 	}
@@ -2369,7 +2606,7 @@ static void load_xinfo_from_proc_packet(ino_t netns_inode)
 		unsigned long inode;
 		struct packet_xinfo *pkt;
 
-		if (sscanf(line, "%*x %*d %" SCNu16 " %" SCNu16 " %u %*d %*d %*d %lu",
+		if (sscanf(line, "%*x %*d %" SCNu16 " %" SCNx16 " %u %*d %*d %*d %lu",
 			   &type, &protocol, &iface, &inode) < 4)
 			continue;
 
@@ -2387,4 +2624,216 @@ static void load_xinfo_from_proc_packet(ino_t netns_inode)
 
  out:
 	fclose(packet_fp);
+}
+
+/*
+ * VSOCK
+ */
+struct vsock_addr {
+	uint32_t cid;
+	uint32_t port;
+};
+
+struct vsock_xinfo {
+	struct sock_xinfo sock;
+	uint8_t type;
+	uint8_t  st;
+	uint8_t  shutdown_mask:3;
+	struct vsock_addr local;
+	struct vsock_addr remote;
+};
+
+static const char *vsock_decode_cid(uint32_t cid)
+{
+	switch (cid) {
+	case VMADDR_CID_ANY:
+		return "*";
+	case VMADDR_CID_HYPERVISOR:
+		return "hypervisor";
+#if HAVE_DECL_VMADDR_CID_LOCAL
+	case VMADDR_CID_LOCAL:
+		return "local";
+#endif	/* HAVE_DECL_VMADDR_CID_LOCAL */
+	case VMADDR_CID_HOST:
+		return "host";
+	default:
+		return NULL;
+	}
+}
+
+static const char *vsock_decode_port(uint32_t port)
+{
+	if (port == VMADDR_PORT_ANY)
+		return "*";
+	return NULL;
+}
+
+static char* vsock_get_addr(struct vsock_addr *addr)
+{
+	const char *tmp_cid = vsock_decode_cid(addr->cid);
+	const char *tmp_port = vsock_decode_port(addr->port);
+	char cidstr[BUFSIZ];
+	char portstr[BUFSIZ];
+	char *str = NULL;
+
+	if (tmp_cid)
+		snprintf(cidstr, sizeof(cidstr), "%s", tmp_cid);
+	else
+		snprintf(cidstr, sizeof(cidstr), "%"PRIu32, addr->cid);
+
+	if (tmp_port)
+		snprintf(portstr, sizeof(portstr), "%s", tmp_port);
+	else
+		snprintf(portstr, sizeof(portstr), "%"PRIu32, addr->port);
+
+	xasprintf(&str, "%s:%s", cidstr, portstr);
+	return str;
+}
+
+static char *vsock_get_name(struct sock_xinfo *sock_xinfo,
+			    struct sock *sock __attribute__((__unused__)))
+{
+	struct vsock_xinfo *vs = (struct vsock_xinfo *)sock_xinfo;
+	char *str = NULL;
+	const char *st_str = l4_decode_state(vs->st);
+	const char *type_str = sock_decode_type(vs->type);
+	char *laddr = vsock_get_addr(&vs->local);
+
+	if (vs->st == TCP_LISTEN)
+		xasprintf(&str, "state=%s type=%s laddr=%s",
+			  st_str, type_str, laddr);
+	else {
+		char *raddr = vsock_get_addr(&vs->remote);
+
+		xasprintf(&str, "state=%s type=%s laddr=%s raddr=%s",
+			  st_str, type_str, laddr, raddr);
+		free(raddr);
+	}
+	free(laddr);
+
+	return str;
+}
+
+static char *vsock_get_type(struct sock_xinfo *sock_xinfo,
+			   struct sock *sock __attribute__((__unused__)))
+{
+	const char *str;
+	struct vsock_xinfo *vs = (struct vsock_xinfo *)sock_xinfo;
+
+	str = sock_decode_type(vs->type);
+	return xstrdup(str);
+}
+
+static char *vsock_get_state(struct sock_xinfo *sock_xinfo,
+			     struct sock *sock __attribute__((__unused__)))
+{
+	const char *str;
+	struct vsock_xinfo *vs = (struct vsock_xinfo *)sock_xinfo;
+
+	str = l4_decode_state(vs->st);
+	return xstrdup(str);
+}
+
+static bool vsock_get_listening(struct sock_xinfo *sock_xinfo,
+				struct sock *sock __attribute__((__unused__)))
+{
+	return ((struct vsock_xinfo *)sock_xinfo)->st == TCP_LISTEN;
+}
+
+static bool vsock_fill_column(struct proc *proc __attribute__((__unused__)),
+			      struct sock_xinfo *sock_xinfo,
+			      struct sock *sock __attribute__((__unused__)),
+			      struct libscols_line *ln __attribute__((__unused__)),
+			      int column_id,
+			      size_t column_index __attribute__((__unused__)),
+			      char **str)
+{
+	struct vsock_xinfo *vs = (struct vsock_xinfo *)sock_xinfo;
+
+	switch (column_id) {
+	case COL_VSOCK_LCID:
+		xasprintf(str, "%"PRIu32, vs->local.cid);
+		return true;
+	case COL_VSOCK_RCID:
+		xasprintf(str, "%"PRIu32, vs->remote.cid);
+		return true;
+	case COL_VSOCK_LPORT:
+		xasprintf(str, "%"PRIu32, vs->local.port);
+		return true;
+	case COL_VSOCK_RPORT:
+		xasprintf(str, "%"PRIu32, vs->remote.port);
+		return true;
+	case COL_VSOCK_LADDR:
+		*str = vsock_get_addr(&vs->local);
+		return true;
+	case COL_VSOCK_RADDR:
+		*str = vsock_get_addr(&vs->remote);
+		return true;
+	}
+	return false;
+}
+
+static const struct sock_xinfo_class vsock_xinfo_class = {
+	.get_name = vsock_get_name,
+	.get_type = vsock_get_type,
+	.get_state = vsock_get_state,
+	.get_listening = vsock_get_listening,
+	.fill_column = vsock_fill_column,
+	.free = NULL,
+};
+
+static bool handle_diag_vsock(ino_t netns __attribute__((__unused__)),
+			     size_t nlmsg_len, void *nlmsg_data)
+{
+	const struct vsock_diag_msg *diag = nlmsg_data;
+	ino_t inode;
+	struct sock_xinfo *xinfo;
+	struct vsock_xinfo *vx;
+
+	if (diag->vdiag_family != AF_VSOCK)
+		return false;
+	DBG(ENDPOINTS, ul_debug("         VSOCK"));
+	DBG(ENDPOINTS, ul_debug("         LEN: %zu (>= %zu)", nlmsg_len,
+				(size_t)(NLMSG_LENGTH(sizeof(*diag)))));
+
+	if (nlmsg_len < NLMSG_LENGTH(sizeof(*diag)))
+		return false;
+
+	inode = (ino_t)diag->vdiag_ino;
+	DBG(ENDPOINTS, ul_debug("         inode: %llu", (unsigned long long)inode));
+
+	xinfo = get_sock_xinfo(inode);
+	if (xinfo != NULL)
+		/* It seems that the same socket reported twice. */
+		return true;
+
+	vx = xcalloc(1, sizeof(*vx));
+	xinfo = &vx->sock;
+	DBG(ENDPOINTS, ul_debug("         xinfo: %p", xinfo));
+
+	xinfo->class = &vsock_xinfo_class;
+	xinfo->inode = (ino_t)inode;
+	xinfo->netns_inode = (ino_t)netns;
+
+	vx->type = diag->vdiag_type;
+	vx->st = diag->vdiag_state;
+	vx->shutdown_mask = diag->vdiag_shutdown;
+	vx->local.cid = diag->vdiag_src_cid;
+	vx->local.port = diag->vdiag_src_port;
+	vx->remote.cid = diag->vdiag_dst_cid;
+	vx->remote.port = diag->vdiag_dst_port;
+
+	add_sock_info(xinfo);
+	return true;
+}
+
+static void load_xinfo_from_diag_vsock(int diagsd, ino_t netns)
+{
+	struct vsock_diag_req vdr;
+
+	memset(&vdr, 0, sizeof(vdr));
+	vdr.sdiag_family = AF_VSOCK;
+	vdr.vdiag_states =  ~(uint32_t)0;
+
+	send_diag_request(diagsd, &vdr, sizeof(vdr), handle_diag_vsock, netns);
 }

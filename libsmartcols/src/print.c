@@ -321,18 +321,18 @@ static const char *mk_cell_uri(struct libscols_column *cl,
 			       struct libscols_cell *ce,
 			       struct ul_buffer *buf)
 {
-	char *path;
+	const char *path;
 
 	/* URI disabled at all */
 	if (ce->no_uri)
 		return NULL;
 
-	/* No column prefix, return cell URI (or NULL if undefined) */
-	if (!cl->uri)
-		return ce->uri;
+	/* No column prefix, return cell's URI (or NULL if undefined) */
+	if (!scols_column_get_uri(cl))
+		return scols_cell_get_uri(ce);
 
-	/* Compose URI from column-uri + path. The path is ce->uri or cell data. */
-	path = ce->uri;
+	/* Compose URI from column's URI + path. The path is cell's URI or cell data. */
+	path = scols_cell_get_uri(ce);
 
 	if (!path && buf) {
 		/* The buffer may already contain tree data, so we need to skip it. */
@@ -470,7 +470,7 @@ static int print_pending_data(struct libscols_table *tb, struct ul_buffer *buf)
 
 	DBG(COL, ul_debugobj(cl, "printing pending data"));
 
-	if (cl->uri || ce->uri)
+	if (scols_column_get_uri(cl) || scols_cell_get_uri(ce))
 		uri = mk_cell_uri(cl, ce, buf);
 
 	if (scols_table_is_noencoding(tb))
@@ -590,7 +590,7 @@ static int print_data(struct libscols_table *tb, struct ul_buffer *buf)
 	struct libscols_cell *ce;
 	size_t len = 0, i, width, bytes;
 	char *data = NULL;
-	const char *name = NULL, *uri = NULL;
+	const char *name = NULL, *annot = NULL, *uri = NULL;
 	int is_last;
 
 	assert(tb);
@@ -638,8 +638,14 @@ static int print_data(struct libscols_table *tb, struct ul_buffer *buf)
 		break;		/* continue below */
 	}
 
-	if (cl->uri || ce->uri)
+	if (!ln) {
+		/* column header */
+		annot = scols_column_get_annotation(cl);
+	} else if (scols_column_get_uri(cl) || scols_cell_get_uri(ce)) {
+		/* column data */
 		uri = mk_cell_uri(cl, ce, buf);
+	}
+
 
 	/* Encode. Note that 'len' and 'width' are number of glyphs not bytes.
 	 */
@@ -700,8 +706,12 @@ static int print_data(struct libscols_table *tb, struct ul_buffer *buf)
 					fputc(data[i], tb->out);
 			}
 			ul_fputs_hyperlink(uri, link, tb->out);
-		} else
+
+		} else if (annot && *annot) {
+			ul_fputs_hyperlink(annot, data, tb->out);
+		} else {
 			fputs(data, tb->out);
+		}
 	}
 
 	/* minout -- don't fill */
@@ -852,7 +862,8 @@ done:
 	if (cal && scols_column_is_wrap(cl))
 		scols_column_reset_wrap(cl);
 
-	DBG(COL, ul_debugobj(cl, "__cursor_to_buffer rc=%d", rc));
+	DBG(COL, ul_debugobj(cl, "__cursor_to_buffer rc=%d len=%zu", rc,
+				ul_buffer_get_datasiz(buf)));
 	return rc;
 }
 
@@ -964,7 +975,7 @@ int __scols_print_title(struct libscols_table *tb)
 			goto done;
 		}
 
-		if (!mbs_safe_encode_to_buffer(tb->title.data, &len, buf, NULL) ||
+		if (!mbs_safe_encode_to_buffer(tb->title.data, &len, buf, bufsz, NULL) ||
 		    !len || len == (size_t) -1) {
 			rc = -EINVAL;
 			goto done;
@@ -1055,7 +1066,7 @@ int __scols_print_header(struct libscols_table *tb, struct ul_buffer *buf)
 			continue;
 
 		ul_buffer_reset_data(buf);
-		if (cl->uri)
+		if (scols_column_get_uri(cl))
 			scols_cell_disable_uri(&cl->header, 1);
 		scols_table_set_cursor(tb, NULL, cl, &cl->header);
 
@@ -1280,7 +1291,7 @@ int __scols_initialize_printing(struct libscols_table *tb, struct ul_buffer *buf
 	case SCOLS_FMT_JSON:
 		ul_jsonwrt_init(&tb->json, tb->out, 0);
 		extra_bufsz += tb->nlines * 3;		/* indentation */
-		/* fallthrough */
+		FALLTHROUGH;
 	case SCOLS_FMT_EXPORT:
 	{
 		struct libscols_column *cl;

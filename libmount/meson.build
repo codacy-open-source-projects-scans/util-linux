@@ -24,6 +24,7 @@ lib_mount_sources = '''
   src/mountP.h
   src/cache.c
   src/fs.c
+  src/fs_statmount.c
   src/init.c
   src/iter.c
   src/lock.c
@@ -31,6 +32,7 @@ lib_mount_sources = '''
   src/optstr.c
   src/tab.c
   src/tab_diff.c
+  src/tab_listmount.c
   src/tab_parse.c
   src/tab_update.c
   src/test.c
@@ -45,6 +47,10 @@ if LINUX
   lib_mount_sources += '''
     src/hooks.c
     src/monitor.c
+    src/monitor.h
+    src/monitor_utab.c
+    src/monitor_mountinfo.c
+    src/monitor_fanotify.c
     src/optlist.c
     src/hook_veritydev.c
     src/hook_subdir.c

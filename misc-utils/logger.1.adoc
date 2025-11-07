@@ -33,6 +33,8 @@ SUCH DAMAGE.
 
 	@(#)logger.1	8.1 (Berkeley) 6/6/93
 ////
+ifdef::neverdefined[---]
+
 = logger(1)
 :doctype: manpage
 :man manual: User Commands
@@ -73,7 +75,7 @@ Log the PID of the *logger* process with each line.
 *--id*[**=**__id__]::
 Log the PID of the *logger* process with each line. When the optional argument _id_ is specified, then it is used instead of the *logger* command's PID. The use of *--id=$$* (PPID) is recommended in scripts that send several messages.
 +
-Note that the system logging infrastructure (for example *systemd* when listening on _/dev/log_) may follow local socket credentials to overwrite the PID specified in the message. *logger*(1) is able to set those socket credentials to the given _id_, but only if you have root permissions and a process with the specified PID exists, otherwise the socket credentials are not modified and the problem is silently ignored.
+Note that the system logging infrastructure (for example *systemd* when listening on _/dev/log_) may follow local socket credentials to override the PID specified in the message. *logger*(1) is able to set those socket credentials to the given _id_, but only if you have root permissions and a process with the specified PID exists, otherwise the socket credentials are not modified and the problem is silently ignored.
 
 *--journald*[**=**__file__]::
 Write a *systemd* journal entry. The entry is read from the given _file_, when specified, otherwise from standard input. Each line must begin with a field that is accepted by *journald*; see *systemd.journal-fields*(7) for details. The use of a MESSAGE_ID field is generally a good idea, as it makes finding entries easy. Examples:
@@ -116,7 +118,7 @@ Look for a syslog prefix on every line read from standard input. This prefix is 
 +
 If the prefix contains no facility, the facility defaults to what is specified by the *-p* option. Similarly, if no prefix is provided, the line is logged using the _priority_ given with *-p*.
 +
-This option doesn't affect a command-line message.
+This option doesn't affect a command-line message. This option is primarily designed for use cases where *logger* is used in a pipeline (e.g., daemon | logger --prio-prefix) to read multiple messages with different priorities.
 
 *--rfc3164*::
 Use the link:https://tools.ietf.org/html/rfc3164[RFC 3164] BSD syslog protocol to submit messages to a remote server.
@@ -133,7 +135,7 @@ The *nohost* value suppresses *gethostname*(2) information from the message head
 The RFC 5424 protocol has been the default for *logger* since version 2.26.
 
 *-s*, *--stderr*::
-Output the message to standard error as well as to the system log.
+Output the message to standard error as well as to the system log. The complete message is output in the same form as sent to syslog or journald, including priority and possibly other fields. This option is primarily designed for debugging purposes and is often used with *--no-act*.
 
 *--sd-id* _name_[**@**__digits__]::
 Specifies a structured data element ID for an RFC 5424 message header. The option has to be used before *--sd-param* to introduce a new element. The number of structured data elements is unlimited. The ID (_name_ plus possibly **@**__digits__) is case-sensitive and uniquely identifies the type and purpose of the element. The same ID must not exist more than once in a message. The **@**__digits__ part is required for user-defined non-standardized IDs.
@@ -162,10 +164,16 @@ Most receivers accept messages larger than 1KiB over any type of syslog protocol
 +
 Note: the message-size limit limits the overall message size, including the syslog header. Header sizes vary depending on the selected options and the hostname length. As a rule of thumb, headers are usually not longer than 50 to 80 characters. When selecting a maximum message size, it is important to ensure that the receiver supports the max size as well, otherwise messages may become truncated. Again, as a rule of thumb two to four KiB message size should generally be OK, whereas anything larger should be verified to work.
 
-*--socket-errors*[**=**__mode__]::
-Print errors about Unix socket connections. The _mode_ can be a value of *off*, *on*, or *auto*. When the mode is *auto*, then *logger* will detect if the init process is *systemd*(1), and if so assumption is made _/dev/log_ can be used early at boot. Other init systems lack of _/dev/log_ will not cause errors that is identical with messaging using *openlog*(3) system call. The *logger*(1) before version 2.26 used *openlog*(3), and hence was unable to detected loss of messages sent to Unix sockets.
+*--socket-errors* __mode__::
+Print errors about Unix socket connections. The _mode_ can be *on*, *off*, or *auto*.
+When the mode is *auto* (the default), then *logger* will detect if the init process
+is *systemd*(1), and if so, the assumption is made that _/dev/log_ can be used early
+at boot. The lack of _/dev/log_ on other init systems will not cause errors, just as
+when using the *openlog*(3) system call. The *logger*(1) before version 2.26 used
+*openlog*(3), and thus was unable to detect the loss of messages sent to Unix sockets.
 +
-The default mode is *auto*. When errors are not enabled lost messages are not communicated and will result to successful exit status of *logger*(1) invocation.
+When errors are not enabled, lost messages are not communicated and will result in a
+successful exit status of *logger*(1).
 
 *-T*, *--tcp*::
 Use stream (TCP) only. By default the connection is tried to the _syslog-conn_ port defined in _/etc/services_, which is often _601_.

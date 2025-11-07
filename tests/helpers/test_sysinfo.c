@@ -23,10 +23,12 @@
 #include <limits.h>
 #include <stdint.h>
 #include <inttypes.h>
-#include <wchar.h>
 #include <errno.h>
 #include <time.h>
 #include <sys/ioctl.h>
+
+#include "c.h"
+#include "widechar.h"
 
 #ifdef __linux__
 # include <sys/mount.h>
@@ -42,6 +44,15 @@
 #  define USE_NS_GET_USERNS	1
 # endif
 #endif
+
+#ifdef HAVE_FTS_OPEN
+# include <fcntl.h>
+# include <sys/stat.h>
+# include <fts.h>
+#endif
+
+#include "xalloc.h"
+#include "namespace.h"
 
 typedef struct {
 	const char	*name;
@@ -128,13 +139,49 @@ static int hlp_enotty_ok(void)
 
 static int hlp_fsopen_ok(void)
 {
-#ifdef FSOPEN_CLOEXEC
+#if defined(HAVE_FSOPEN) && defined(FSOPEN_CLOEXEC)
 	errno = 0;
 	fsopen(NULL, FSOPEN_CLOEXEC);
 #else
 	errno = ENOSYS;
 #endif
 	printf("%d\n", errno != ENOSYS);
+	return 0;
+}
+
+static int hlp_scandirat_ok(void)
+{
+	printf("%d\n",
+#ifdef HAVE_SCANDIRAT
+		1
+#else
+		0
+#endif
+	);
+	return 0;
+}
+
+static int hlp_statmount_ok(void)
+{
+	printf("%d\n",
+#ifdef HAVE_STATMOUNT_API
+		has_statmount()
+#else
+		0
+#endif
+	);
+	return 0;
+}
+
+static int hlp_listmount_ok(void)
+{
+	printf("%d\n",
+#ifdef HAVE_STATMOUNT_API
+		has_listmount()
+#else
+		0
+#endif
+	);
 	return 0;
 }
 
@@ -147,8 +194,21 @@ static int hlp_sz_time(void)
 static int hlp_get_nstype_ok(void)
 {
 #ifdef USE_NS_GET_NSTYPE
+	int fd = open("/proc/self/ns/mnt", O_RDONLY);
+
 	errno = 0;
-	ioctl(STDOUT_FILENO, NS_GET_NSTYPE);
+	if (fd >= 0) {
+		int errsv = 0;
+
+		/* Check for actual usability */
+		if (ioctl(fd, NS_GET_NSTYPE) != CLONE_NEWNS)
+			errsv = ENOSYS;
+		close(fd);
+		errno = errsv;
+	} else {
+		/* Generic check for ENOSYS only */
+		ioctl(STDOUT_FILENO, NS_GET_NSTYPE);
+	}
 #else
 	errno = ENOSYS;
 #endif
@@ -168,6 +228,97 @@ static int hlp_get_userns_ok(void)
 	return 0;
 }
 
+static int hlp_hostname(void)
+{
+	char * h = xgethostname();
+	printf("%s\n", h);
+	free(h);
+	return 0;
+}
+
+static int hlp_fts(void)
+{
+#ifdef HAVE_FTS_OPEN
+	char template[NAME_MAX];
+	char *paths[] = { NULL, NULL };
+	char path[PATH_MAX];
+	FTSENT *node;
+	FTS *fts;
+	int r;
+	int files = 0, dirs = 0;
+
+	snprintf(template, sizeof(template), "%s/fts_checkXXXXXX", getenv("TMPDIR") ?: "/tmp");
+
+	paths[0] = mkdtemp(template);
+	if (paths[0] == NULL)
+		return 0;
+
+	r = mkdir(template, 0755);
+	if (r < 0 && errno != EEXIST)
+		return 0;
+	dirs++;
+
+	snprintf(path, sizeof(path), "%s/subdir", template);
+	r = mkdir(path, 0755);
+	if (r < 0 && errno != EEXIST)
+		return 0;
+	dirs++;
+
+	snprintf(path, sizeof(path), "%s/file1.txt", template);
+	r = creat(path, 0644);
+	if (r < 0)
+		return 0;
+	close(r);
+	files++;
+
+	snprintf(path, sizeof(path), "%s/file2.txt", template);
+	r = creat(path, 0644);
+	if (r < 0)
+		return 0;
+	close(r);
+	files++;
+
+	snprintf(path, sizeof(path), "%s/subdir/file3.txt", template);
+	r = creat(path, 0644);
+	if (r < 0)
+		return 0;
+	close(r);
+	files++;
+
+	snprintf(path, sizeof(path), "%s/subdir/file4.txt", template);
+	r = creat(path, 0644);
+	if (r < 0)
+		return 0;
+	close(r);
+	files++;
+
+	fts = fts_open(paths, FTS_NOCHDIR | FTS_PHYSICAL, NULL);
+	if (fts == NULL)
+		return 0;
+
+	while ((node = fts_read(fts)) != NULL) {
+		switch (node->fts_info) {
+		case FTS_F:
+			files--;
+			break;
+		case FTS_D:
+			dirs--;
+			break;
+		case FTS_ERR:
+			return 0;
+		default:
+			break;
+		}
+	}
+
+	if (fts_close(fts) < 0 || files != 0 || dirs != 0)
+		return 0;
+
+	puts("FTS");
+#endif
+	return 0;
+}
+
 static const mntHlpfnc hlps[] =
 {
 	{ "WORDSIZE",	hlp_wordsize	},
@@ -182,9 +333,14 @@ static const mntHlpfnc hlps[] =
 	{ "wcsspn-ok",  hlp_wcsspn_ok   },
 	{ "enotty-ok",  hlp_enotty_ok   },
 	{ "fsopen-ok",  hlp_fsopen_ok   },
+	{ "scandirat-ok", hlp_scandirat_ok },
+	{ "statmount-ok", hlp_statmount_ok },
+	{ "listmount-ok", hlp_listmount_ok },
 	{ "sz(time_t)", hlp_sz_time     },
 	{ "ns-gettype-ok", hlp_get_nstype_ok },
 	{ "ns-getuserns-ok", hlp_get_userns_ok },
+	{ "hostname", hlp_hostname, },
+	{ "fts", hlp_fts, },
 	{ NULL, NULL }
 };
 

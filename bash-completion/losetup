@@ -6,16 +6,16 @@ _losetup_module()
 	prev="${COMP_WORDS[COMP_CWORD-1]}"
 	case $prev in
 		'-d'|'--detach')
-			ARG="$($1 --output NAME | awk '{if (1 < NR) {print}}')"
+			ARG="$($1 --output NAME | command awk '{if (1 < NR) {print}}')"
 			COMPREPLY=( $(compgen -W "$ARG" -- $cur) )
 			return 0
 			;;
 		'-j'|'--associated')
-			ARG="$($1 --output BACK-FILE | awk '{if (1 < NR) {print}}')"
+			ARG="$($1 --output BACK-FILE | command awk '{if (1 < NR) {print}}')"
 			COMPREPLY=( $(compgen -W "$ARG" -- $cur) )
 			return 0
 			;;
-		'-c'|'--set-capacity')
+		'-c'|'--set-capacity'|'--remove')
 			ARG="$(for I in /dev/loop[0-9]*; do if [ -e $I ]; then echo $I; fi; done)"
 			COMPREPLY=( $(compgen -W "$ARG" -- $cur) )
 			return 0
@@ -57,8 +57,12 @@ _losetup_module()
 				--sizelimit
 				--partscan
 				--read-only
+				--remove
 				--show
 				--verbose
+				--direct-io
+				--loop-ref
+				--sector-size
 				--json
 				--list
 				--noheadings

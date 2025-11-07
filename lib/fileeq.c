@@ -183,6 +183,13 @@ int ul_fileeq_init(struct ul_fileeq *eq, const char *method)
 	return 0;
 }
 
+static void reset_fileeq_bufs(struct ul_fileeq *eq)
+{
+	free(eq->buf_a);
+	free(eq->buf_b);
+	eq->buf_last = eq->buf_a = eq->buf_b = NULL;
+}
+
 void ul_fileeq_deinit(struct ul_fileeq *eq)
 {
 	if (!eq)
@@ -192,8 +199,7 @@ void ul_fileeq_deinit(struct ul_fileeq *eq)
 #ifdef USE_FILEEQ_CRYPTOAPI
 	deinit_crypto_api(eq);
 #endif
-	free(eq->buf_a);
-	free(eq->buf_b);
+	reset_fileeq_bufs(eq);
 }
 
 void ul_fileeq_data_close_file(struct ul_fileeq_data *data)
@@ -272,15 +278,18 @@ size_t ul_fileeq_set_size(struct ul_fileeq *eq, uint64_t filesiz,
 		nreads = filesiz / readsiz;
 		/* enlarge readsize for large files */
 		if (nreads > maxdigs)
-			readsiz = filesiz / maxdigs;
+			readsiz = (filesiz + maxdigs - 1) / maxdigs;
 		break;
 	}
 
 	eq->readsiz = readsiz;
-	eq->blocksmax = filesiz / readsiz;
+	eq->blocksmax = (filesiz + readsiz - 1) / readsiz;
 
 	DBG(EQ, ul_debugobj(eq, "set sizes: filesiz=%ju, maxblocks=%" PRIu64 ", readsiz=%zu",
 				eq->filesiz, eq->blocksmax, eq->readsiz));
+
+	reset_fileeq_bufs(eq);
+
 	return eq->blocksmax;
 }
 
@@ -625,7 +634,7 @@ int main(int argc, char *argv[])
 		printf("1st vs. 3rd: %s\n", rc == 1 ? "MATCH" : "NOT-MATCH");
 
 		rc = ul_fileeq(&eq, &b, &c);
-		printf("2st vs. 3rd: %s\n", rc == 1 ? "MATCH" : "NOT-MATCH");
+		printf("2nd vs. 3rd: %s\n", rc == 1 ? "MATCH" : "NOT-MATCH");
 	}
 
 	ul_fileeq_data_deinit(&a);

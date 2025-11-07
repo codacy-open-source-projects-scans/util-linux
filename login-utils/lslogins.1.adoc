@@ -1,6 +1,8 @@
 //po4a: entry man manual
 // Copyright 2014 Ondrej Oprala (ondrej.oprala@gmail.com)
 // May be distributed under the GNU General Public License
+ifdef::neverdefined[---]
+
 = lslogins(1)
 :doctype: manpage
 :man manual: User Commands
@@ -14,7 +16,7 @@ lslogins - display information about known users in the system
 
 == SYNOPSIS
 
-*lslogins* [options] [*-s*|*-u*[=_UID_]] [*-g* _groups_] [*-l* _logins_] [_username_]
+*lslogins* [options] [*-s*|*-u*[**=**_UID_]] [*-g* _groups_] [*-l* _logins_] [_username_]
 
 == DESCRIPTION
 
@@ -46,7 +48,7 @@ Display data about the users' last failed login attempts.
 *-G*, *--supp-groups*::
 Show information about supplementary groups.
 
-*-g*, **--groups**=_groups_::
+*-g*, *--groups* _groups_::
 Only show data of users belonging to _groups_. More than one group may be specified; the list has to be comma-separated. Unknown group names are ignored.
 +
 Note that the relation between user and group may be invisible for the primary group if the user is not explicitly specified as group member (e.g., in _/etc/group_). If the command *lslogins* scans for groups then it uses the groups database only, and the user database with primary GID is not used at all.
@@ -54,7 +56,7 @@ Note that the relation between user and group may be invisible for the primary g
 *-L*, *--last*::
 Display data containing information about the users' last login sessions.
 
-*-l*, **--logins**=_logins_::
+*-l*, *--logins* _logins_::
 Only show data of users with a login specified in _logins_ (user names or user IDs). More than one login may be specified; the list has to be comma-separated. Unknown login names are ignored.
 
 *-n*, *--newline*::
@@ -70,7 +72,11 @@ Don't truncate output.
 Specify which output columns to print. The default list of columns may be extended if _list_ is specified in the format _+list_.
 
 *--output-all*::
-Output all available columns. *--help* to get a list of all supported columns.
+Output all available columns. *--list-columns* to get a list of all supported columns.
+
+*-H*, *--list-columns*::
+List the columns that can be specified with the *--output* option.
+Can be used with *--json* or *--raw* to get the list in a machine-readable format.
 
 *-p*, *--pwd*::
 Display information related to login by password (see also *-afL*).
@@ -78,14 +84,21 @@ Display information related to login by password (see also *-afL*).
 *-r*, *--raw*::
 Raw output (no columnation).
 
+*-J*, *--json*::
+JSON format output.
+
 *-s*, *--system-accs*::
-Show system accounts. These are by default all accounts with a UID between 101 and 999 (inclusive), with the exception of either nobody or nfsnobody (UID 65534). This hardcoded default may be overwritten by parameters *SYS_UID_MIN* and *SYS_UID_MAX* in the file _/etc/login.defs_.
+Show system accounts. These are by default all accounts with a UID between 101 and 999 (inclusive),
+with the exception of either nobody or nfsnobody (UID 65534). This hardcoded default may be
+overridden by the parameters *SYS_UID_MIN* and *SYS_UID_MAX* in the file _/etc/login.defs_.
 
 *--time-format* _type_::
 Display dates in short, full or iso format. The default is short, this time format is designed to be space efficient and human readable.
 
 *-u*, *--user-accs*::
-Show user accounts. These are by default all accounts with UID above 1000 (inclusive), with the exception of either nobody or nfsnobody (UID 65534). This hardcoded default maybe overwritten by parameters UID_MIN and UID_MAX in the file _/etc/login.defs_.
+Show user accounts. These are by default all accounts with a UID above 1000 (inclusive),
+with the exception of either nobody or nfsnobody (UID 65534). This hardcoded default may be
+overridden by the parameters *UID_MIN* and *UID_MAX* in the file _/etc/login.defs_.
 
 include::man-common/help-version.adoc[]
 

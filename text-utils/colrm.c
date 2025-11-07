@@ -63,12 +63,10 @@ static void __attribute__((__noreturn__)) usage(void)
 		       program_invocation_short_name);
 
 	fputs(USAGE_SEPARATOR, out);
-	fputs(_("Filter out the specified columns.\n"), out);
+	fputs(_("Filter out the specified columns from standard input.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
 	fprintf(out, USAGE_HELP_OPTIONS(16));
-	fprintf(out, _("%s reads from standard input and writes to standard output\n\n"),
-		       program_invocation_short_name);
 	fprintf(out, USAGE_MAN_TAIL("colrm(1)"));
 	exit(EXIT_SUCCESS);
 }
@@ -182,9 +180,9 @@ int main(int argc, char **argv)
 		}
 
 	if (argc > 1)
-		first = strtoul_or_err(*++argv, _("first argument"));
+		first = strtoul_or_err(*++argv, _("invalid first argument"));
 	if (argc > 2)
-		last = strtoul_or_err(*++argv, _("second argument"));
+		last = strtoul_or_err(*++argv, _("invalid second argument"));
 
 	while (process_input(first, last))
 		;

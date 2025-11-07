@@ -14,9 +14,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 
 #include <sys/mman.h>
@@ -26,7 +25,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef HAVE_FTS_OPEN
+#include <fts.h>
+#endif
+
 #include "c.h"
+#include "cctype.h"
 #include "nls.h"
 #include "closestream.h"
 #include "xalloc.h"
@@ -46,7 +50,11 @@
 #ifndef HAVE_CACHESTAT
 
 #ifndef SYS_cachestat
+#if defined (__alpha__)
+#define SYS_cachestat 561
+#else
 #define SYS_cachestat 451
+#endif
 #endif
 
 struct cachestat_range {
@@ -120,12 +128,15 @@ struct fincore_control {
 	unsigned int bytes : 1,
 		     noheadings : 1,
 		     raw : 1,
-		     json : 1;
+		     json : 1,
+		     recursive : 1,
+		     total : 1,
+		     cachestat : 1;
 
 };
 
 struct fincore_state {
-	const char * const name;
+	const char * name;
 	long long unsigned int file_size;
 
 	struct cachestat cstat;
@@ -137,6 +148,9 @@ struct fincore_state {
 	} cstat_fields;
 };
 
+static struct fincore_state total = {
+	.name = "TOTAL",
+};
 
 static int column_name_to_id(const char *name, size_t namesz)
 {
@@ -145,7 +159,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -287,6 +301,8 @@ static int do_mincore(struct fincore_control *ctl,
 		{
 			vec[n] = 0;
 			st->cstat.nr_cache++;
+			if (ctl->total)
+				total.cstat.nr_cache++;
 		}
 	}
 
@@ -339,11 +355,23 @@ static int fincore_fd (struct fincore_control *ctl,
 		st->cstat_fields.writeback = 1;
 		st->cstat_fields.evicted = 1;
 		st->cstat_fields.recently_evicted = 1;
+
+		if (ctl->total) {
+			total.cstat.nr_cache += st->cstat.nr_cache;
+			total.cstat.nr_dirty += st->cstat.nr_dirty;
+			total.cstat.nr_writeback += st->cstat.nr_writeback;
+			total.cstat.nr_evicted += st->cstat.nr_evicted;
+			total.cstat.nr_recently_evicted += st->cstat.nr_recently_evicted;
+		}
+
 		return 0;
 	}
 
-	if (errno != ENOSYS)
+	if (errno != ENOSYS || ctl->cachestat)
 		warn(_("failed to do cachestat: %s"), st->name);
+
+	if (ctl->cachestat)
+		return -errno;
 
 	return mincore_fd(ctl, fd, st);
 }
@@ -352,30 +380,34 @@ static int fincore_fd (struct fincore_control *ctl,
  * Returns: <0 on error, 0 success, 1 ignore.
  */
 static int fincore_name(struct fincore_control *ctl,
-			struct fincore_state *st)
+			const char *filename,
+			const char *showname,
+			struct stat *statp)
 {
 	int fd;
 	int rc = 0;
-	struct stat sb;
+	struct stat _sb, *sb = statp ?: &_sb;
+	struct fincore_state _st = { .name = filename }, *st = &_st;
 
-	if ((fd = open (st->name, O_RDONLY)) < 0) {
-		warn(_("failed to open: %s"), st->name);
+	if ((fd = open(filename, O_RDONLY)) < 0) {
+		warn(_("failed to open: %s"), showname);
 		return -errno;
 	}
 
-	if (fstat (fd, &sb) < 0) {
-		warn(_("failed to do fstat: %s"), st->name);
-		close (fd);
-		return -errno;
+	if (!statp) {
+		if (fstat (fd, sb) < 0) {
+			warn(_("failed to do fstat: %s"), showname);
+			close (fd);
+			return -errno;
+		}
 	}
-	st->file_size = sb.st_size;
 
-	if (S_ISBLK(sb.st_mode)) {
+	if (S_ISBLK(sb->st_mode)) {
 		rc = blkdev_get_size(fd, &st->file_size);
 		if (rc)
-			warn(_("failed ioctl to get size: %s"), st->name);
-	} else if (S_ISREG(sb.st_mode)) {
-		st->file_size = sb.st_size;
+			warn(_("failed ioctl to get size: %s"), showname);
+	} else if (S_ISREG(sb->st_mode)) {
+		st->file_size = sb->st_size;
 	} else {
 		rc = 1;			/* ignore things like symlinks
 					 * and directories*/
@@ -385,6 +417,14 @@ static int fincore_name(struct fincore_control *ctl,
 		rc = fincore_fd(ctl, fd, st);
 
 	close (fd);
+
+	if (!rc) {
+		st->name = showname;
+		if (ctl->total)
+			total.file_size += st->file_size;
+		rc = add_output_data(ctl, st);
+	}
+
 	return rc;
 }
 
@@ -399,10 +439,13 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -J, --json            use JSON output format\n"), out);
 	fputs(_(" -b, --bytes           print sizes in bytes rather than in human readable format\n"), out);
+	fputs(_(" -c, --total           produce a grand total\n"), out);
 	fputs(_(" -n, --noheadings      don't print headings\n"), out);
 	fputs(_(" -o, --output <list>   output columns\n"), out);
 	fputs(_("     --output-all      output all columns\n"), out);
 	fputs(_(" -r, --raw             use raw output format\n"), out);
+	fputs(_(" -R, --recursive       recursively check all files in directories\n"), out);
+	fputs(_(" -C, --cachestat       force useage of cachestat syscall\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
 	fprintf(out, USAGE_HELP_OPTIONS(23));
@@ -433,6 +476,7 @@ int main(int argc, char ** argv)
 	};
 	static const struct option longopts[] = {
 		{ "bytes",      no_argument, NULL, 'b' },
+		{ "total",      no_argument, NULL, 'c' },
 		{ "noheadings", no_argument, NULL, 'n' },
 		{ "output",     required_argument, NULL, 'o' },
 		{ "output-all",	no_argument,       NULL, OPT_OUTPUT_ALL },
@@ -440,6 +484,8 @@ int main(int argc, char ** argv)
 		{ "help",	no_argument, NULL, 'h' },
 		{ "json",       no_argument, NULL, 'J' },
 		{ "raw",        no_argument, NULL, 'r' },
+		{ "recursive",	no_argument, NULL, 'R' },
+		{ "cachestat",  no_argument, NULL, 'C' },
 		{ NULL, 0, NULL, 0 },
 	};
 
@@ -448,10 +494,19 @@ int main(int argc, char ** argv)
 	textdomain(PACKAGE);
 	close_stdout_atexit();
 
-	while ((c = getopt_long (argc, argv, "bno:JrVh", longopts, NULL)) != -1) {
+	while ((c = getopt_long (argc, argv, "bcCno:JrRVh", longopts, NULL)) != -1) {
 		switch (c) {
 		case 'b':
 			ctl.bytes = 1;
+			break;
+		case 'c':
+			ctl.total = 1;
+			break;
+		case 'C':
+#ifndef HAVE_CACHESTAT
+			errx(EXIT_FAILURE, _("cachestat option is not supported"));
+#endif
+			ctl.cachestat = 1;
 			break;
 		case 'n':
 			ctl.noheadings = 1;
@@ -468,6 +523,12 @@ int main(int argc, char ** argv)
 			break;
 		case 'r':
 			ctl.raw = 1;
+			break;
+		case 'R':
+#ifndef HAVE_FTS_OPEN
+			errx(EXIT_FAILURE, _("recursive option is not supported"));
+#endif
+			ctl.recursive = 1;
 			break;
 		case 'V':
 			print_version(EXIT_SUCCESS);
@@ -524,7 +585,7 @@ int main(int argc, char ** argv)
 			case COL_RES:
 				if (!ctl.bytes)
 					break;
-				/* fallthrough */
+				FALLTHROUGH;
 			default:
 				scols_column_set_json_type(cl, SCOLS_JSON_NUMBER);
 				break;
@@ -532,25 +593,35 @@ int main(int argc, char ** argv)
 		}
 	}
 
-	for(; optind < argc; optind++) {
-		struct fincore_state st = {
-			.name = argv[optind],
-		};
+	if (ctl.recursive) {
+#ifdef HAVE_FTS_OPEN
+		FTS *fts = fts_open(argv + optind, FTS_PHYSICAL, NULL);
+		FTSENT *ent;
 
-		switch (fincore_name(&ctl, &st)) {
-		case 0:
-			add_output_data(&ctl, &st);
-			break;
-		case 1:
-			break; /* ignore */
-		default:
+		if (!fts) {
+			warn(_("failed to iterate tree"));
 			rc = EXIT_FAILURE;
-			break;
+		} else {
+			while ((ent = fts_read(fts)) != NULL) {
+				if (ent->fts_info == FTS_F || ent->fts_info == FTS_DEFAULT) {
+					/* fts changes directory when iterating,
+					 * so we need to use .fts_accpath to access
+					 * the file named .fts_path */
+					rc |= fincore_name(&ctl, ent->fts_accpath, ent->fts_path, ent->fts_statp);
+				}
+			}
 		}
+#endif
+	} else {
+		for(; optind < argc; optind++)
+			rc |= fincore_name(&ctl, argv[optind], argv[optind], NULL);
 	}
+
+	if (ctl.total)
+		rc |= add_output_data(&ctl, &total);
 
 	scols_print_table(ctl.tb);
 	scols_unref_table(ctl.tb);
 
-	return rc;
+	return rc ? EXIT_FAILURE : EXIT_SUCCESS;
 }

@@ -150,14 +150,14 @@ struct ul_env_list *env_list_add_getenvs(struct ul_env_list *ls, const char *str
 	if (!str)
 		return ls;
 
-	all = strv_split(str, ",");
+	all = ul_strv_split(str, ",");
 	if (!all)
 		return ls;
 
-	STRV_FOREACH(name, all)
+	UL_STRV_FOREACH(name, all)
 		ls = env_list_add_getenv(ls, *name, NULL);
 
-	strv_free(all);
+	ul_strv_free(all);
 	return ls;
 }
 
@@ -260,7 +260,7 @@ void sanitize_env(void)
 
 char *safe_getenv(const char *arg)
 {
-	if ((getuid() != geteuid()) || (getgid() != getegid()))
+	if (is_privileged_execution())
 		return NULL;
 #ifdef HAVE_PRCTL
 	if (prctl(PR_GET_DUMPABLE, 0, 0, 0, 0) == 0)
@@ -280,7 +280,7 @@ return secure_getenv(arg);
 #endif
 }
 
-#ifdef TEST_PROGRAM
+#ifdef TEST_PROGRAM_ENV
 int main(void)
 {
 	char *const *bad;

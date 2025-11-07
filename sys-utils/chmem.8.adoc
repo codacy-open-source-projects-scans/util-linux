@@ -12,11 +12,11 @@ chmem - configure memory
 
 == SYNOPSIS
 
-*chmem* [*-h] [*-V*] [*-v*] [*-e*|*-d*] [_SIZE_|_RANGE_ *-b* _BLOCKRANGE_] [*-z* _ZONE_]
+*chmem* [*-h*] [*-V*] [*-v*] [*-e*|*-d*] [_SIZE_|_RANGE_|*-b* _BLOCKRANGE_] [*-z* _ZONE_]
 
 == DESCRIPTION
 
-The chmem command sets a particular size or range of memory online or offline.
+The *chmem* command sets a particular size or range of memory online or offline.
 
 * Specify _SIZE_ as <size>[m|M|g|G]. With m or M, <size> specifies the memory size in MiB (1024 x 1024 bytes). With g or G, <size> specifies the memory size in GiB (1024 x 1024 x 1024 bytes). The default unit is MiB.
 
@@ -64,7 +64,7 @@ failure
 *64*::
 partial success
 
-== EXAMPLE
+== EXAMPLES
 
 *chmem --enable 1024*::
 This command requests 1024 MiB of memory to be set online.

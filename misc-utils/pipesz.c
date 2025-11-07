@@ -13,9 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 
 #include <getopt.h>
@@ -61,6 +60,9 @@ static char opt_verbose = 0;	/* --verbose */
 
 static void __attribute__((__noreturn__)) usage(void)
 {
+	if (ul_path_read_s32(NULL, &opt_size, PIPESZ_DEFAULT_SIZE_FILE))
+		warn(_("cannot parse %s"), PIPESZ_DEFAULT_SIZE_FILE);
+
 	fputs(USAGE_HEADER, stdout);
 	fprintf(stdout, _(" %s [options] [--set <size>] [--] [command]\n"), program_invocation_short_name);
 	fprintf(stdout, _(" %s [options] --get\n"), program_invocation_short_name);
@@ -71,11 +73,8 @@ static void __attribute__((__noreturn__)) usage(void)
 
 	fputs(USAGE_OPTIONS, stdout);
 	fputsln(_(" -g, --get          examine pipe buffers"), stdout);
-	/* TRANSLATORS: '%s' refers to a system file */
 	fprintf(stdout,
-	     _(" -s, --set <size>   set pipe buffer sizes\n"
-	       "                      size defaults to %s\n"),
-		PIPESZ_DEFAULT_SIZE_FILE);
+		_(" -s, --set <size>   the buffer size to be used (default: %u)\n"), opt_size);
 
 	fputs(USAGE_SEPARATOR, stdout);
 	fputsln(_(" -f, --file <path>  act on a file"), stdout);
@@ -141,7 +140,7 @@ static void do_fd(int fd)
 {
 	char name[sizeof(stringify(INT_MIN)) + 3];
 
-	sprintf(name, "fd %d", fd);
+	snprintf(name, sizeof(name), "fd %d", fd);
 
 	if (opt_get)
 		do_get(fd, name);
@@ -270,7 +269,7 @@ int main(int argc, char **argv)
 			opt_quiet = TRUE;
 			break;
 		case 's':
-			sz = strtosize_or_err(optarg, _("invalid size argument"));
+			sz = strtosize_or_err(optarg, _("invalid size"));
 			opt_size = sz >= INT_MAX ? INT_MAX : (int)sz;
 			++n_opt_size;
 			break;

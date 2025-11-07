@@ -1,7 +1,5 @@
 //po4a: entry man manual
-////
-coresched(1) manpage
-////
+
 = coresched(1)
 :doctype: manpage
 :man manual: User Commands
@@ -67,11 +65,7 @@ The type of the PID whose cookie will be modified. This can be one of three valu
 *-v*, *--verbose*::
 Show extra information when modifying cookies of tasks.
 
-*-h*, *--help*::
-Display help text and exit.
-
-*-V*, *--version*::
-Print version and exit.
+include::man-common/help-version.adoc[]
 
 == EXAMPLES
 Get the core scheduling cookie of the {command} task itself, usually inherited from its parent{colon}::
@@ -102,7 +96,7 @@ Copy the cookie from a task with pid _123_ to the process group ID _456_{colon}:
 Retrieving or modifying the core scheduling cookie of a process requires *PTRACE_MODE_READ_REALCREDS* ptrace access to that process.
 See the section "Ptrace access mode checking" in *ptrace*(2) for more information.
 
-== RETURN VALUE
+== EXIT STATUS
 On success, *{command}* returns 0.
 If *{command}* fails, it will print an error and return 1.
 

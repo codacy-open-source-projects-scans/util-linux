@@ -33,6 +33,8 @@ SUCH DAMAGE.
 
 	@(#)script.1	6.5 (Berkeley) 7/27/91
 ////
+ifdef::neverdefined[---]
+
 = script(1)
 :doctype: manpage
 :man manual: User Commands
@@ -47,7 +49,7 @@ script - make typescript of terminal session
 
 == SYNOPSIS
 
-*script* [options] [_file_]
+*script* [options] [_file_] [*--* _command_ [_argument_...]]
 
 == DESCRIPTION
 
@@ -68,6 +70,7 @@ Append the output to _file_ or to _typescript_, retaining the prior contents.
 
 *-c*, *--command* _command_::
 Run the _command_ rather than an interactive shell. This makes it easy for a script to capture the output of a program that behaves differently when its stdout is not a tty.
+Instead of using option *-c*, the _command_ may also be specified after a double dash (*--*).
 
 *-E*, *--echo* _when_::
 This option controls the *ECHO* flag for the slave end of the session's pseudoterminal. The supported modes are _always_, _never_, or _auto_.
@@ -115,7 +118,7 @@ Limit the size of the typescript and timing files to _size_ and stop the child p
 *-q*, *--quiet*::
 Be quiet (do not write start and done messages to standard output).
 
-*-t*[_file_], *--timing*[=_file_]::
+*-t*[_file_], *--timing*[**=**_file_]::
 Output timing data to standard error, or to _file_ when given. This option is deprecated in favour of *--log-timing* where the _file_ argument is not optional.
 
 include::man-common/help-version.adoc[]

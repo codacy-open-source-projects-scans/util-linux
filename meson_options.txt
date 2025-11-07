@@ -25,6 +25,8 @@ option('sysvinit',    type : 'feature', value : 'disabled',
 option('btrfs',       type : 'feature')
 option('widechar',    type : 'feature',
        description : 'compile with wide character support')
+option('translate-docs', type : 'feature',
+       description : 'translate documentation')
 
 # enable building of various programs and features ("build-" prefix)
 
@@ -255,6 +257,8 @@ option('build-pylibmount', type : 'feature',
        description : 'build pylibmount')
 option('build-hexdump', type : 'feature',
        description : 'build hexdump')
+option('build-findfs', type : 'feature',
+       description : 'build findfs')
 
 # static programs
 

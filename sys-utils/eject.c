@@ -53,6 +53,7 @@
 #include "pathnames.h"
 #include "sysfs.h"
 #include "monotonic.h"
+#include "fileutils.h"
 
 /*
  * sg_io_hdr_t driver_status -- see kernel include/scsi/sg.h
@@ -207,8 +208,7 @@ static void parse_args(struct eject_control *ctl, int argc, char **argv)
 		switch (c) {
 		case 'a':
 			ctl->a_option = 1;
-			ctl->a_arg = parse_switch(optarg, _("argument error"),
-						"on", "off",  "1", "0",  NULL);
+			ctl->a_arg = ul_parse_switch(optarg, "on", "off",  "1", "0",  NULL);
 			break;
 		case 'c':
 			ctl->c_option = 1;
@@ -229,8 +229,7 @@ static void parse_args(struct eject_control *ctl, int argc, char **argv)
 			break;
 		case 'i':
 			ctl->i_option = 1;
-			ctl->i_arg = parse_switch(optarg, _("argument error"),
-						"on", "off",  "1", "0",  NULL);
+			ctl->i_arg = ul_parse_switch(optarg, "on", "off",  "1", "0",  NULL);
 			break;
 		case 'm':
 			ctl->m_option = 1;
@@ -781,7 +780,7 @@ static int umount_partitions(struct eject_control *ctl)
 
 	/* scan for partition subdirs */
 	while ((d = readdir(dir))) {
-		if (!strcmp(d->d_name, ".") || !strcmp(d->d_name, ".."))
+		if (is_dotdir_dirent(d))
 			continue;
 
 		if (sysfs_blkdev_is_partition_dirent(dir, d, ctl->device)) {

@@ -13,9 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,7 +98,7 @@ int main(int argc, char **argv)
 	while ((c = getopt_long(argc, argv, "hn:p:V", longopts, NULL)) != -1) {
 		switch (c) {
 		case 'p':
-			pid = strtos32_or_err(optarg, _("invalid PID argument"));
+			pid = strtopid_or_err(optarg, _("invalid PID argument"));
 			break;
 		case 'n':
 			adj = strtos32_or_err(optarg, _("invalid adjust argument"));

@@ -47,10 +47,7 @@ usage(void)
 	FILE *out = stdout;
 	fputs(USAGE_HEADER, out);
 	fprintf(out,
-	      _(" %s [options]\n"),
-	      program_invocation_short_name);
-	fprintf(out,
-	      _(" %s [-t] timingfile [typescript] [divisor]\n"),
+	      _(" %s [options] <timingfile> [<typescript> [<divisor>]]\n"),
 	      program_invocation_short_name);
 
 	fputs(USAGE_SEPARATOR, out);
@@ -71,7 +68,15 @@ usage(void)
 	fputs(_(" -m, --maxdelay <num>    wait at most this many seconds between updates\n"), out);
 	fputs(_(" -x, --stream <name>     stream type (out, in, signal or info)\n"), out);
 	fputs(_(" -c, --cr-mode <type>    CR char mode (auto, never, always)\n"), out);
+
+	fputs(USAGE_SEPARATOR, out);
 	fprintf(out, USAGE_HELP_OPTIONS(25));
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Key bindings:\n"), out);
+	fputs(_(" space        toggles between pause and play\n"), out);
+	fputs(_(" up-arrow     increases playback speed with ten percent\n"), out);
+	fputs(_(" down-arrow   decreases playback speed with ten percent\n"), out);
 
 	fprintf(out, USAGE_MAN_TAIL("scriptreplay(1)"));
 	exit(EXIT_SUCCESS);
@@ -107,7 +112,13 @@ delay_for(const struct timeval *delay)
 			break;
 	}
 #else
-	select(0, NULL, NULL, NULL, delay);
+	{
+		struct timeval timeout;
+
+		/* On Linux, select() modifies timeout */
+		memcpy(&timeout, delay, sizeof(struct timeval));
+		select(0, NULL, NULL, NULL, &timeout);
+	}
 #endif
 }
 
@@ -331,10 +342,10 @@ main(int argc, char *argv[])
 			if (ch == '[') {
 				ch = fgetc(stdin);
 				if (ch == 'A') { /* Up arrow */
-					divi += 0.1;
+					divi *= 1.1;
 					replay_set_delay_div(setup, divi);
 				} else if (ch == 'B') { /* Down arrow */
-					divi -= 0.1;
+					divi *= 0.9;
 					if (divi < 0.1)
 						divi = 0.1;
 					replay_set_delay_div(setup, divi);

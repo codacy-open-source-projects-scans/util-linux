@@ -13,9 +13,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  *
  * Copyright (C) 2004 Robert Love
  */
@@ -26,6 +25,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <errno.h>
+#include <stdbool.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 
@@ -60,16 +60,17 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("Show or change the real-time scheduling attributes of a process.\n"), out);
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Set policy:\n"
-	" chrt [options] <priority> <command> [<arg>...]\n"
-	" chrt [options] --pid <priority> <pid>\n"), out);
+		" chrt [options] [<priority>] <command> [<argument>...]\n"
+		" chrt --pid <policy-option> [options] [<priority>] <PID>\n"), out);
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Get policy:\n"
-	" chrt [options] -p <pid>\n"), out);
+		" chrt --pid <PID>\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Policy options:\n"), out);
 	fputs(_(" -b, --batch          set policy to SCHED_BATCH\n"), out);
 	fputs(_(" -d, --deadline       set policy to SCHED_DEADLINE\n"), out);
+	fputs(_(" -e, --ext            set policy to SCHED_EXT\n"), out);
 	fputs(_(" -f, --fifo           set policy to SCHED_FIFO\n"), out);
 	fputs(_(" -i, --idle           set policy to SCHED_IDLE\n"), out);
 	fputs(_(" -o, --other          set policy to SCHED_OTHER\n"), out);
@@ -120,6 +121,10 @@ static const char *get_policy_name(int policy)
 	case SCHED_DEADLINE:
 		return "SCHED_DEADLINE";
 #endif
+#ifdef SCHED_EXT
+	case SCHED_EXT:
+		return "SCHED_EXT";
+#endif
 	default:
 		break;
 	}
@@ -127,11 +132,45 @@ static const char *get_policy_name(int policy)
 	return _("unknown");
 }
 
+static bool supports_custom_slice(int policy)
+{
+#ifdef SCHED_BATCH
+	if (policy == SCHED_BATCH)
+		return true;
+#endif
+	return policy == SCHED_OTHER;
+}
+
+static bool supports_runtime_param(int policy)
+{
+#ifdef SCHED_DEADLINE
+	if (policy == SCHED_DEADLINE)
+		return true;
+#endif
+	return supports_custom_slice(policy);
+}
+
+static const char *get_supported_runtime_param_policies(void)
+{
+#if defined(SCHED_BATCH)
+#if defined(SCHED_DEADLINE)
+	return _("SCHED_OTHER, SCHED_BATCH and SCHED_DEADLINE");
+#else
+	return _("SCHED_OTHER and SCHED_BATCH");
+#endif /* SCHED_DEADLINE */
+#elif defined(SCHED_DEADLINE)
+	return _("SCHED_OTHER and SCHED_DEADLINE");
+#else
+	return _("SCHED_OTHER");
+#endif
+}
+
 static void show_sched_pid_info(struct chrt_ctl *ctl, pid_t pid)
 {
 	int policy = -1, reset_on_fork = 0, prio = 0;
+	uint64_t runtime = 0;
 #ifdef SCHED_DEADLINE
-	uint64_t deadline = 0, runtime = 0, period = 0;
+	uint64_t deadline = 0, period = 0;
 #endif
 
 	/* don't display "pid 0" as that is confusing */
@@ -156,9 +195,11 @@ static void show_sched_pid_info(struct chrt_ctl *ctl, pid_t pid)
 		policy = sa.sched_policy;
 		prio = sa.sched_priority;
 		reset_on_fork = sa.sched_flags & SCHED_FLAG_RESET_ON_FORK;
-		deadline = sa.sched_deadline;
 		runtime = sa.sched_runtime;
+#ifdef SCHED_DEADLINE
+		deadline = sa.sched_deadline;
 		period = sa.sched_period;
+#endif
 	}
 
 	/*
@@ -197,6 +238,13 @@ fallback:
 		printf(_("pid %d's new scheduling priority: %d\n"), pid, prio);
 	else
 		printf(_("pid %d's current scheduling priority: %d\n"), pid, prio);
+
+	if (runtime && supports_custom_slice(policy)) {
+		if (ctl->altered)
+			printf(_("pid %d's new runtime parameter: %ju\n"), pid, runtime);
+		else
+			printf(_("pid %d's current runtime parameter: %ju\n"), pid, runtime);
+	}
 
 #ifdef SCHED_DEADLINE
 	if (policy == SCHED_DEADLINE) {
@@ -246,6 +294,9 @@ static void show_min_max(void)
 #ifdef SCHED_DEADLINE
 		SCHED_DEADLINE,
 #endif
+#ifdef SCHED_EXT
+		SCHED_EXT,
+#endif
 	};
 
 	for (i = 0; i < ARRAY_SIZE(policies); i++) {
@@ -290,13 +341,13 @@ static int set_sched_one(struct chrt_ctl *ctl, pid_t pid)
 	return set_sched_one_by_setscheduler(ctl, pid);
 }
 
-#else /* !HAVE_SCHED_SETATTR */
+#else /* HAVE_SCHED_SETATTR */
 static int set_sched_one(struct chrt_ctl *ctl, pid_t pid)
 {
 	struct sched_attr sa = { .size = sizeof(struct sched_attr) };
 
 	/* old API is good enough for non-deadline */
-	if (ctl->policy != SCHED_DEADLINE)
+	if (!supports_runtime_param(ctl->policy))
 		return set_sched_one_by_setscheduler(ctl, pid);
 
 	/* not changed by chrt, follow the current setting */
@@ -348,11 +399,13 @@ int main(int argc, char **argv)
 {
 	struct chrt_ctl _ctl = { .pid = -1, .policy = SCHED_RR }, *ctl = &_ctl;
 	int c;
+	bool policy_given = false, need_prio = false;
 
 	static const struct option longopts[] = {
 		{ "all-tasks",  no_argument, NULL, 'a' },
 		{ "batch",	no_argument, NULL, 'b' },
 		{ "deadline",   no_argument, NULL, 'd' },
+		{ "ext",	no_argument, NULL, 'e' },
 		{ "fifo",	no_argument, NULL, 'f' },
 		{ "idle",	no_argument, NULL, 'i' },
 		{ "pid",	no_argument, NULL, 'p' },
@@ -374,7 +427,7 @@ int main(int argc, char **argv)
 	textdomain(PACKAGE);
 	close_stdout_atexit();
 
-	while((c = getopt_long(argc, argv, "+abdD:fiphmoP:T:rRvV", longopts, NULL)) != -1)
+	while((c = getopt_long(argc, argv, "+abdD:efiphmoP:T:rRvV", longopts, NULL)) != -1)
 	{
 		switch (c) {
 		case 'a':
@@ -383,16 +436,26 @@ int main(int argc, char **argv)
 		case 'b':
 #ifdef SCHED_BATCH
 			ctl->policy = SCHED_BATCH;
+			policy_given = true;
 #endif
 			break;
 
 		case 'd':
 #ifdef SCHED_DEADLINE
 			ctl->policy = SCHED_DEADLINE;
+			policy_given = true;
+#endif
+			break;
+		case 'e':
+#ifdef SCHED_EXT
+			ctl->policy = SCHED_EXT;
+			policy_given = true;
 #endif
 			break;
 		case 'f':
 			ctl->policy = SCHED_FIFO;
+			policy_given = true;
+			need_prio = true;
 			break;
 		case 'R':
 			ctl->reset_on_fork = 1;
@@ -400,6 +463,7 @@ int main(int argc, char **argv)
 		case 'i':
 #ifdef SCHED_IDLE
 			ctl->policy = SCHED_IDLE;
+			policy_given = true;
 #endif
 			break;
 		case 'm':
@@ -407,13 +471,15 @@ int main(int argc, char **argv)
 			return EXIT_SUCCESS;
 		case 'o':
 			ctl->policy = SCHED_OTHER;
+			policy_given = true;
 			break;
 		case 'p':
-			errno = 0;
-			ctl->pid = strtos32_or_err(argv[argc - 1], _("invalid PID argument"));
+			ctl->pid = 0;  /* indicate that a PID is expected */
 			break;
 		case 'r':
 			ctl->policy = SCHED_RR;
+			policy_given = true;
+			need_prio = true;
 			break;
 		case 'v':
 			ctl->verbose = 1;
@@ -437,25 +503,49 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (((ctl->pid > -1) && argc - optind < 1) ||
-	    ((ctl->pid == -1) && argc - optind < 2)) {
-		warnx(_("bad usage"));
+	if (argc - optind < 1) {
+		warnx(_("too few arguments"));
 		errtryhelp(EXIT_FAILURE);
-}
-
-	if ((ctl->pid > -1) && (ctl->verbose || argc - optind == 1)) {
-		show_sched_info(ctl);
-		if (argc - optind == 1)
-			return EXIT_SUCCESS;
 	}
 
-	errno = 0;
-	ctl->priority = strtos32_or_err(argv[optind], _("invalid priority argument"));
+	/* If option --pid was given, parse the very last argument as a PID. */
+	if (ctl->pid == 0) {
+		if (need_prio && argc - optind < 2)
+			errx(EXIT_FAILURE, _("policy %s requires a priority argument"),
+						get_policy_name(ctl->policy));
+		errno = 0;
+		/* strtopid_or_err() is not suitable here, as 0 can be passed. */
+		ctl->pid = strtos32_or_err(argv[argc - 1], _("invalid PID argument"));
 
+		/* If no policy nor priority was given, show current settings. */
+		if (!policy_given && argc - optind == 1) {
+			show_sched_info(ctl);
+			return EXIT_SUCCESS;
+		}
+	}
+
+	if (ctl->policy == SCHED_RR)
+		need_prio = true;
+
+	if (ctl->verbose)
+		show_sched_info(ctl);
+
+	bool have_prio = need_prio ||
+		(ctl->pid == -1 ? (optind < argc && isdigit_string(argv[optind])) : (argc - optind > 1));
+
+	if (have_prio) {
+		errno = 0;
+		ctl->priority = strtos32_or_err(argv[optind], _("invalid priority argument"));
+	} else
+		ctl->priority = 0;
+
+	if (ctl->runtime && !supports_runtime_param(ctl->policy))
+		errx(EXIT_FAILURE, _("--sched-runtime option is supported for %s"),
+				     get_supported_runtime_param_policies());
 #ifdef SCHED_DEADLINE
-	if ((ctl->runtime || ctl->deadline || ctl->period) && ctl->policy != SCHED_DEADLINE)
-		errx(EXIT_FAILURE, _("--sched-{runtime,deadline,period} options "
-				     "are supported for SCHED_DEADLINE only"));
+	if ((ctl->deadline || ctl->period) && ctl->policy != SCHED_DEADLINE)
+		errx(EXIT_FAILURE, _("--sched-{deadline,period} options are "
+				     "supported for SCHED_DEADLINE only"));
 	if (ctl->policy == SCHED_DEADLINE) {
 		/* The basic rule is runtime <= deadline <= period, so we can
 		 * make deadline and runtime optional on command line. Note we
@@ -468,7 +558,7 @@ int main(int argc, char **argv)
 			ctl->runtime = ctl->deadline;
 	}
 #else
-	if (ctl->runtime || ctl->deadline || ctl->period)
+	if (ctl->deadline || ctl->period)
 		errx(EXIT_FAILURE, _("SCHED_DEADLINE is unsupported"));
 #endif
 	if (ctl->pid == -1)
@@ -484,9 +574,19 @@ int main(int argc, char **argv)
 		show_sched_info(ctl);
 
 	if (!ctl->pid) {
-		argv += optind + 1;
-		if (strcmp(argv[0], "--") == 0)
+		argv += optind;
+
+		if (need_prio)
 			argv++;
+		else if (argv[0] && isdigit_string(argv[0]))
+			argv++;
+
+		if (argv[0] && strcmp(argv[0], "--") == 0)
+			argv++;
+
+		if (!argv[0])
+			errx(EXIT_FAILURE, _("no command specified"));
+
 		execvp(argv[0], argv);
 		errexec(argv[0]);
 	}

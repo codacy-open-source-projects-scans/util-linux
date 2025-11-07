@@ -25,6 +25,7 @@
 #include <libsmartcols.h>
 
 #include "c.h"
+#include "cctype.h"
 #include "nls.h"
 #include "pathnames.h"
 #include "strutils.h"
@@ -89,7 +90,7 @@ int irq_column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(infos); i++) {
 		const char *cn = infos[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -233,7 +234,8 @@ static bool cpu_in_list(int cpu, size_t setsize, cpu_set_t *cpuset)
 /*
  * irqinfo - parse the system's interrupts
  */
-static struct irq_stat *get_irqinfo(int softirq, size_t setsize, cpu_set_t *cpuset)
+static struct irq_stat *get_irqinfo(const char *input_file, int softirq,
+				    size_t setsize, cpu_set_t *cpuset)
 {
 	FILE *irqfile;
 	char *line = NULL, *tmp;
@@ -247,18 +249,15 @@ static struct irq_stat *get_irqinfo(int softirq, size_t setsize, cpu_set_t *cpus
 	stat->irq_info = xmalloc(sizeof(*stat->irq_info) * IRQ_INFO_LEN);
 	stat->nr_irq_info = IRQ_INFO_LEN;
 
-	if (softirq)
-		irqfile = fopen(_PATH_PROC_SOFTIRQS, "r");
-	else
-		irqfile = fopen(_PATH_PROC_INTERRUPTS, "r");
+	irqfile = fopen(input_file, "r");
 	if (!irqfile) {
-		warn(_("cannot open %s"), _PATH_PROC_INTERRUPTS);
+		warn(_("cannot open %s"), input_file);
 		goto free_stat;
 	}
 
 	/* read header firstly */
 	if (getline(&line, &len, irqfile) < 0) {
-		warn(_("cannot read %s"), _PATH_PROC_INTERRUPTS);
+		warn(_("cannot read %s"), input_file);
 		goto close_file;
 	}
 
@@ -270,7 +269,7 @@ static struct irq_stat *get_irqinfo(int softirq, size_t setsize, cpu_set_t *cpus
 
 	stat->cpus =  xcalloc(stat->nr_active_cpu, sizeof(struct irq_cpu));
 
-	/* parse each line of _PATH_PROC_INTERRUPTS */
+	/* parse each line of input file */
 	while (getline(&line, &len, irqfile) >= 0) {
 		unsigned long count;
 		size_t index;
@@ -407,13 +406,13 @@ static void sort_result(struct irq_output *out,
 
 void set_sort_func_by_name(struct irq_output *out, const char *name)
 {
-	if (strcasecmp(name, "IRQ") == 0)
+	if (c_strcasecmp(name, "IRQ") == 0)
 		out->sort_cmp_func = cmp_interrupts;
-	else if (strcasecmp(name, "TOTAL") == 0)
+	else if (c_strcasecmp(name, "TOTAL") == 0)
 		out->sort_cmp_func = cmp_total;
-	else if (strcasecmp(name, "DELTA") == 0)
+	else if (c_strcasecmp(name, "DELTA") == 0)
 		out->sort_cmp_func = cmp_delta;
-	else if (strcasecmp(name, "NAME") == 0)
+	else if (c_strcasecmp(name, "NAME") == 0)
 		out->sort_cmp_func = cmp_name;
 	else
 		errx(EXIT_FAILURE, _("unsupported column name to sort output"));
@@ -527,7 +526,8 @@ struct libscols_table *get_scols_cpus_table(struct irq_output *out,
 	return NULL;
 }
 
-struct libscols_table *get_scols_table(struct irq_output *out,
+struct libscols_table *get_scols_table(const char *input_file,
+					      struct irq_output *out,
 					      struct irq_stat *prev,
 					      struct irq_stat **xstat,
 					      int softirq,
@@ -542,7 +542,7 @@ struct libscols_table *get_scols_table(struct irq_output *out,
 	size_t i;
 
 	/* the stats */
-	stat = get_irqinfo(softirq, setsize, cpuset);
+	stat = get_irqinfo(input_file, softirq, setsize, cpuset);
 	if (!stat)
 		return NULL;
 

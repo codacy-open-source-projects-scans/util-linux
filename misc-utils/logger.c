@@ -53,9 +53,11 @@
 #include <pwd.h>
 #include <signal.h>
 #include <sys/uio.h>
+#include <stdbool.h>
 
 #include "all-io.h"
 #include "c.h"
+#include "cctype.h"
 #include "closestream.h"
 #include "nls.h"
 #include "pathnames.h"
@@ -130,16 +132,15 @@ struct logger_ctl {
 
 	void (*syslogfp)(struct logger_ctl *ctl);
 
-	unsigned int
-			unix_socket_errors:1,	/* whether to report or not errors */
-			noact:1,		/* do not write to sockets */
-			prio_prefix:1,		/* read priority from input */
-			stderr_printout:1,	/* output message to stderr */
-			rfc5424_time:1,		/* include time stamp */
-			rfc5424_tq:1,		/* include time quality markup */
-			rfc5424_host:1,		/* include hostname */
-			skip_empty_lines:1,	/* do not send empty lines when processing files */
-			octet_count:1;		/* use RFC6587 octet counting */
+	bool	unix_socket_errors,	/* whether to report or not errors */
+		noact,			/* do not write to sockets */
+		prio_prefix,		/* read priority from input */
+		stderr_printout,	/* output message to stderr */
+		rfc5424_time,		/* include time stamp */
+		rfc5424_tq,		/* include time quality markup */
+		rfc5424_host,		/* include hostname */
+		skip_empty_lines,	/* do not send empty lines when processing files */
+		octet_count;		/* use RFC6587 octet counting */
 };
 
 #define is_connected(_ctl)	((_ctl)->fd >= 0)
@@ -220,7 +221,7 @@ static int decode(const char *name, const CODE *codetab)
 		return -1;
 	}
 	for (c = codetab; c->c_name; c++)
-		if (!strcasecmp(name, c->c_name))
+		if (!c_strcasecmp(name, c->c_name))
 			return (c->c_val);
 
 	return -1;
@@ -621,7 +622,7 @@ static void add_structured_data_param(struct list_head *ls, const char *param)
 
 	sd = list_last_entry(ls, struct structured_data, sds);
 
-	if (strv_extend(&sd->params,  param))
+	if (ul_strv_extend(&sd->params,  param))
 		err_oom();
 }
 
@@ -637,7 +638,7 @@ static void __attribute__ ((__format__ (__printf__, 2, 3)))
 
 	sd = list_last_entry(ls, struct structured_data, sds);
 	va_start(ap, fmt);
-	x = strv_extendv(&sd->params, fmt, ap);
+	x = ul_strv_extendv(&sd->params, fmt, ap);
 	va_end(ap);
 
 	if (x)
@@ -648,11 +649,11 @@ static char *strdup_structured_data(struct structured_data *sd)
 {
 	char *res, *tmp;
 
-	if (strv_isempty(sd->params))
+	if (ul_strv_isempty(sd->params))
 		return NULL;
 
 	xasprintf(&res, "[%s %s]", sd->id,
-			(tmp = strv_join(sd->params, " ")));
+			(tmp = ul_strv_join(sd->params, " ")));
 	free(tmp);
 	return res;
 }
@@ -669,7 +670,7 @@ static char *strdup_structured_data_list(struct list_head *ls)
 
 		if (!one)
 			continue;
-		res = strconcat(tmp, one);
+		res = ul_strconcat(tmp, one);
 		free(tmp);
 		free(one);
 	}
@@ -687,7 +688,7 @@ static char *get_structured_data_string(struct logger_ctl *ctl)
 		usr = strdup_structured_data_list(&ctl->user_sds);
 
 	if (sys && usr) {
-		res = strconcat(sys, usr);
+		res = ul_strconcat(sys, usr);
 		free(sys);
 		free(usr);
 	} else
@@ -1024,7 +1025,9 @@ static void logger_stdin(struct logger_ctl *ctl)
 		if (ctl->prio_prefix && c == '<') {
 			pri = 0;
 			buf[i++] = c;
-			while (isdigit(c = getchar()) && pri <= 191) {
+			while (i < ctl->max_message_size
+			       && isdigit(c = getchar()) && pri <= 191) {
+
 				buf[i++] = c;
 				pri = pri * 10 + c - '0';
 			}
@@ -1101,7 +1104,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(_("     --sd-param <data>    rfc5424 structured data name=value\n"), out);
 	fputs(_("     --msgid <msgid>      set rfc5424 message id field\n"), out);
 	fputs(_(" -u, --socket <socket>    write to this Unix socket\n"), out);
-	fputs(_("     --socket-errors[=<on|off|auto>]\n"
+	fputs(_("     --socket-errors on|off|auto\n"
 		"                          print connection errors when using Unix sockets\n"), out);
 #ifdef HAVE_LIBSYSTEMD
 	fputs(_("     --journald[=<file>]  write journald entry\n"), out);
@@ -1205,7 +1208,7 @@ int main(int argc, char **argv)
 
 				if (*p == '=')
 					p++;
-				ctl.pid = strtoul_or_err(optarg, _("failed to parse id"));
+				ctl.pid = strtopid_or_err(optarg, _("failed to parse id"));
 			} else
 				ctl.pid = logger_getpid();
 			break;
@@ -1295,7 +1298,7 @@ int main(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 	if (stdout_reopened && argc)
-		warnx(_("--file <file> and <message> are mutually exclusive, message is ignored"));
+		warnx(_("--file <file> and <message> are mutually exclusive; file is ignored"));
 #ifdef HAVE_LIBSYSTEMD
 	if (jfd) {
 		int ret = journald_entry(&ctl, jfd);

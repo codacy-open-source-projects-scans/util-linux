@@ -46,10 +46,8 @@
 #include "mountP.h"
 #include "fileutils.h"	/* statx() fallback */
 #include "strutils.h"
-#include "mount-api-utils.h"
+#include "mangle.h"
 #include "linux_version.h"
-
-#include <inttypes.h>
 
 #ifdef USE_LIBMOUNT_MOUNTFD_SUPPORT
 
@@ -65,30 +63,6 @@ static void close_sysapi_fds(struct libmnt_sysapi *api)
 	api->fd_tree = api->fd_fs = -1;
 }
 
-static void save_fd_messages(struct libmnt_context *cxt, int fd)
-{
-	uint8_t buf[BUFSIZ];
-	int rc;
-
-	mnt_context_set_errmsg(cxt, NULL);
-
-	while ((rc = read(fd, buf, sizeof(buf) - 1)) != -1) {
-
-		if (rc == 0)
-			continue;
-		if (buf[rc - 1] == '\n')
-			buf[--rc] = '\0';
-		else
-			buf[rc] = '\0';
-
-		DBG(CXT, ul_debug("message from kernel: \"%*s\"", rc, buf));
-
-		if (rc < 3 || strncmp((char *) buf, "e ", 2) != 0)
-			continue;
-		mnt_context_append_errmsg(cxt, ((char *) buf) + 2);
-	}
-}
-
 static void hookset_set_syscall_status(struct libmnt_context *cxt,
 				       const char *name, int x)
 {
@@ -96,11 +70,12 @@ static void hookset_set_syscall_status(struct libmnt_context *cxt,
 
 	mnt_context_syscall_save_status(cxt, name, x);
 
-	if (!x) {
-		api = get_sysapi(cxt);
-		if (api && api->fd_fs >= 0)
-			save_fd_messages(cxt, api->fd_fs);
-	}
+	if (!x)
+		mnt_context_reset_mesgs(cxt);	/* reset om error */
+
+	api = get_sysapi(cxt);
+	if (api && api->fd_fs >= 0)
+		mnt_context_read_mesgs(cxt, api->fd_fs);
 }
 
 /*
@@ -116,7 +91,9 @@ static void free_hookset_data(	struct libmnt_context *cxt,
 
 	close_sysapi_fds(api);
 
+	free(api->subdir);
 	free(api);
+
 	mnt_context_set_hookset_data(cxt, hs, NULL);
 }
 
@@ -162,19 +139,12 @@ static inline int fsconfig_set_value(
 	int rc;
 	char *s = NULL;
 
-	/* "\," is a way to use comma in values, let's remove \ escape */
-	if (value && strstr(value, "\\,")) {
-		char *x, *p;
-
+	/* Remove \, and \" escapes, both supported by ul_optstr_next() */
+	if (value && strchr(value, '\\')) {
 		s = strdup(value);
 		if (!s)
-			return -EINVAL;
-		for (x = p = s; *x; p++, x++) {
-			if (*x == '\\' && *(x + 1) == ',')
-				x++;
-			*p = *x;
-		}
-		*p = '\0';
+			return -ENOMEM;
+		unescape_string(s, ",\"");
 		value = s;
 	}
 
@@ -246,12 +216,30 @@ done:
 	return rc != 0 && errno ? -errno : rc;
 }
 
+static int create_superblock(struct libmnt_context *cxt,
+		const struct libmnt_hookset *hs, int fd)
+{
+	int rc = 0;
+
+	DBG(HOOK, ul_debugobj(hs, " create FS %s",
+			mnt_context_is_exclusive(cxt) ? "excl" : ""));
+	errno = 0;
+
+	if (mnt_context_is_exclusive(cxt))
+		rc = fsconfig(fd, FSCONFIG_CMD_CREATE_EXCL, NULL, NULL, 0);
+	else
+		rc = fsconfig(fd, FSCONFIG_CMD_CREATE, NULL, NULL, 0);
+
+	hookset_set_syscall_status(cxt, "fsconfig", rc == 0);
+
+	DBG(HOOK, ul_debugobj(hs, " create done [rc=%d]", rc));
+	return rc != 0 && errno ? -errno : rc;;
+}
+
 static int open_fs_configuration_context(struct libmnt_context *cxt,
 					 struct libmnt_sysapi *api,
 					 const char *type)
 {
-	DBG(HOOK, ul_debug(" new FS '%s'", type));
-
 	if (!type)
 		return -EINVAL;
 
@@ -304,17 +292,30 @@ static int hook_create_mount(struct libmnt_context *cxt,
 
 	if (!rc)
 		rc = configure_superblock(cxt, hs, api->fd_fs, 0);
-	if (!rc) {
-		DBG(HOOK, ul_debugobj(hs, "create FS"));
-		rc = fsconfig(api->fd_fs, FSCONFIG_CMD_CREATE, NULL, NULL, 0);
-		hookset_set_syscall_status(cxt, "fsconfig", rc == 0);
-	}
+	if (!rc)
+		rc = create_superblock(cxt, hs, api->fd_fs);
 
 	if (!rc) {
-		api->fd_tree = fsmount(api->fd_fs, FSMOUNT_CLOEXEC, 0);
-		hookset_set_syscall_status(cxt, "fsmount", api->fd_tree >= 0);
-		if (api->fd_tree < 0)
+		int fd = fsmount(api->fd_fs, FSMOUNT_CLOEXEC, 0);
+		hookset_set_syscall_status(cxt, "fsmount", fd >= 0);
+
+		if (fd >= 0 && api->subdir) {
+			/*
+			 * subdir for Linux >= 6.15, see hook_subdir.c for more details.
+			 */
+			DBG(HOOK, ul_debugobj(hs, "opening subdir (detached) '%s'", api->subdir));
+			int sub_fd = open_tree(fd, api->subdir,
+					AT_NO_AUTOMOUNT | AT_SYMLINK_NOFOLLOW |
+					AT_RECURSIVE | OPEN_TREE_CLOEXEC |
+					OPEN_TREE_CLONE);
+			hookset_set_syscall_status(cxt, "open_tree", sub_fd >= 0);
+			close(fd);
+			fd = sub_fd;
+		}
+
+		if (fd < 0)
 			rc = -errno;
+		api->fd_tree = fd;
 	}
 
 	if (rc)
@@ -516,6 +517,7 @@ static int hook_attach_target(struct libmnt_context *cxt,
 		void *data __attribute__((__unused__)))
 {
 	struct libmnt_sysapi *api;
+	unsigned int flags;
 	const char *target;
 	int rc = 0;
 
@@ -541,8 +543,21 @@ static int hook_attach_target(struct libmnt_context *cxt,
 		umount2(target, MNT_DETACH);
 	}
 
-	rc = move_mount(api->fd_tree, "", AT_FDCWD, target, MOVE_MOUNT_F_EMPTY_PATH);
+	flags = MOVE_MOUNT_F_EMPTY_PATH;
+	if (mnt_context_is_beneath(cxt))
+		flags |= MOVE_MOUNT_BENEATH;
+
+	rc = move_mount(api->fd_tree, "", AT_FDCWD, target, flags);
 	hookset_set_syscall_status(cxt, "move_mount", rc == 0);
+
+	if (rc == 0) {
+		struct libmnt_optlist *ol = mnt_context_get_optlist(cxt);
+
+		if (ol && mnt_optlist_is_move(ol))
+			mnt_fs_mark_moved(cxt->fs);
+		else
+			mnt_fs_mark_attached(cxt->fs);
+	}
 
 	return rc == 0 ? 0 : -errno;
 }

@@ -3,6 +3,8 @@
 Copyright 1993, 1994, 1995 by Theodore Ts'o.  All Rights Reserved.
 This file may be copied under the terms of the GNU General Public License.
 ////
+ifdef::neverdefined[---]
+
 = fsck(8)
 :doctype: manpage
 :man manual: System Administration
@@ -113,7 +115,7 @@ Produce verbose output, including all filesystem-specific commands that are exec
 Display help text and exit.
 
 *--version*::
-Display version information and exit.
+Display version and exit.
 
 == FILESYSTEM SPECIFIC OPTIONS
 

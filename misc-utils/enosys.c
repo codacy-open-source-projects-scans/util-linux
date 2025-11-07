@@ -11,9 +11,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 
 #include <stddef.h>
@@ -78,13 +77,17 @@ static void __attribute__((__noreturn__)) usage(void)
 	FILE *out = stdout;
 
 	fputs(USAGE_HEADER, out);
-	fprintf(out, _(" %s [options] -- <command>\n"), program_invocation_short_name);
+	fprintf(out, _(" %s [options] <command>\n"), program_invocation_short_name);
+
+	fputs(USAGE_SEPARATOR, out);
+	fputs(_("Block certain system calls while running a command.\n"), out);
 
 	fputs(USAGE_OPTIONS, out);
-	fputs(_(" -s, --syscall           syscall to block\n"), out);
-	fputs(_(" -i, --ioctl             ioctl to block\n"), out);
-	fputs(_(" -l, --list              list known syscalls\n"), out);
-	fputs(_(" -d, --dump[=<file>]     dump seccomp bytecode\n"), out);
+	fputs(_(" -s, --syscall <name>|<nr>    system call to block\n"), out);
+	fputs(_(" -i, --ioctl <name>|<nr>      ioctl to block\n"), out);
+	fputs(_(" -l, --list                   list known system calls\n"), out);
+	fputs(_(" -m, --list-ioctl             list known ioctls\n"), out);
+	fputs(_(" -d, --dump[=<file>]          dump bytecode of seccomp filter\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
 	fprintf(out, USAGE_HELP_OPTIONS(25));
@@ -203,6 +206,8 @@ int main(int argc, char **argv)
 			return EXIT_SUCCESS;
 		case 'd':
 			if (optarg) {
+				if (*optarg == '=')
+					optarg++;
 				dump = fopen(optarg, "w");
 				if (!dump)
 					err(EXIT_FAILURE, _("Could not open %s"), optarg);
@@ -297,7 +302,7 @@ int main(int argc, char **argv)
 		err_nosys(EXIT_FAILURE, _("Could not run prctl(PR_SET_NO_NEW_PRIVS)"));
 
 	if (ul_set_seccomp_filter_spec_allow(&prog))
-		err_nosys(EXIT_FAILURE, _("Could not seccomp filter"));
+		err_nosys(EXIT_FAILURE, _("Could not set seccomp filter"));
 
 	if (execvp(argv[optind], argv + optind))
 		err(EXIT_NOTSUPP, _("Could not exec"));

@@ -14,9 +14,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://gnu.org/licenses/>.
  */
 
 #include <stdio.h>
@@ -139,7 +138,8 @@ static void success_message(struct libmnt_context *cxt)
 {
 	const char *tgt, *src;
 
-	if (mnt_context_helper_executed(cxt)
+	if ((mnt_context_helper_executed(cxt)
+	    && mnt_context_get_helper_status(cxt))
 	    || mnt_context_get_status(cxt) != 1)
 		return;
 
@@ -447,7 +447,7 @@ static char *sanitize_path(const char *path)
 	if (!path)
 		return NULL;
 
-	p = canonicalize_path_restricted(path);
+	p = ul_canonicalize_path_restricted(path);
 	if (!p)
 		err(MNT_EX_USAGE, "%s", path);
 

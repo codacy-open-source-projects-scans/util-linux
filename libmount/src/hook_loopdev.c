@@ -281,7 +281,8 @@ static int setup_loopdev(struct libmnt_context *cxt,
 			DBG(LOOP, ul_debugobj(cxt, "node lost"));
 
 			dev_t devno = loopcxt_get_devno(&lc);
-			mnt_context_sprintf_errmsg(cxt, _("device node %s (%u:%u) is lost"),
+			/* TRANSLATORS: Do not translate "e ". It is a message classifier. */
+			mnt_context_sprintf_mesg(cxt, _("e device node %s (%u:%u) is lost"),
 					loopcxt_get_device(&lc), major(devno), minor(devno));
 			rc = -EINVAL;
 		}
@@ -397,7 +398,7 @@ static int delete_loopdev(struct libmnt_context *cxt, struct hook_data *hd)
 		hd->loopdev_fd = -1;
 	}
 
-	rc = loopdev_delete(src);	/* see lib/loopdev.c */
+	rc = loopdev_detach(src);	/* see lib/loopdev.c */
 
 	DBG(LOOP, ul_debugobj(cxt, "deleted [rc=%d]", rc));
 	return rc;
@@ -457,6 +458,7 @@ static int is_loopdev_required(struct libmnt_context *cxt, struct libmnt_optlist
 
 		rc = mnt_context_guess_srcpath_fstype(cxt, &autotype);
 		if (rc) {
+			free(autotype);;
 			DBG(CXT, ul_debugobj(cxt, "failed to guess regfile FS type [rc=%d]", rc));
 			return 0;
 		}

@@ -11,22 +11,25 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  */
-#include <c.h>
-#include <nls.h>
-#include <path.h>
-#include <strutils.h>
-#include <closestream.h>
-#include <xalloc.h>
-#include <getopt.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <getopt.h>
+#include <stdbool.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <assert.h>
-#include <optutils.h>
+
 #include <libsmartcols.h>
+
+#include "c.h"
+#include "cctype.h"
+#include "nls.h"
+#include "path.h"
+#include "strutils.h"
+#include "closestream.h"
+#include "xalloc.h"
+#include "optutils.h"
 
 #define _PATH_SYS_MEMORY		"/sys/devices/system/memory"
 
@@ -150,7 +153,7 @@ static int zone_name_to_id(const char *name)
 	size_t i;
 
 	for (i = 0; i < ARRAY_SIZE(zone_names); i++) {
-		if (!strcasecmp(name, zone_names[i]))
+		if (!c_strcasecmp(name, zone_names[i]))
 			return i;
 	}
 	return ZONE_UNKNOWN;
@@ -166,7 +169,7 @@ static int column_name_to_id(const char *name, size_t namesz)
 	for (i = 0; i < ARRAY_SIZE(coldescs); i++) {
 		const char *cn = coldescs[i].name;
 
-		if (!strncasecmp(name, cn, namesz) && !*(cn + namesz))
+		if (!c_strncasecmp(name, cn, namesz) && !*(cn + namesz))
 			return i;
 	}
 	warnx(_("unknown column: %s"), name);
@@ -306,22 +309,22 @@ static void fill_scols_table(struct lsmem *lsmem)
 static void print_summary(struct lsmem *lsmem)
 {
 	if (lsmem->bytes) {
-		printf("%-23s %15"PRId64"\n",_("Memory block size:"), lsmem->block_size);
-		printf("%-23s %15"PRId64"\n",_("Total online memory:"), lsmem->mem_online);
-		printf("%-23s %15"PRId64"\n",_("Total offline memory:"), lsmem->mem_offline);
+		printf("%-32s %15"PRId64"\n",_("Memory block size:"), lsmem->block_size);
+		printf("%-32s %15"PRId64"\n",_("Total online memory:"), lsmem->mem_online);
+		printf("%-32s %15"PRId64"\n",_("Total offline memory:"), lsmem->mem_offline);
 	} else {
 		char *p;
 
 		if ((p = size_to_human_string(SIZE_SUFFIX_1LETTER, lsmem->block_size)))
-			printf("%-23s %5s\n",_("Memory block size:"), p);
+			printf("%-32s %5s\n",_("Memory block size:"), p);
 		free(p);
 
 		if ((p = size_to_human_string(SIZE_SUFFIX_1LETTER, lsmem->mem_online)))
-			printf("%-23s %5s\n",_("Total online memory:"), p);
+			printf("%-32s %5s\n",_("Total online memory:"), p);
 		free(p);
 
 		if ((p = size_to_human_string(SIZE_SUFFIX_1LETTER, lsmem->mem_offline)))
-			printf("%-23s %5s\n",_("Total offline memory:"), p);
+			printf("%-32s %5s\n",_("Total offline memory:"), p);
 		free(p);
 	}
 }
@@ -688,6 +691,8 @@ int main(int argc, char **argv)
 		add_column(columns, ncolumns++, COL_BLOCK);
 	}
 
+	if (!outarg)
+		outarg = getenv("LSMEM_COLUMNS");
 	if (outarg && string_add_to_idarray(outarg, columns, ARRAY_SIZE(columns),
 					 &ncolumns, column_name_to_id) < 0)
 		return EXIT_FAILURE;
@@ -713,7 +718,7 @@ int main(int argc, char **argv)
 
 		cl = scols_table_new_column(lsmem->table, ci->name, ci->whint, ci->flags);
 		if (!cl)
-			err(EXIT_FAILURE, _("Failed to initialize output column"));
+			err(EXIT_FAILURE, _("failed to initialize output column"));
 
 		if (lsmem->json) {
 			int id = get_column_id(i);
@@ -722,7 +727,7 @@ int main(int argc, char **argv)
 			case COL_SIZE:
 				if (!lsmem->bytes)
 					break;
-				/* fallthrough */
+				FALLTHROUGH;
 			case COL_NODE:
 				scols_column_set_json_type(cl, SCOLS_JSON_NUMBER);
 				break;
@@ -737,7 +742,7 @@ int main(int argc, char **argv)
 		int split[ARRAY_SIZE(coldescs)] = { 0 };
 		static size_t nsplits = 0;
 
-		if (strcasecmp(splitarg, "none") == 0)
+		if (c_strcasecmp(splitarg, "none") == 0)
 			;
 		else if (string_add_to_idarray(splitarg, split, ARRAY_SIZE(split),
 					&nsplits, column_name_to_id) < 0)

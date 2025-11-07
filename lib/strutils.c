@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
- * Copyright (C) 2010 Davidlohr Bueso <dave@gnu.org>
- *
  * No copyright is claimed.  This code is in the public domain; do with
  * it what you wish.
+ *
+ * Authors: Karel Zak <kzak@redhat.com> [2010]
+ *          Davidlohr Bueso <dave@gnu.org> [2010]
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,7 +64,7 @@ static int do_scale_by_power (uintmax_t *x, int base, int power)
  * Note that the function does not accept numbers with '-' (negative sign)
  * prefix.
  */
-int parse_size(const char *str, uintmax_t *res, int *power)
+int ul_parse_size(const char *str, uintmax_t *res, int *power)
 {
 	const char *p;
 	char *end;
@@ -220,7 +220,7 @@ err:
 
 int strtosize(const char *str, uintmax_t *res)
 {
-	return parse_size(str, res, NULL);
+	return ul_parse_size(str, res, NULL);
 }
 
 int isdigit_strend(const char *str, const char **end)
@@ -247,14 +247,14 @@ int isxdigit_strend(const char *str, const char **end)
 }
 
 /*
- *  parse_switch(argv[i], "on", "off",  "yes", "no",  NULL);
+ *  For example: ul_parse_switch(argv[i], "on", "off",  "yes", "no",  NULL);
  */
-int parse_switch(const char *arg, const char *errmesg, ...)
+int ul_parse_switch(const char *arg, ...)
 {
 	const char *a, *b;
 	va_list ap;
 
-	va_start(ap, errmesg);
+	va_start(ap, arg);
 	do {
 		a = va_arg(ap, char *);
 		if (!a)
@@ -275,7 +275,7 @@ int parse_switch(const char *arg, const char *errmesg, ...)
 	} while (1);
 	va_end(ap);
 
-	errx(STRTOXX_EXIT_CODE, "%s: '%s'", errmesg, arg);
+	errx(STRTOXX_EXIT_CODE, _("unsupported argument: %s"), arg);
 }
 
 #ifndef HAVE_MEMPCPY
@@ -390,6 +390,19 @@ int ul_strtou32(const char *str, uint32_t *num, int base)
 		rc = -(errno = ERANGE);
 	if (rc == 0)
 		*num = (uint32_t) tmp;
+	return rc;
+}
+
+int ul_strtou16(const char *str, uint16_t *num, int base)
+{
+	uint64_t tmp;
+	int rc;
+
+	rc = ul_strtou64(str, &tmp, base);
+	if (rc == 0 && tmp > UINT16_MAX)
+		rc = -(errno = ERANGE);
+	if (rc == 0)
+		*num = (uint16_t) tmp;
 	return rc;
 }
 
@@ -524,7 +537,7 @@ time_t strtotime_or_err(const char *str, const char *errmesg)
 	return (time_t) user_input;
 }
 
-bool hyperlinkwanted_or_err(const char *mode, const char *errmesg)
+bool hyperlinkwanted(const char *mode)
 {
 	if (mode && strcmp(mode, "never") == 0)
 		return false;
@@ -535,7 +548,21 @@ bool hyperlinkwanted_or_err(const char *mode, const char *errmesg)
 	if (!mode || strcmp(mode, "auto") == 0)
 		return isatty(STDOUT_FILENO) ? true : false;
 
-	errx(EXIT_FAILURE, "%s: '%s'", errmesg, mode);
+	errx(EXIT_FAILURE, _("invalid argument of --hyperlink: %s"), mode);
+}
+
+bool annotationwanted(const char *mode)
+{
+	if (mode && strcmp(mode, "never") == 0)
+		return false;
+
+	if (mode && strcmp(mode, "always") == 0)
+		return true;
+
+	if (!mode || strcmp(mode, "auto") == 0)
+		return isatty(STDOUT_FILENO) ? true : false;
+
+	errx(EXIT_FAILURE, _("invalid argument of --annotate: %s"), mode);
 }
 
 /*
@@ -863,7 +890,7 @@ int string_to_bitmask(const char *list,
  *
  * Returns: 0 on success, <0 on error.
  */
-int parse_range(const char *str, int *lower, int *upper, int def)
+int ul_parse_range(const char *str, int *lower, int *upper, int def)
 {
 	char *end = NULL;
 
@@ -951,7 +978,7 @@ int streq_paths(const char *a, const char *b)
 }
 
 /* concatenate two strings to a new string, the size of the second string is limited by @b */
-char *strnconcat(const char *s, const char *suffix, size_t b)
+char *ul_strnconcat(const char *s, const char *suffix, size_t b)
 {
         size_t a;
         char *r;
@@ -982,13 +1009,13 @@ char *strnconcat(const char *s, const char *suffix, size_t b)
 }
 
 /* concatenate two strings to a new string */
-char *strconcat(const char *s, const char *suffix)
+char *ul_strconcat(const char *s, const char *suffix)
 {
-        return strnconcat(s, suffix, suffix ? strlen(suffix) : 0);
+        return ul_strnconcat(s, suffix, suffix ? strlen(suffix) : 0);
 }
 
 /* concatenate @s and string defined by @format to a new string */
-char *strfconcat(const char *s, const char *format, ...)
+char *ul_strfconcat(const char *s, const char *format, ...)
 {
 	va_list ap;
 	char *val, *res;
@@ -1001,12 +1028,12 @@ char *strfconcat(const char *s, const char *format, ...)
 	if (sz < 0)
 		return NULL;
 
-	res = strnconcat(s, val, sz);
+	res = ul_strnconcat(s, val, sz);
 	free(val);
 	return res;
 }
 
-int strappend(char **a, const char *b)
+int ul_strappend(char **a, const char *b)
 {
 	size_t al, bl;
 	char *tmp;
@@ -1038,13 +1065,13 @@ int strfappend(char **a, const char *format, ...)
 	int res;
 
 	va_start(ap, format);
-	res = strvfappend(a, format, ap);
+	res = ul_strvfappend(a, format, ap);
 	va_end(ap);
 
 	return res;
 }
 
-extern int strvfappend(char **a, const char *format, va_list ap)
+extern int ul_strvfappend(char **a, const char *format, va_list ap)
 {
 	char *val;
 	int sz;
@@ -1054,7 +1081,7 @@ extern int strvfappend(char **a, const char *format, va_list ap)
 	if (sz < 0)
 		return -errno;
 
-	res = strappend(a, val);
+	res = ul_strappend(a, val);
 	free(val);
 	return res;
 }
@@ -1109,7 +1136,7 @@ char *ul_strchr_escaped(const char *s, int c)
 }
 
 /* Split a string into words. */
-const char *split(const char **state, size_t *l, const char *separator, int quoted)
+const char *ul_split(const char **state, size_t *l, const char *separator, int quoted)
 {
         const char *current;
 
@@ -1235,7 +1262,7 @@ int ul_optstr_next(char **optstr, char **name, size_t *namesz,
 			return -EINVAL;
 		if (!start)
 			start = p;		/* beginning of the option item */
-		if (*p == '"')
+		if (*p == '"' && (p == optstr0 || *(p - 1) != '\\'))
 			open_quote ^= 1;	/* reverse the status */
 		if (open_quote)
 			continue;		/* still in quoted block */
@@ -1275,6 +1302,25 @@ int ul_optstr_is_valid(const char *optstr)
 
 	while ((rc = ul_optstr_next(&p, NULL, NULL, NULL, NULL)) == 0);
 	return rc < 0 ? 0 : 1;
+}
+
+char *ul_optstr_get_value(const char *optstr, const char *key)
+{
+	size_t sz, namesz = 0, valsz = 0;
+	char *name = NULL, *value = NULL;
+	char *p = (char *) optstr;
+
+	if (!optstr || !key || !*key)
+		return NULL;
+
+	sz = strlen(key);
+	while (ul_optstr_next(&p, &name, &namesz, &value, &valsz) == 0) {
+		if (namesz != sz || !valsz)
+			continue;
+		if (strncmp(name, key, namesz) == 0)
+			return strndup(value, valsz);
+	}
+	return NULL;
 }
 
 #ifdef TEST_PROGRAM_STRUTILS
@@ -1406,6 +1452,14 @@ int main(int argc, char *argv[])
 	if (argc == 3 && strcmp(argv[1], "--size") == 0) {
 		return test_strutils_sizes(argc - 1, argv + 1);
 
+	} else if (argc == 3 && strcmp(argv[1], "--parse-switch") == 0) {
+		printf("'%s'-->%d\n", argv[2], ul_parse_switch(argv[2],
+						"on", "off",
+						"enable", "disable",
+						"yes", "no",
+						"1", "0",
+						NULL));
+		return EXIT_SUCCESS;
 	} else if (argc == 4 && strcmp(argv[1], "--cmp-paths") == 0) {
 		return test_strutils_cmp_paths(argc - 1, argv + 1);
 
@@ -1475,12 +1529,14 @@ int main(int argc, char *argv[])
 			return EXIT_SUCCESS;
 	} else {
 		fprintf(stderr, "usage: %1$s --size <number>[suffix]\n"
+				"       %1$s --parse-switch <str>\n"
 				"       %1$s --cmp-paths <path> <path>\n"
 				"       %1$s --strdup-member <str> <str>\n"
 				"       %1$s --stralnumcmp <str> <str>\n"
 				"       %1$s --cstrcasecmp <str> <str>\n"
 				"       %1$s --normalize <str>\n"
-				"       %1$s --strto{s,u}{16,32,64} <str>\n",
+				"       %1$s --strto{s,u}{16,32,64} <str>\n"
+				"       %1$s --optstr <str>\n",
 				argv[0]);
 		exit(EXIT_FAILURE);
 	}
