@@ -296,6 +296,7 @@ static const char *get_thishost(struct login_context *cxt, const char **domain)
 #ifdef MOTDDIR_SUPPORT
 static int motddir_filter(const struct dirent *d)
 {
+	struct stat st;
 	size_t namesz;
 
 #ifdef _DIRENT_HAVE_D_TYPE
@@ -309,6 +310,11 @@ static int motddir_filter(const struct dirent *d)
 	namesz = strlen(d->d_name);
 	if (!namesz || namesz < MOTDDIR_EXTSIZ + 1 ||
 	    strcmp(d->d_name + (namesz - MOTDDIR_EXTSIZ), MOTDDIR_EXT) != 0)
+		return 0;
+
+	if (stat(d->d_name, &st) < 0)
+		return 0;
+	if (!S_ISREG(st.st_mode) || st.st_size == 0)
 		return 0;
 
 	return 1; /* accept */
@@ -1091,7 +1097,6 @@ static void fork_session(struct login_context *cxt)
 {
 	struct sigaction sa, oldsa_hup, oldsa_term;
 
-	signal(SIGALRM, SIG_DFL);
 	signal(SIGQUIT, SIG_DFL);
 	signal(SIGTSTP, SIG_IGN);
 
@@ -1298,7 +1303,8 @@ static void __attribute__((__noreturn__)) usage(void)
 	exit(EXIT_SUCCESS);
 }
 
-static void load_credentials(struct login_context *cxt) {
+static void load_credentials(struct login_context *cxt)
+{
 	char str[32] = { 0 };
 	char *env;
 	struct path_cxt *pc;
@@ -1570,6 +1576,7 @@ int main(int argc, char **argv)
 
 	/* committed to login -- turn off timeout */
 	alarm((unsigned int)0);
+	signal(SIGALRM, SIG_DFL);
 	free(timeout_msg);
 	timeout_msg = NULL;
 

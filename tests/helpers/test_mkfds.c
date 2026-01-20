@@ -367,6 +367,12 @@ static void reserve_fd(int fd)
 		     "faild to reserve fd with dup2(%d, %d)", 0, fd);
 }
 
+static void *nop(const struct factory *factory _U_, struct fdesc fdescs[] _U_,
+		 int argc _U_, char ** argv _U_)
+{
+	return NULL;
+}
+
 static void *open_ro_regular_file(const struct factory *factory, struct fdesc fdescs[],
 				  int argc, char ** argv)
 {
@@ -3060,17 +3066,21 @@ static void *make_mmap(const struct factory *factory, struct fdesc fdescs[] _U_,
 {
 	struct arg file = decode_arg("file", factory->params, argc, argv);
 	const char *sfile = ARG_STRING(file);
+	struct arg shared = decode_arg("shared", factory->params, argc, argv);
+	bool bshared = ARG_BOOLEAN(shared);
 
 	int fd = open(sfile, O_RDONLY);
 	if (fd < 0)
 		err(EXIT_FAILURE, "failed in opening %s", sfile);
+	free_arg(&shared);
 	free_arg(&file);
 
 	struct stat sb;
 	if (fstat(fd, &sb) < 0) {
 		err(EXIT_FAILURE, "failed in fstat()");
 	}
-	char *addr = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+	char *addr = mmap(NULL, sb.st_size, PROT_READ,
+			  bshared ? MAP_SHARED : MAP_PRIVATE, fd, 0);
 	if (addr == MAP_FAILED) {
 		err(EXIT_FAILURE, "failed in mmap()");
 	}
@@ -3389,6 +3399,17 @@ static void free_foreign_sockets(const struct factory * factory _U_, void *data)
 
 #define PARAM_END { .name = NULL, }
 static const struct factory factories[] = {
+	{
+		.name = "nop",
+		.desc = "just print pid and wait input",
+		.priv = false,
+		.N    = 0,
+		.EX_N = 0,
+		.make = nop,
+		.params = (struct parameter []) {
+			PARAM_END
+		}
+	},
 	{
 		.name = "ro-regular-file",
 		.desc = "read-only regular file",
@@ -4290,6 +4311,12 @@ static const struct factory factories[] = {
 				.type = PTYPE_STRING,
 				.desc = "file to be opened",
 				.defv.string = "/etc/passwd",
+			},
+			{
+				.name = "shared",
+				.type = PTYPE_BOOLEAN,
+				.desc = "use MAP_SHARED",
+				.defv.boolean = FALSE,
 			},
 			PARAM_END
 		},
