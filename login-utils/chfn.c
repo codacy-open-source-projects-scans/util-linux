@@ -180,8 +180,8 @@ static void parse_argv(struct chfn_control *ctl, int argc, char **argv)
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}
-		ctl->changed = 1;
-		ctl->interactive = 0;
+		ctl->changed = true;
+		ctl->interactive = false;
 	}
 	if (status != 0)
 		exit(EXIT_FAILURE);
@@ -241,22 +241,22 @@ static char *ask_new_field(struct chfn_control *ctl, const char *question,
 		if (getline(&buf, &dummy, stdin) < 0)
 			errx(EXIT_FAILURE, _("Aborted."));
 
-		/* remove white spaces from string end */
+		/* remove whitespace from string start and end */
 		ltrim_whitespace((unsigned char *) buf);
 		len = rtrim_whitespace((unsigned char *) buf);
 		if (len == 0) {
 			free(buf);
 			return xstrdup(def_val);
 		}
-		if (!c_strcasecmp(buf, "none")) {
+		if (c_strcasecmp(buf, "none") == 0) {
 			free(buf);
-			ctl->changed = 1;
+			ctl->changed = true;
 			return xstrdup("");
 		}
 		if (check_gecos_string(question, buf) >= 0)
 			break;
 	}
-	ctl->changed = 1;
+	ctl->changed = true;
 	return buf;
 }
 
@@ -276,11 +276,11 @@ static void get_login_defs(struct chfn_control *ctl)
 		return;
 	}
 	s = getlogindefs_str("CHFN_RESTRICT", "");
-	if (!strcmp(s, "yes")) {
+	if (strcmp(s, "yes") == 0) {
 		ctl->allow_room = ctl->allow_work = ctl->allow_home = 1;
 		return;
 	}
-	if (!strcmp(s, "no")) {
+	if (strcmp(s, "no") == 0) {
 		ctl->allow_fullname = ctl->allow_room = ctl->allow_work = ctl->allow_home = 1;
 		return;
 	}
@@ -327,7 +327,7 @@ static void ask_info(struct chfn_control *ctl)
 
 /*
  *  find_field () --
- *	find field value in uninteractive mode; can be new, old, or blank
+ *	find field value in non-interactive mode; can be new, old, or blank
  */
 static char *find_field(char *nf, char *of)
 {
@@ -340,7 +340,7 @@ static char *find_field(char *nf, char *of)
 
 /*
  *  add_missing () --
- *	add not supplied field values when in uninteractive mode
+ *	add not supplied field values when in non-interactive mode
  */
 static void add_missing(struct chfn_control *ctl)
 {
@@ -374,7 +374,7 @@ static int save_new_data(struct chfn_control *ctl)
 	if (!ctl->newf.other || !*ctl->newf.other) {
 		while (len > 0 && gecos[len - 1] == ',')
 			len--;
-		gecos[len] = 0;
+		gecos[len] = '\0';
 	}
 
 #ifdef HAVE_LIBUSER
@@ -388,6 +388,7 @@ static int save_new_data(struct chfn_control *ctl)
 #endif
 		printf(_
 		       ("Finger information *NOT* changed.  Try again later.\n"));
+		free(gecos);
 		return -1;
 	}
 	free(gecos);
@@ -399,7 +400,7 @@ int main(int argc, char **argv)
 {
 	uid_t uid;
 	struct chfn_control ctl = {
-		.interactive = 1
+		.interactive = true
 	};
 
 	sanitize_env();
@@ -417,12 +418,12 @@ int main(int argc, char **argv)
 	if (!ctl.username) {
 		ctl.pw = getpwuid(uid);
 		if (!ctl.pw)
-			errx(EXIT_FAILURE, _("you (user %d) don't exist."),
+			errx(EXIT_FAILURE, _("your user %d does not exist"),
 			     uid);
 	} else {
 		ctl.pw = ul_getuserpw_str(ctl.username);
 		if (!ctl.pw)
-			errx(EXIT_FAILURE, _("user \"%s\" does not exist."),
+			errx(EXIT_FAILURE, _("user \"%s\" does not exist"),
 			     ctl.username);
 	}
 	ctl.username = ctl.pw->pw_name;
@@ -456,8 +457,8 @@ int main(int argc, char **argv)
 	if (uid != 0 && uid != ctl.pw->pw_uid) {
 #endif
 		errno = EACCES;
-		err(EXIT_FAILURE, _("running UID doesn't match UID of user we're "
-		      "altering, change denied"));
+		err(EXIT_FAILURE, _("running UID doesn't match UID of the user you are "
+		      "attempting to alter, change denied"));
 	}
 
 	printf(_("Changing finger information for %s.\n"), ctl.username);
