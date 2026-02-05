@@ -35,6 +35,7 @@ struct child_process {
 
 	int org_err;
 	int org_out;
+	struct sigaction orig_sigchld;
 	struct sigaction orig_sigint;
 	struct sigaction orig_sighup;
 	struct sigaction orig_sigterm;
@@ -113,11 +114,11 @@ static void wait_for_pager(void)
 	} while (waiting == -1);
 }
 
-static void wait_for_pager_signal(int signo)
+static void wait_for_pager_signal(int signo __attribute__ ((__unused__)))
 {
 	UL_PROTECT_ERRNO;
 	wait_for_pager();
-	raise(signo);
+	_exit(EXIT_FAILURE);
 }
 
 static int has_command(const char *cmd)
@@ -136,7 +137,7 @@ static int has_command(const char *cmd)
 	if (!b)
 		goto cleanup;
 
-	if (*b == '/') {
+	if (strchr(b, '/')) {
 		rc = access(b, X_OK) == 0;
 		goto cleanup;
 	}
@@ -186,6 +187,12 @@ static void __setup_pager(void)
 	pager_process.argv = pager_argv;
 	pager_process.in = -1;
 
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = SIG_DFL;
+
+	/* this makes sure that waitpid works as expected */
+	sigaction(SIGCHLD, &sa, &pager_process.orig_sigchld);
+
 	if (start_command(&pager_process))
 		return;
 
@@ -198,7 +205,6 @@ static void __setup_pager(void)
 	}
 	close(pager_process.in);
 
-	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = wait_for_pager_signal;
 
 	/* this makes sure that the parent terminates after the pager */
@@ -251,6 +257,7 @@ void pager_close(void)
 	close(pager_process.org_err);
 
 	/* restore original signal settings */
+	sigaction(SIGCHLD, &pager_process.orig_sigchld, NULL);
 	sigaction(SIGINT,  &pager_process.orig_sigint, NULL);
 	sigaction(SIGHUP,  &pager_process.orig_sighup, NULL);
 	sigaction(SIGTERM, &pager_process.orig_sigterm, NULL);
