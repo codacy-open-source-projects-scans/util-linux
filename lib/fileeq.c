@@ -1,27 +1,27 @@
 /*
- * compare files content
+ * compare file contents
  *
- * The goal is to minimize number of data we need to read from the files and be
+ * The goal is to minimize amount of data we need to read from the files and be
  * ready to compare large set of files, it means reuse the previous data if
- * possible. It never read entire file if not necessary.
+ * possible. It never reads entire file if not necessary.
  *
- * The another goal is to minimize number of open files (imagine "hardlink /"),
+ * The other goal is to minimize number of open files (imagine "hardlink /"),
  * the code can open only two files and reopen the file next time if
  * necessary.
  *
  * This code supports multiple comparison methods. The very basic step which is
  * generic for all methods is to read and compare an "intro" (a few bytes from
- * the begging of the file). This intro buffer is always cached in 'struct
- * ul_fileeq_data', this intro buffer is addresses as block=0. This primitive
+ * the beginning of the file). This intro buffer is always cached in 'struct
+ * ul_fileeq_data', this intro buffer is addressed as block=0. This primitive
  * thing can reduce a lot ...
  *
  * The next steps depend on selected method:
  *
- *  * memcmp method: always read data to userspace, nothing is cached, compare
- *  directly files content; fast for small sets of the small files.
+ *  * memcmp method: always read data to userspace, nothing is cached, directly
+ *  compare file contents; fast for small sets of small files.
  *
  *  * Linux crypto API: zero-copy method based on sendfile(), data blocks are
- *  send to the kernel hash functions (sha1, ...), and only hash digest is read
+ *  sent to the kernel hash functions (sha1, ...), and only hash digest is read
  *  and cached in userspace. Fast for large set of (large) files.
  *
  *
@@ -285,7 +285,7 @@ size_t ul_fileeq_set_size(struct ul_fileeq *eq, uint64_t filesiz,
 	eq->readsiz = readsiz;
 	eq->blocksmax = (filesiz + readsiz - 1) / readsiz;
 
-	DBG(EQ, ul_debugobj(eq, "set sizes: filesiz=%ju, maxblocks=%" PRIu64 ", readsiz=%zu",
+	DBG(EQ, ul_debugobj(eq, "set sizes: filesiz=%" PRIu64 ", maxblocks=%" PRIu64 ", readsiz=%zu",
 				eq->filesiz, eq->blocksmax, eq->readsiz));
 
 	reset_fileeq_bufs(eq);
@@ -367,8 +367,11 @@ static ssize_t read_block(struct ul_fileeq *eq, struct ul_fileeq_data *data,
 	off_t off = 0;
 	ssize_t rsz;
 
-	if (data->is_eof || n > eq->blocksmax)
+	if (data->is_eof)
 		return 0;
+
+	if (n >= eq->blocksmax)
+		return -EINVAL;
 
 	fd = get_fd(eq, data, &off);
 	if (fd < 0)
@@ -393,7 +396,7 @@ static ssize_t read_block(struct ul_fileeq *eq, struct ul_fileeq_data *data,
 		ul_fileeq_data_close_file(data);
 	}
 
-	DBG(DATA, ul_debugobj(data, "  read sz=%zu", rsz));
+	DBG(DATA, ul_debugobj(data, "  read sz=%zd", rsz));
 	return rsz;
 }
 
@@ -405,9 +408,6 @@ static ssize_t get_digest(struct ul_fileeq *eq, struct ul_fileeq_data *data,
 	ssize_t rsz;
 	size_t sz;
 	int fd;
-
-	if (n > eq->blocksmax)
-		return 0;
 
 	/* return already cached if available */
 	if (n < get_cached_nblocks(data)) {
@@ -421,6 +421,9 @@ static ssize_t get_digest(struct ul_fileeq *eq, struct ul_fileeq_data *data,
 		DBG(DATA, ul_debugobj(data, " file EOF"));
 		return 0;
 	}
+
+	if (n >= eq->blocksmax)
+		return -EINVAL;
 
 	/* read new block */
 	fd = get_fd(eq, data, &off);
@@ -438,17 +441,15 @@ static ssize_t get_digest(struct ul_fileeq *eq, struct ul_fileeq_data *data,
 			return -ENOMEM;
 	}
 
-	assert(n <= eq->blocksmax);
-
 	rsz = sendfile(eq->fd_cip, data->fd, NULL, eq->readsiz);
-	DBG(DATA, ul_debugobj(data, "  sent %zu [%zu wanted] to cipher", rsz, eq->readsiz));
+	DBG(DATA, ul_debugobj(data, "  sent %zd [%zu wanted] to cipher", rsz, eq->readsiz));
 
 	if (rsz < 0)
 		return rsz;
 
 	off += rsz;
 
-	/* get block digest (note 1st block is data->intro */
+	/* get block digest (note 1st block is data->intro) */
 	*block = data->blocks + (n * eq->method->digsiz);
 	rsz = read_all(eq->fd_cip, (char *) *block, sz);
 
@@ -458,7 +459,7 @@ static ssize_t get_digest(struct ul_fileeq *eq, struct ul_fileeq_data *data,
 		data->is_eof = 1;
 		ul_fileeq_data_close_file(data);
 	}
-	DBG(DATA, ul_debugobj(data, "  get %zuB digest", rsz));
+	DBG(DATA, ul_debugobj(data, "  get %zdB digest", rsz));
 	return rsz;
 }
 #endif
@@ -473,7 +474,7 @@ static ssize_t get_intro(struct ul_fileeq *eq, struct ul_fileeq_data *data,
 		if (fd < 0)
 			return -1;
 		rsz = read_all(fd, (char *) data->intro, sizeof(data->intro));
-		DBG(DATA, ul_debugobj(data, " read %zu bytes intro", sizeof(data->intro)));
+		DBG(DATA, ul_debugobj(data, " read %zd bytes [%zu wanted] intro", rsz, sizeof(data->intro)));
 		if (rsz < 0)
 			return -1;
 		data->nblocks = 1;
