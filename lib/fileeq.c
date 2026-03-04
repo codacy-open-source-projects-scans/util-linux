@@ -250,15 +250,22 @@ void ul_fileeq_data_set_file(struct ul_fileeq_data *data, const char *name)
 	data->name = name;
 }
 
-size_t ul_fileeq_set_size(struct ul_fileeq *eq, uint64_t filesiz,
-			 size_t readsiz, size_t memsiz)
+bool ul_fileeq_set_size(struct ul_fileeq *eq, int64_t st_size,
+			size_t readsiz, size_t memsiz)
 {
-	uint64_t nreads, maxdigs;
+	uint64_t filesiz, nreads, maxdigs;
 	size_t digsiz;
 
 	assert(eq);
+	assert(st_size >= 0);
+	assert(readsiz);
+
+	filesiz = (uint64_t) st_size;
 
 	eq->filesiz = filesiz;
+
+	if (filesiz != 0 && readsiz > filesiz)
+		readsiz = filesiz;
 
 	switch (eq->method->id) {
 	case UL_FILEEQ_MEMCMP:
@@ -275,22 +282,28 @@ size_t ul_fileeq_set_size(struct ul_fileeq *eq, uint64_t filesiz,
 		maxdigs = memsiz / digsiz;
 		if (maxdigs == 0)
 			maxdigs = 1;
+		else if (maxdigs > filesiz)
+			maxdigs = filesiz;
 		nreads = filesiz / readsiz;
 		/* enlarge readsize for large files */
-		if (nreads > maxdigs)
-			readsiz = (filesiz + maxdigs - 1) / maxdigs;
+		if (nreads > maxdigs) {
+			uint64_t ceiling = filesiz + maxdigs - 1;
+			if (ceiling / maxdigs > SIZE_MAX)
+				return false;
+			readsiz = ceiling / maxdigs;
+		}
 		break;
 	}
 
 	eq->readsiz = readsiz;
 	eq->blocksmax = (filesiz + readsiz - 1) / readsiz;
 
-	DBG(EQ, ul_debugobj(eq, "set sizes: filesiz=%" PRIu64 ", maxblocks=%" PRIu64 ", readsiz=%zu",
+	DBG(EQ, ul_debugobj(eq, "set sizes: filesiz=%" PRIu64 ", blocksmax=%" PRIu64 ", readsiz=%zu",
 				eq->filesiz, eq->blocksmax, eq->readsiz));
 
 	reset_fileeq_bufs(eq);
 
-	return eq->blocksmax;
+	return true;
 }
 
 static unsigned char *get_buffer(struct ul_fileeq *eq)
@@ -361,7 +374,7 @@ static void memcmp_reset(struct ul_fileeq *eq, struct ul_fileeq_data *data)
 }
 
 static ssize_t read_block(struct ul_fileeq *eq, struct ul_fileeq_data *data,
-				size_t n, unsigned char **block)
+				uint64_t n, unsigned char **block)
 {
 	int fd;
 	off_t off = 0;
@@ -402,7 +415,7 @@ static ssize_t read_block(struct ul_fileeq *eq, struct ul_fileeq_data *data,
 
 #ifdef USE_FILEEQ_CRYPTOAPI
 static ssize_t get_digest(struct ul_fileeq *eq, struct ul_fileeq_data *data,
-				size_t n, unsigned char **block)
+				uint64_t n, unsigned char **block)
 {
 	off_t off = 0;
 	ssize_t rsz;
@@ -486,7 +499,7 @@ static ssize_t get_intro(struct ul_fileeq *eq, struct ul_fileeq_data *data,
 }
 
 static ssize_t get_cmp_data(struct ul_fileeq *eq, struct ul_fileeq_data *data,
-				size_t blockno, unsigned char **block)
+				uint64_t blockno, unsigned char **block)
 {
 	if (blockno == 0)
 		return get_intro(eq, data, block);
@@ -512,7 +525,7 @@ int ul_fileeq(struct ul_fileeq *eq,
 	      struct ul_fileeq_data *a, struct ul_fileeq_data *b)
 {
 	int cmp;
-	size_t n = 0;
+	uint64_t n = 0;
 
 	DBG(EQ, ul_debugobj(eq, "--> compare %s %s", a->name, b->name));
 
@@ -525,7 +538,7 @@ int ul_fileeq(struct ul_fileeq *eq,
 		unsigned char *da, *db;
 		ssize_t ca, cb;
 
-		DBG(EQ, ul_debugobj(eq, "compare block #%zu", n));
+		DBG(EQ, ul_debugobj(eq, "compare block #%" PRIu64, n));
 
 		ca = get_cmp_data(eq, a, n, &da);
 		if (ca < 0)
@@ -539,7 +552,7 @@ int ul_fileeq(struct ul_fileeq *eq,
 
 		}
 		cmp = memcmp(da, db, ca);
-		DBG(EQ, ul_debugobj(eq, "#%zu=%s", n, cmp == 0 ? "match" : "not-match"));
+		DBG(EQ, ul_debugobj(eq, "#%" PRIu64 "=%s", n, cmp == 0 ? "match" : "not-match"));
 		n++;
 	} while (cmp == 0);
 
@@ -624,8 +637,9 @@ int main(int argc, char *argv[])
 	if (file_c)
 		ul_fileeq_data_set_file(&c, file_c);
 
-	/*                     filesiz,      readsiz,   memsiz */
-	ul_fileeq_set_size(&eq, st_a.st_size, 1024*1024, 4*1024);
+	/*                           st_size,      readsiz,   memsiz */
+	if (!ul_fileeq_set_size(&eq, st_a.st_size, 1024*1024, 4*1024))
+		err(EXIT_FAILURE, "failed to set sizes");
 
 	rc = ul_fileeq(&eq, &a, &b);
 

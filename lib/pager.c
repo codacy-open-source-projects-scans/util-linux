@@ -55,20 +55,10 @@ static inline void close_pair(int fd[2])
 
 static void pager_preexec(void)
 {
-	/*
-	 * Work around bug in "less" by not starting it until we
-	 * have real input
-	 */
-	fd_set in, ex;
-
-	FD_ZERO(&in);
-	FD_SET(STDIN_FILENO, &in);
-	ex = in;
-
-	select(STDIN_FILENO + 1, &in, NULL, &ex, NULL);
-
-	if (setenv("LESS", "FRSX", 0) != 0)
+	if (getenv("LESS") == NULL && setenv("LESS", "FRSX", 0) != 0)
 		warn(_("failed to set the %s environment variable"), "LESS");
+	if (getenv("LV") == NULL && setenv("LV", "-c", 0) != 0)
+		warn(_("failed to set the %s environment variable"), "LV");
 }
 
 static int start_command(struct child_process *cmd)
@@ -104,14 +94,14 @@ static int wait_for_pager(void)
 	pid_t waiting;
 	int status;
 
-	if (!pager_process.pid)
-		return 0;
-
 	do {
 		waiting = waitpid(pager_process.pid, &status, 0);
-		if (waiting == -1 && errno != EINTR)
-			ul_sig_err(EXIT_FAILURE, "waitpid failed");
-	} while (waiting == -1);
+	} while (waiting == -1 && errno == EINTR);
+
+	pager_process.pid = 0;
+
+	if (waiting == -1)
+		err(EXIT_FAILURE, "waitpid failed");
 
 	if (waiting == pager_process.pid && WIFEXITED(status))
 		return WEXITSTATUS(status);
@@ -131,13 +121,14 @@ static void catch_sigpipe(int signo)
 
 static void wait_for_pager_signal(int signo __attribute__ ((__unused__)))
 {
-	UL_PROTECT_ERRNO;
-
 	/* signal EOF to pager */
 	close(STDOUT_FILENO);
 	close(STDERR_FILENO);
 
-	wait_for_pager();
+	/* async-signal safe: wait for all children, including pager */
+	while (wait(NULL) != -1 || errno == EINTR)
+		;
+
 	_exit(EXIT_FAILURE);
 }
 
@@ -249,11 +240,14 @@ void pager_open(void)
 	pager_process.org_out = dup(STDOUT_FILENO);
 	pager_process.org_err = dup(STDERR_FILENO);
 
-	__setup_pager();
+	if (pager_process.org_out != -1 && pager_process.org_err != -1)
+		__setup_pager();
 
 	if (!pager_process.pid) {
-		close(pager_process.org_out);
-		close(pager_process.org_err);
+		if (pager_process.org_out != -1)
+			close(pager_process.org_out);
+		if (pager_process.org_err != -1)
+			close(pager_process.org_err);
 		memset(&pager_process, 0, sizeof(pager_process));
 	}
 }

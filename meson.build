@@ -13,7 +13,7 @@ pkgconfig = import('pkgconfig')
 # soname versions; This never change because we use symbol versioning. There is also
 # API version (LIB*_VERSION macros) and it follow package version.
 libblkid_version = '1.1.0'
-libblkid_date = '18-Mar-2025'
+libblkid_date = '26-Feb-2026'
 libuuid_version = '1.3.0'
 liblastlog2_version = '2.0.0'
 libmount_version = '1.1.0'
@@ -107,7 +107,7 @@ have_mountfd_api = cc.has_type('struct mount_attr', prefix : '#include <linux/mo
 conf.set('HAVE_STRUCT_MOUNT_ATTR', have_mountfd_api ? 1 : false)
 conf.set('HAVE_MOUNTFD_API', have_mountfd_api ? 1 : false)
 
-have_struct_statx = cc.has_type('struct statx', prefix : '#include <sys/stat.h>')
+have_struct_statx = cc.has_type('struct statx', args : '-D_GNU_SOURCE', prefix : '#include <sys/stat.h>')
 conf.set('HAVE_STRUCT_STATX', have_struct_statx ? 1 : false)
 have = cc.has_member('struct statx', 'stx_mnt_id',
                      prefix : '#include <linux/stat.h>')
