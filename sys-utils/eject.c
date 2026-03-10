@@ -671,13 +671,12 @@ static void umount_one(const struct eject_control *ctl, const char *name)
 		break;
 
 	default: /* parent */
-		wait(&status);
-		if (WIFEXITED(status) == 0)
+		if (wait(&status) == -1 || WIFEXITED(status) == 0)
 			errx(EXIT_FAILURE,
 			     _("unmount of `%s' did not exit normally"), name);
 
 		if (WEXITSTATUS(status) != 0)
-			errx(EXIT_FAILURE, _("unmount of `%s' failed\n"), name);
+			errx(EXIT_FAILURE, _("unmount of `%s' failed"), name);
 		break;
 	}
 }
@@ -863,14 +862,18 @@ int main(int argc, char **argv)
 		return EXIT_SUCCESS;
 	}
 
+	/* clear any inherited settings */
+	signal(SIGCHLD, SIG_DFL);
+
 	if (!ctl.device) {
 		ctl.device = mnt_resolve_path(EJECT_DEFAULT_DEVICE, NULL);
 		verbose(&ctl, _("using default device `%s'"), ctl.device);
 	} else {
 		char *p;
+		size_t len = strlen(ctl.device);
 
-		if (ctl.device[strlen(ctl.device) - 1] == '/')
-			ctl.device[strlen(ctl.device) - 1] = '\0';
+		if (len && ctl.device[len - 1] == '/')
+			ctl.device[len - 1] = '\0';
 
 		/* figure out full device or mount point name */
 		p = find_device(ctl.device);
