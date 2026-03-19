@@ -42,7 +42,7 @@ size_t mbs_nwidth(const char *buf, size_t bufsz)
 		last = p + (bufsz - 1);
 
 	while (p && *p && p <= last) {
-		if (iscntrl((unsigned char) *p)) {
+		if (*p == '\033') {
 			p++;
 
 			/* try detect "\e[x;ym" and skip on success */
@@ -53,6 +53,13 @@ size_t mbs_nwidth(const char *buf, size_t bufsz)
 				if (*e == 'm')
 					p = e + 1;
 			}
+			/* try detect SCS sequences "\e(X", "\e)X", "\e*X", "\e+X" and skip on success */
+			else if (p < last && (*p == '(' || *p == ')' || *p == '*' || *p == '+'))
+				p += 2;  /* skip the SCS sequence */
+			continue;
+		}
+		if (iscntrl((unsigned char) *p)) {
+			p++;
 			continue;
 		}
 #ifdef HAVE_WIDECHAR
