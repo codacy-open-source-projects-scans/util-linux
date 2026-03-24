@@ -350,7 +350,6 @@ else
   if get_option('nls').enabled()
     error('nls is not supported with meson before 0.59.0')
   endif
-  lib_intl = dependency('', required : false)
 endif
 
 lib_user = dependency(
@@ -2389,7 +2388,7 @@ exe3 = executable(
   build_by_default : opt)
 if opt and not is_disabler(exe)
   exes += [exe, exe2, exe3]
-  manadocs += fsck_minix_manadocs
+  manadocs += [mkfs_minix_manadocs, fsck_minix_manadocs]
   bashcompletions += ['mkfs.minix', 'fsck.minix']
 endif
 
@@ -2414,7 +2413,7 @@ exe2 = executable(
   build_by_default : opt)
 if opt and not is_disabler(exe)
   exes += [exe, exe2]
-  manadocs += fsck_cramfs_manadocs
+  manadocs += [mkfs_cramfs_manadocs, fsck_cramfs_manadocs]
   bashcompletions += ['mkfs.cramfs', 'fsck.cramfs']
 endif
 
@@ -3108,6 +3107,7 @@ exe = executable(
   build_by_default : opt)
 if opt and not is_disabler(exe)
   exes += exe
+  manadocs += copyfilerange_manadocs
   bashcompletions += ['copyfilerange']
 endif
 
