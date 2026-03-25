@@ -496,7 +496,7 @@ static void chown_tty(struct login_context *cxt)
 
 	grname = getlogindefs_str("TTYGROUP", TTYGRPNAME);
 	if (grname && *grname) {
-		struct group *gr = ul_getgrp_str(grname);
+		struct group *gr = ul_getgrp_str(grname, NULL);
 		if (gr)
 			gid = gr->gr_gid;
 	}
@@ -659,7 +659,7 @@ static void log_audit(struct login_context *cxt, int status)
 	if (audit_fd == -1)
 		return;
 	if (!pwd && cxt->username)
-		pwd = ul_getuserpw_str(cxt->username);
+		pwd = ul_getuserpw_str(cxt->username, NULL);
 
 	ignore_result( audit_log_acct_message(audit_fd,
 					      AUDIT_USER_LOGIN,
@@ -1145,16 +1145,20 @@ static void fork_session(struct login_context *cxt)
 	 */
 	child_pid = fork();
 	if (child_pid < 0) {
+		int rc;
+
 		warn(_("fork failed"));
 
+		rc = pam_close_session(cxt->pamh, 0);
 		pam_setcred(cxt->pamh, PAM_DELETE_CRED);
-		pam_end(cxt->pamh, pam_close_session(cxt->pamh, 0));
+		pam_end(cxt->pamh, rc);
 		sleepexit(EXIT_FAILURE);
 	}
 
 	if (child_pid) {
 		sigset_t oldset, ourset;
 		pid_t waiting;
+		int rc;
 
 		/*
 		 * parent - wait for child to finish, then clean up session
@@ -1203,8 +1207,9 @@ static void fork_session(struct login_context *cxt)
 
 		openlog("login", LOG_ODELAY, LOG_AUTHPRIV);
 
+		rc = pam_close_session(cxt->pamh, 0);
 		pam_setcred(cxt->pamh, PAM_DELETE_CRED);
-		pam_end(cxt->pamh, pam_close_session(cxt->pamh, 0));
+		pam_end(cxt->pamh, rc);
 		exit(EXIT_SUCCESS);
 	}
 

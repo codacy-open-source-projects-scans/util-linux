@@ -62,9 +62,6 @@ endif
 
 pc_version = '.'.join(pc_version)
 
-conf.set_quoted('LIBBLKID_VERSION', pc_version)
-conf.set_quoted('LIBBLKID_DATE', libblkid_date)
-
 conf.set('bindir', bindir)
 conf.set('sbindir', sbindir)
 conf.set('runstatedir', runstatedir)
@@ -99,6 +96,10 @@ summary('liblastlog2', build_liblastlog2 ? 'enabled' : 'disabled', section : 'co
 login_lastlogin = get_option('login-lastlogin')
 conf.set('USE_LOGIN_LASTLOG', login_lastlogin ? 1 : false)
 summary('login-lastlogin', login_lastlogin ? 'enabled' : 'disabled', section : 'components')
+
+login_stat_mail = get_option('login-stat-mail')
+conf.set('LOGIN_STAT_MAIL', login_stat_mail ? 1 : false)
+summary('login-stat-mail', login_stat_mail ? 'enabled' : 'disabled', section : 'components')
 
 have = cc.has_type('struct fanotify_event_info_header', prefix : '#include <linux/fanotify.h>')
 conf.set('HAVE_STRUCT_FANOTIFY_EVENT_INFO_HEADER', have ? 1 : false)
@@ -141,11 +142,9 @@ conf.set('USE_LIBMOUNT_MOUNTFD_SUPPORT', have_mountfd_api ? 1 : false)
 summary('libmount', build_libmount ? 'enabled' : 'disabled', section : 'components')
 
 build_libsmartcols = not get_option('build-libsmartcols').disabled()
-conf.set('HAVE_LIBSMARTCOLS', build_libsmartcols ? 1 : false)
 summary('libsmartcols', build_libsmartcols ? 'enabled' : 'disabled', section : 'components')
 
 build_libfdisk = not get_option('build-libfdisk').require(get_option('build-libblkid').allowed()).disabled()
-conf.set('HAVE_LIBFDISK', build_libfdisk ? 1 : false)
 summary('libfdisk', build_libfdisk ? 'enabled' : 'disabled', section : 'components')
 
 build_uuidd = not get_option('build-uuidd').disabled()
@@ -301,9 +300,8 @@ else
               'term.h']
 endif
 
-conf.set('HAVE_LIBNCURSESW', lib_ncursesw.found())
-conf.set('HAVE_LIBNCURSES', lib_ncurses.found())
-conf.set('HAVE_NCURSES', lib_ncursesw.found() or lib_ncurses.found())
+conf.set('HAVE_LIBNCURSESW', lib_ncursesw.found() ? 1 : false)
+conf.set('HAVE_LIBNCURSES', lib_ncurses.found() ? 1 : false)
 
 lib_slang = dependency(
   'slang',
@@ -314,7 +312,7 @@ if lib_slang.found()
               'slcurses.h',
               'slang/slcurses.h']
 endif
-conf.set('HAVE_SLANG', lib_slang.found())
+conf.set('HAVE_SLANG', lib_slang.found() ? 1 : false)
 
 foreach curses_libs : [lib_slang, lib_ncursesw, lib_ncurses]
   if curses_libs.found()
@@ -474,6 +472,11 @@ lib_selinux = dependency(
   version : '>= 2.5',
   required : get_option('selinux'))
 conf.set('HAVE_LIBSELINUX', lib_selinux.found() ? 1 : false)
+if lib_selinux.found()
+  have = cc.has_function('security_get_initial_context',
+                         dependencies : lib_selinux)
+  conf.set('HAVE_SECURITY_GET_INITIAL_CONTEXT', have ? 1 : false)
+endif
 
 lib_magic = dependency(
   'libmagic',
@@ -899,7 +902,7 @@ build_plymouth_support = (not build_plymouth_support.disabled() and
                           have_sock_cloexec and
                           have_sock_nonblock and
                           have_so_passcred)
-conf.set('ENABLE_PLYMOUTH_SUPPORT', build_plymouth_support ? 1 : false)
+conf.set('USE_PLYMOUTH_SUPPORT', build_plymouth_support ? 1 : false)
 summary('plymouth support',
         build_plymouth_support  ? 'enabled' : 'disabled',
         section : 'components')
@@ -907,6 +910,9 @@ summary('plymouth support',
 use_hwclock_cmos = host_machine.cpu_family() in ['x86', 'x86_64']
 message('Use CMOS clock: @0@'.format(use_hwclock_cmos))
 conf.set('USE_HWCLOCK_CMOS', use_hwclock_cmos ? 1 : false)
+
+use_hwclock_gplv3 = get_option('hwclock-gplv3')
+conf.set('USE_HWCLOCK_GPLv3_DATETIME', use_hwclock_gplv3 ? 1 : false)
 
 conf.set('HAVE_TLS', get_option('use-tls') ? 1 : false)
 conf.set('PG_BELL', get_option('pg-bell') ? 1 : false)
