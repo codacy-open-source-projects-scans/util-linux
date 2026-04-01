@@ -1184,6 +1184,7 @@ exe = executable(
   'newgrp',
   'login-utils/newgrp.c',
   include_directories : includes,
+  link_with : [lib_common],
   dependencies : [lib_crypt],
   install_dir : usrbin_exec_dir,
   install_mode : 'rwsr-xr-x',
@@ -3621,6 +3622,7 @@ exe = executable(
   'lib/pager.c',
   c_args : ['-DTEST_PROGRAM_PAGER'],
   include_directories : dir_include,
+  link_with : lib_common,
   build_by_default: program_tests)
 if not is_disabler(exe)
   exes += exe

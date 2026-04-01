@@ -39,12 +39,10 @@
 #define SCOLS_DEBUG_ALL		0xFFFF
 
 UL_DEBUG_DECLARE_MASK(libsmartcols);
-#define DBG(m, x)	__UL_DBG(libsmartcols, SCOLS_DEBUG_, m, x)
-#define ON_DBG(m, x)	__UL_DBG_CALL(libsmartcols, SCOLS_DEBUG_, m, x)
-#define DBG_FLUSH	__UL_DBG_FLUSH(libsmartcols, SCOLS_DEBUG_)
-
-#define UL_DEBUG_CURRENT_MASK	UL_DEBUG_MASK(libsmartcols)
-#include "debugobj.h"
+#define DBG(m, x)		__UL_DBG(libsmartcols, SCOLS_DEBUG_, m, x)
+#define DBG_OBJ(m, h, x)	__UL_DBG_OBJ(libsmartcols, SCOLS_DEBUG_, m, h, x)
+#define ON_DBG(m, x)		__UL_DBG_CALL(libsmartcols, SCOLS_DEBUG_, m, x)
+#define DBG_FLUSH		__UL_DBG_FLUSH(libsmartcols, SCOLS_DEBUG_)
 
 #define SCOLS_BUFPTR_TREEEND	0
 
@@ -288,7 +286,8 @@ struct libscols_table {
 			no_headings   ,	/* don't print header */
 			no_encode     ,	/* don't care about control and non-printable chars */
 			no_linesep    ,	/* don't print line separator */
-			no_wrap	      ;	/* never wrap lines */
+			no_wrap	      ,	/* never wrap lines */
+			is_calculated ;	/* column widths already calculated */
 };
 
 #define IS_ITER_FORWARD(_i)	((_i)->direction == SCOLS_ITER_FORWARD)

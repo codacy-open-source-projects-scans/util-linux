@@ -22,7 +22,7 @@ int scols_table_print_range(	struct libscols_table *tb,
 	if (scols_table_is_tree(tb))
 		return -EINVAL;
 
-	DBG(TAB, ul_debugobj(tb, "printing range from API"));
+	DBG_OBJ(TAB, tb, ul_debug("printing range from API"));
 
 	rc = __scols_initialize_printing(tb, &buf);
 	if (rc)
@@ -72,7 +72,7 @@ int scols_table_print_range_to_string(	struct libscols_table *tb,
 	if (!tb)
 		return -EINVAL;
 
-	DBG(TAB, ul_debugobj(tb, "printing range to string"));
+	DBG_OBJ(TAB, tb, ul_debug("printing range to string"));
 
 	/* create a stream for output */
 	stream = open_memstream(data, &sz);
@@ -98,6 +98,51 @@ int scols_table_print_range_to_string(
 }
 #endif
 
+/**
+ * scols_table_calculate:
+ * @tb: table
+ *
+ * Force column width calculation without printing. After this call,
+ * scols_column_get_width() returns valid column widths. This is useful
+ * when you need to know column widths before printing, for example to
+ * set up a pager with "less --header" to freeze the header row and
+ * first column.
+ *
+ * After this call, the table must not be modified (no new columns,
+ * no new data in existing columns, etc.) because the calculated state
+ * remains set until the table is printed.
+ *
+ * The calculation is valid only for the next scols_print_table() call
+ * (not scols_table_print_range()), and will be recalculated for every
+ * subsequent printing.
+ *
+ * Returns: 0, a negative value in case of an error.
+ *
+ * Since: 2.43
+ */
+int scols_table_calculate(struct libscols_table *tb)
+{
+	struct ul_buffer buf = UL_INIT_BUFFER;
+	int rc;
+
+	if (!tb)
+		return -EINVAL;
+	if (list_empty(&tb->tb_columns))
+		return -EINVAL;
+	if (list_empty(&tb->tb_lines))
+		return 0;
+
+	DBG_OBJ(TAB, tb, ul_debug("pre-calculate"));
+
+	rc = __scols_initialize_printing(tb, &buf);
+	__scols_cleanup_printing(tb, &buf);
+
+	if (rc == 0)
+		tb->is_calculated = 1;
+
+	return rc;
+}
+
 static int do_print_table(struct libscols_table *tb, int *is_empty)
 {
 	int rc = 0;
@@ -106,16 +151,16 @@ static int do_print_table(struct libscols_table *tb, int *is_empty)
 	if (!tb)
 		return -EINVAL;
 
-	DBG(TAB, ul_debugobj(tb, "printing"));
+	DBG_OBJ(TAB, tb, ul_debug("printing"));
 	if (is_empty)
 		*is_empty = 0;
 
 	if (list_empty(&tb->tb_columns)) {
-		DBG(TAB, ul_debugobj(tb, "error -- no columns"));
+		DBG_OBJ(TAB, tb, ul_debug("error -- no columns"));
 		return -EINVAL;
 	}
 	if (list_empty(&tb->tb_lines)) {
-		DBG(TAB, ul_debugobj(tb, "ignore -- no lines"));
+		DBG_OBJ(TAB, tb, ul_debug("ignore -- no lines"));
 		if (scols_table_is_json(tb)) {
 			ul_jsonwrt_init(&tb->json, tb->out, 0, tb->json_format);
 			if (tb->json_format != UL_JSON_LINE) {
@@ -161,6 +206,7 @@ static int do_print_table(struct libscols_table *tb, int *is_empty)
 	}
 done:
 	__scols_cleanup_printing(tb, &buf);
+	tb->is_calculated = 0;
 	return rc;
 }
 
@@ -201,7 +247,7 @@ int scols_print_table_to_string(struct libscols_table *tb, char **data)
 	if (!tb)
 		return -EINVAL;
 
-	DBG(TAB, ul_debugobj(tb, "printing to string"));
+	DBG_OBJ(TAB, tb, ul_debug("printing to string"));
 
 	/* create a stream for output */
 	stream = open_memstream(data, &sz);
