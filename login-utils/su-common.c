@@ -83,7 +83,6 @@ UL_DEBUG_DEFINE_MASKNAMES(su) = UL_DEBUG_EMPTY_MASKNAMES;
 #define SU_DEBUG_MISC		(1 << 6)
 #define SU_DEBUG_SIG		(1 << 7)
 #define SU_DEBUG_PTY		(1 << 8)
-#define SU_DEBUG_ALL		0xFFFF
 
 #define DBG(m, x)       __UL_DBG(su, SU_DEBUG_, m, x)
 #define ON_DBG(m, x)    __UL_DBG_CALL(su, SU_DEBUG_, m, x)
@@ -599,8 +598,6 @@ static void create_watching_parent(struct su_context *su)
 
 	/* In the parent watch the child.  */
 
-	/* su without pam support does not have a helper that keeps
-	   sitting on any directory so let's go to /.  */
 	if (chdir("/") != 0)
 		warn(_("cannot change directory to %s"), "/");
 #ifdef USE_PTY
@@ -771,7 +768,7 @@ static void init_groups(struct su_context *su, gid_t *groups, size_t ngroups)
 
 static void change_identity(const struct passwd *pw)
 {
-	DBG(MISC, ul_debug("changing identity [GID=%d, UID=%d]", pw->pw_gid, pw->pw_uid));
+	DBG(MISC, ul_debug("changing identity [GID=%u, UID=%u]", pw->pw_gid, pw->pw_uid));
 
 	if (setgid(pw->pw_gid))
 		err(EXIT_FAILURE, _("cannot set group id"));

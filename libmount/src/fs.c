@@ -1179,7 +1179,7 @@ const char *mnt_fs_get_vfs_options(struct libmnt_fs *fs)
  * mnt_fs_get_vfs_options_all:
  * @fs: fstab/mtab entry pointer
  *
- * Returns: pointer to newlly allocated string (can be freed by free(3)) or
+ * Returns: pointer to newly allocated string (can be freed by free(3)) or
  * NULL in case of error.  The string contains all (including defaults) mount
  * options.
  */
@@ -1973,7 +1973,7 @@ int mnt_fs_print_debug(struct libmnt_fs *fs, FILE *file)
 		fprintf(file, "uniq-parent: %" PRIu64 "\n", mnt_fs_get_parent_uniq_id(fs));
 
 	if (mnt_fs_get_devno(fs))
-		fprintf(file, "devno:  %d:%d\n", major(mnt_fs_get_devno(fs)),
+		fprintf(file, "devno:  %u:%u\n", major(mnt_fs_get_devno(fs)),
 						minor(mnt_fs_get_devno(fs)));
 	if (mnt_fs_get_tid(fs))
 		fprintf(file, "tid:    %d\n", mnt_fs_get_tid(fs));

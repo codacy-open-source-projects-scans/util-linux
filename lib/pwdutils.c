@@ -186,8 +186,10 @@ struct group *ul_getgrp_str(const char *str, gid_t *result)
                         *result = gr->gr_gid;
                 return gr;
         }
-        if (num > MAX_OF_UINT_TYPE(gid_t))
+        if (num > MAX_OF_UINT_TYPE(gid_t)) {
+                errno = ERANGE;
                 return NULL;
+        }
 
         if (result)
                 *result = (gid_t) num;
@@ -219,8 +221,10 @@ struct passwd *ul_getuserpw_str(const char *str, uid_t *result)
                         *result = pw->pw_uid;
                 return pw;
         }
-        if (num > MAX_OF_UINT_TYPE(uid_t))
+        if (num > MAX_OF_UINT_TYPE(uid_t)) {
+                errno = ERANGE;
                 return NULL;
+        }
 
         if (result)
                 *result = (uid_t) num;
@@ -243,7 +247,7 @@ int main(int argc, char *argv[])
 		err(EXIT_FAILURE, "failed to get %s pwd entry", argv[1]);
 
 	printf("Username: %s\n", pwd->pw_name);
-	printf("UID:      %d\n", pwd->pw_uid);
+	printf("UID:      %u\n", pwd->pw_uid);
 	printf("HOME:     %s\n", pwd->pw_dir);
 	printf("GECO:     %s\n", pwd->pw_gecos);
 

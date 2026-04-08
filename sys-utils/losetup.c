@@ -292,11 +292,11 @@ static int set_scols_data(struct loopdev_cxt *lc, struct libscols_line *ln)
 			break;
 		case COL_OFFSET:
 			if (loopcxt_get_offset(lc, &x) == 0)
-				xasprintf(&np, "%jd", x);
+				xasprintf(&np, "%"PRIu64, x);
 			break;
 		case COL_SIZELIMIT:
 			if (loopcxt_get_sizelimit(lc, &x) == 0)
-				xasprintf(&np, "%jd", x);
+				xasprintf(&np, "%"PRIu64, x);
 			break;
 		case COL_BACK_MAJMIN:
 		{
@@ -361,7 +361,7 @@ static int set_scols_data(struct loopdev_cxt *lc, struct libscols_line *ln)
 			break;
 		case COL_LOGSEC:
 			if (loopcxt_get_blocksize(lc, &x) == 0)
-				xasprintf(&np, "%jd", x);
+				xasprintf(&np, "%"PRIu64, x);
 			break;
 		case COL_REF:
 			np = loopcxt_get_refname(lc);
@@ -574,7 +574,7 @@ static int create_loop(struct loopdev_cxt *lc,
 	int hasdev = loopcxt_has_device(lc);
 	int rc = 0, ntries = 0;
 
-	/* losetup --find --noverlap file.img */
+	/* losetup --find --nooverlap file.img */
 	if (!hasdev && nooverlap) {
 		rc = loopcxt_find_overlap(lc, file, offset, sizelimit);
 		switch (rc) {
@@ -621,7 +621,7 @@ static int create_loop(struct loopdev_cxt *lc,
 	if (hasdev)
 		loopcxt_add_device(lc);
 
-	/* losetup --noverlap /dev/loopN file.img */
+	/* losetup --nooverlap /dev/loopN file.img */
 	if (hasdev && nooverlap) {
 		struct loopdev_cxt lc2;
 
