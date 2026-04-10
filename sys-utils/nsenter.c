@@ -29,6 +29,9 @@
 #ifdef HAVE_LINUX_NSFS_H
 # include <linux/nsfs.h>
 #endif
+#ifndef AT_HANDLE_FID
+# define AT_HANDLE_FID 0x200
+#endif
 #ifndef NS_GET_USERNS
 # define NS_GET_USERNS           _IO(0xb7, 0x1)
 #endif
@@ -579,7 +582,7 @@ static int parse_pid_str(char *pidstr, pid_t *ns_target_pid)
 	int pfd = -1;
 	uint64_t pidfd_ino = 0;
 
-	ul_parse_pid_str_or_err(pidstr, ns_target_pid, &pidfd_ino);
+	ul_parse_pid_str_or_err(pidstr, ns_target_pid, &pidfd_ino, 0);
 	if (pidfd_ino)
 		pfd = ul_get_valid_pidfd_or_err(*ns_target_pid, pidfd_ino);
 	return pfd;
