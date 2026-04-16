@@ -424,10 +424,10 @@ static void print_stats(void)
 	jlog(SUMMARY, printf("%-25s %s", _("Saved:"), ssz));
 	free(ssz);
 
-	jlog(SUMMARY, printf(_("%-25s %"PRId64".%06"PRId64" seconds"),
+	jlog(SUMMARY, printf(_("%-25s %jd.%06jd seconds"),
 				_("Duration:"),
-				(int64_t) delta.tv_sec,
-				(int64_t) delta.tv_usec));
+				(intmax_t) delta.tv_sec,
+				(intmax_t) delta.tv_usec));
 }
 
 /**
@@ -881,7 +881,7 @@ static int inserter(const char *fpath, const struct stat *sb,
 	}
 
 	jlog(VERBOSE2, printf(" %5zu: [%" PRIu64 "/%" PRIu64 "/%zu] %s",
-			stats.files, sb->st_dev, sb->st_ino,
+			stats.files, (uint64_t)sb->st_dev, sb->st_ino,
 			(size_t) sb->st_nlink, fpath));
 
 	if ((opts.max_size > 0) && ((uintmax_t) sb->st_size > opts.max_size)) {

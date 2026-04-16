@@ -951,9 +951,9 @@ static int valid_pmbr(struct fdisk_context *cxt)
 		uint64_t sz_lba = (uint64_t) le32_to_cpu(pmbr->partition_record[part].size_in_lba);
 		if (sz_lba != cxt->total_sectors - 1ULL && sz_lba != 0xFFFFFFFFULL) {
 
-			fdisk_warnx(cxt, _("GPT PMBR size mismatch (%"PRIu64" != %"PRIu64") "
+			fdisk_warnx(cxt, _("GPT PMBR size mismatch (%ju != %ju) "
 					   "will be corrected by write."),
-					sz_lba, cxt->total_sectors - (uint64_t) 1);
+					(uintmax_t) sz_lba, (uintmax_t) (cxt->total_sectors - (uint64_t) 1));
 
 			/* Note that gpt_write_pmbr() overwrites PMBR, but we want to keep it valid already
 			 * in memory too to disable warnings when valid_pmbr() called next time */
@@ -2334,7 +2334,7 @@ static int gpt_verify_disklabel(struct fdisk_context *cxt)
 			   P_("A total of %ju free sectors is available in %u segment.",
 			      "A total of %ju free sectors is available in %u segments "
 			      "(the largest is %s).", nsegments),
-			   free_sectors, nsegments, strsz ? : "0 B");
+			   (uintmax_t)free_sectors, nsegments, strsz ? : "0 B");
 		free(strsz);
 
 	} else
@@ -2510,7 +2510,7 @@ static int gpt_add_partition(
 
 			user_f = fdisk_ask_number_get_result(ask);
 			if (user_f != find_first_available(gpt, user_f)) {
-				fdisk_warnx(cxt, _("Sector %ju already used."), user_f);
+				fdisk_warnx(cxt, _("Sector %ju already used."), (uintmax_t)user_f);
 				continue;
 			}
 			break;
@@ -2592,14 +2592,14 @@ static int gpt_add_partition(
 	/* Be paranoid and check against on-disk setting rather than against libfdisk cxt */
 	if (user_l > le64_to_cpu(pheader->last_usable_lba)) {
 		fdisk_warnx(cxt, _("The last usable GPT sector is %ju, but %ju is requested."),
-				le64_to_cpu(pheader->last_usable_lba), user_l);
+				(uintmax_t)le64_to_cpu(pheader->last_usable_lba), (uintmax_t)user_l);
 		rc = -EINVAL;
 		goto done;
 	}
 
 	if (user_f < le64_to_cpu(pheader->first_usable_lba)) {
 		fdisk_warnx(cxt, _("The first usable GPT sector is %ju, but %ju is requested."),
-				le64_to_cpu(pheader->first_usable_lba), user_f);
+				(uintmax_t)le64_to_cpu(pheader->first_usable_lba), (uintmax_t)user_f);
 		rc = -EINVAL;
 		goto done;
 	}
@@ -2815,13 +2815,13 @@ static int gpt_check_table_overlap(struct fdisk_context *cxt,
 		if (!gpt_entry_is_used(e))
 		        continue;
 		if (gpt_partition_start(e) < first_usable) {
-			fdisk_warnx(cxt, _("Partition #%zu out of range (minimal start is %"PRIu64" sectors)"),
-		                    i + 1, first_usable);
+			fdisk_warnx(cxt, _("Partition #%zu out of range (minimal start is %ju sectors)"),
+		                    i + 1, (uintmax_t) first_usable);
 			rc = -EINVAL;
 		}
 		if (gpt_partition_end(e) > last_usable) {
-			fdisk_warnx(cxt, _("Partition #%zu out of range (maximal end is %"PRIu64" sectors)"),
-		                    i + 1, last_usable - (uint64_t) 1);
+			fdisk_warnx(cxt, _("Partition #%zu out of range (maximal end is %ju sectors)"),
+		                    i + 1, (uintmax_t) (last_usable - (uint64_t) 1));
 			rc = -EINVAL;
 		}
 	}
@@ -2921,8 +2921,8 @@ int fdisk_gpt_set_npartitions(struct fdisk_context *cxt, uint32_t nents)
 	/* update library info */
 	cxt->label->nparts_max = gpt_get_nentries(gpt);
 
-	fdisk_info(cxt, _("Partition table length changed from %"PRIu32" to %"PRIu32"."),
-			old_nents, nents);
+	fdisk_info(cxt, _("Partition table length changed from %ju to %ju."),
+			(uintmax_t) old_nents, (uintmax_t) nents);
 
 	fdisk_label_set_changed(cxt->label, 1);
 	return 0;
@@ -3031,8 +3031,8 @@ int fdisk_gpt_set_partition_attrs(
 		return -EINVAL;
 
 	gpt_get_entry(gpt, partnum)->attrs = cpu_to_le64(attrs);
-	fdisk_info(cxt, _("The attributes on partition %zu changed to 0x%016" PRIx64 "."),
-			partnum + 1, attrs);
+	fdisk_info(cxt, _("The attributes on partition %zu changed to 0x%016jx."),
+			partnum + 1, (uintmax_t) attrs);
 
 	gpt_recompute_crc(gpt->pheader, gpt->ents);
 	gpt_recompute_crc(gpt->bheader, gpt->ents);

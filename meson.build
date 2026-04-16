@@ -111,7 +111,7 @@ conf.set('HAVE_MOUNTFD_API', have_mountfd_api ? 1 : false)
 have_struct_statx = cc.has_type('struct statx', args : '-D_GNU_SOURCE', prefix : '#include <sys/stat.h>')
 conf.set('HAVE_STRUCT_STATX', have_struct_statx ? 1 : false)
 have = cc.has_member('struct statx', 'stx_mnt_id',
-                     prefix : '#include <linux/stat.h>')
+                     prefix : '#include <sys/stat.h>')
 conf.set('HAVE_STRUCT_STATX_STX_MNT_ID', have ? 1 : false)
 
 
@@ -320,6 +320,8 @@ foreach curses_libs : [lib_slang, lib_ncursesw, lib_ncurses]
     conf.set('HAVE_USE_DEFAULT_COLORS', have ? 1 : false)
     have = cc.has_function('resizeterm', dependencies : curses_libs)
     conf.set('HAVE_RESIZETERM', have ? 1 : false)
+    have = cc.has_function('vw_printw', dependencies : curses_libs)
+    conf.set('HAVE_VW_PRINTW', have ? 1 : false)
     break
   endif
 endforeach
@@ -3990,6 +3992,16 @@ exe = executable(
   include_directories : includes,
   build_by_default: program_tests)
 exes += exe
+
+exe = executable(
+  'test_scols_termreduce',
+  'tests/helpers/test_scols_termreduce.c',
+   include_directories : includes,
+   link_with : [lib_smartcols],
+   build_by_default: program_tests)
+if not is_disabler(exe)
+  exes += exe
+endif
 
 ############################################################
 

@@ -516,7 +516,7 @@ static int move_partition_data(struct sfdisk *sf, size_t partno, struct fdisk_pa
 		fprintf(f, "# Area size (sectors/bytes): %ju/%ju\n",
 			(uintmax_t)nsectors, (uintmax_t)nsectors * ss);
 				fprintf(f, "# Step size (sectors/bytes): %" PRIu64 "/%zu\n", step, step_bytes);
-		fprintf(f, "# Steps: %ju\n", ((uintmax_t) nsectors / step) + 1);
+		fprintf(f, "# Steps: %ju\n", (uintmax_t)((uintmax_t) nsectors / step) + 1);
 		fprintf(f, "#\n");
 		fprintf(f, "# <step>: <from> <to> (step offsets in bytes)\n");
 	}
@@ -593,12 +593,12 @@ static int move_partition_data(struct sfdisk *sf, size_t partno, struct fdisk_pa
 
 			if (bytes_per_sec)
 				fprintf(stdout, _("Moved %ju from %ju sectors (%.3f%%, %.1f MiB/s)."),
-					i + 1, nsectors,
+					(uintmax_t)i + 1, (uintmax_t)nsectors,
 					100.0 / ((double) nsectors/(i+1)),
 					(double) (bytes_per_sec / (1024 * 1024)));
 			else
 				fprintf(stdout, _("Moved %ju from %ju sectors (%.3f%%)."),
-					i + 1, nsectors,
+					(uintmax_t)i + 1, (uintmax_t)nsectors,
 					100.0 / ((double) nsectors/(i+1)));
 			fflush(stdout);
 			fputc('\r', stdout);
@@ -622,7 +622,7 @@ next:
 			i = nsectors;
 
 		fprintf(stdout, _("Moved %ju from %ju sectors (%.0f%%)."),
-				i, nsectors,
+				(uintmax_t)i, (uintmax_t)nsectors,
 				100.0 / ((double) nsectors/(i+1)));
 		fputc('\n', stdout);
 	}
@@ -1417,9 +1417,9 @@ static int command_discard_free(struct sfdisk *sf, int argc, char **argv)
 		range[0] = (uint64_t) fdisk_partition_get_start(pa);
 		range[1] = (uint64_t) fdisk_partition_get_size(pa);
 
-		fdisk_info(sf->cxt, _("Discarding region %"PRIu64
-					     "-%"PRIu64""),
-				range[0], range[0] + range[1] - 1);
+		fdisk_info(sf->cxt, _("Discarding region %ju-%ju"),
+				(uintmax_t) range[0],
+				(uintmax_t) (range[0] + range[1] - 1));
 
 		range[0] *= ss;
 		range[1] *= ss;

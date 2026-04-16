@@ -1223,6 +1223,10 @@ AS_IF([test "x$have_slang" = xyes || test "x$have_ncursesw" = xyes || test "x$ha
 		     AC_DEFINE(HAVE_RESIZETERM, 1,
 			       [Define if curses library has the resizeterm().])
 	])
+	AC_CHECK_LIB([$CURSES_LIB_NAME], vw_printw, [
+		     AC_DEFINE(HAVE_VW_PRINTW, 1,
+			       [Define if curses library has the vw_printw().])
+	])
 ])
 
 
@@ -2674,8 +2678,7 @@ AC_ARG_ENABLE([copyfilerange],
   AS_HELP_STRING([--disable-copyfilerange], [do not build copyfilerange]),
   [], [UL_DEFAULT_ENABLE([copyfilerange], [check])]
 )
-
-UL_BUILD_INIT([copyfilerange], [check])
+UL_BUILD_INIT([copyfilerange])
 UL_REQUIRES_LINUX([copyfilerange])
 UL_REQUIRES_SYSCALL_CHECK([copyfilerange], [UL_CHECK_SYSCALL([copy_file_range])], [copy_file_range])
 AM_CONDITIONAL([BUILD_COPYFILERANGE], [test "x$build_copyfilerange" = xyes])

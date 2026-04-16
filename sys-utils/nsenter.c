@@ -40,6 +40,10 @@
 # include <selinux/selinux.h>
 #endif
 
+#ifndef HAVE_ENVIRON_DECL
+extern char **environ;
+#endif
+
 #include "strutils.h"
 #include "nls.h"
 #include "c.h"
@@ -252,8 +256,8 @@ static void open_target_fd_by_nsid(int *fd, const char *idstr)
 
 	*fd = open_by_handle_at(nsfs_fd, fh, O_RDONLY);
 	if (*fd < 0)
-		err(EXIT_FAILURE, _("cannot open namespace of id %"PRIu64),
-		    ns_id);
+		err(EXIT_FAILURE, _("cannot open namespace of id %ju"),
+		    (uintmax_t) ns_id);
 }
 #endif /* USE_NAMESPACE_ID_SUPPORT */
 
@@ -916,7 +920,11 @@ int main(int argc, char *argv[])
 		ls = env_list_from_fd(env_fd);
 		if (!ls && errno)
 			err(EXIT_FAILURE, _("failed to get environment variables"));
+#ifdef HAVE_CLEARENV
 		clearenv();
+#else
+		environ = NULL;
+#endif
 		if (ls && env_list_setenv(ls, 0) < 0)
 			err(EXIT_FAILURE, _("failed to set environment variables"));
 		env_list_free(ls);
