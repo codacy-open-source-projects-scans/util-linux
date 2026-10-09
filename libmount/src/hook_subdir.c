@@ -225,7 +225,7 @@ static int do_mount_subdir(
 		 * The old mount(2) method does the same, but using BIND. */
 		int fd;
 
-		DBG(HOOK, ul_debug("opening subdir (ateched) '%s'", subdir));
+		DBG(HOOK, ul_debug("opening subdir (attached) '%s'", subdir));
 		fd = open_tree(api->fd_tree, subdir,
 					OPEN_TREE_CLOEXEC | OPEN_TREE_CLONE);
 		mnt_context_syscall_save_status(cxt, "open_tree", fd >= 0);
@@ -345,7 +345,13 @@ static int hook_mount_pre(
 	}
 #endif
 
-	/* create unhared temporary target */
+	if (mnt_context_target_fd_required(cxt)) {
+		DBG_OBJ(HOOK, hs, ul_debug(
+			"subdir mount refused for non-root user (kernel < 6.15)"));
+		return -ENOTSUP;
+	}
+
+	/* create unshared temporary target */
 	hsd->org_target = strdup(mnt_fs_get_target(cxt->fs));
 	if (!hsd->org_target)
 		rc = -ENOMEM;
@@ -389,6 +395,14 @@ static int is_subdir_required(struct libmnt_context *cxt, int *rc, char **subdir
 	if (!dir || !*dir) {
 		DBG(HOOK, ul_debug("failed to parse X-mount.subdir '%s'", dir));
 		*rc = -MNT_ERR_MOUNTOPT;
+		return 0;
+	}
+
+	/* use relative path; absolute would escape dirfd-based resolution */
+	while (*dir == '/')
+		dir++;
+	if (!*dir) {
+		DBG(HOOK, ul_debug("X-mount.subdir is root, ignoring"));
 		return 0;
 	}
 

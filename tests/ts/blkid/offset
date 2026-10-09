@@ -28,7 +28,7 @@ ts_skip_nonroot
 # set global variable TS_DEVICE
 ts_scsi_debug_init dev_size_mb=50 sector_size=512
 
-$TS_CMD_SFDISK ${TS_DEVICE} >> $TS_OUTPUT 2>> $TS_ERRLOG <<EOF
+$TS_CMD_SFDISK ${TS_DEVICE} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" <<EOF
 label: gpt
 label-id: b181c399-4711-4c52-8b65-9e764541218d
 
@@ -53,6 +53,6 @@ size=$(( $(cat /sys/block/${DEVNAME}/${DEVNAME}2/size) * 512))
 $TS_CMD_PARTX --delete ${TS_DEVICE} &> /dev/null
 
 $TS_CMD_BLKID --probe --output udev --offset=${offset} --size=${size} $TS_DEVICE \
-		>> $TS_OUTPUT 2>> $TS_ERRLOG
+		>> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 ts_finalize

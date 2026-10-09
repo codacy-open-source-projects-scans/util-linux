@@ -37,7 +37,7 @@ ts_init_socket_to_file $DEVLOG $SOCKIN
 SOCAT_PID="$!"
 
 function logger_fun {
-	$TS_HELPER_LOGGER -u $DEVLOG --stderr --no-act "$@" >> $TS_OUTPUT 2>> $TS_ERRLOG
+	$TS_HELPER_LOGGER -u $DEVLOG --stderr --no-act "$@" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 	echo "ret: $?" >> "$TS_ERRLOG"	# keep all in stderr
 }
 
@@ -78,7 +78,7 @@ ts_init_subtest "check_socket"
 sleep 1
 kill $SOCAT_PID
 wait $SOCAT_PID &>/dev/null
-cat "$SOCKIN" >> $TS_OUTPUT 2>> $TS_ERRLOG
+cat "$SOCKIN" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 rm -f "$DEVLOG" "$SOCKIN"
 ts_finalize_subtest
 

@@ -25,5 +25,5 @@ ts_check_test_command "$TS_HELPER_ISLOCAL"
 
 $TS_HELPER_ISLOCAL "$TS_SELF/islocal.data" root nobody "" youngman youngman2 \
     abcdefghx nobo long rot al malformed \
-    nonl znobody >> $TS_OUTPUT
+    nonl znobody >> "$TS_OUTPUT"
 ts_finalize

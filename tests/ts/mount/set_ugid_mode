@@ -22,10 +22,10 @@ do_one() {
 	expected="$1"; shift
 	what="$1"; shift
 	where="$1"; shift
-	$TS_CMD_MOUNT "$@" "$what" "$where" >> $TS_OUTPUT 2>> $TS_ERRLOG
+	$TS_CMD_MOUNT "$@" "$what" "$where" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 	actual=$(stat --format="%A %u %g" "$where")
-	[ "$actual" = "$expected" ] || echo "$*: $actual != $expected" >> $TS_ERRLOG
-	$TS_CMD_UMOUNT "$where" >> $TS_OUTPUT 2>> $TS_ERRLOG
+	[ "$actual" = "$expected" ] || echo "$*: $actual != $expected" >> "$TS_ERRLOG"
+	$TS_CMD_UMOUNT "$where" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 }
 
 ts_device_init

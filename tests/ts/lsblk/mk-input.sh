@@ -71,6 +71,34 @@ for x in ${DEVS}; do
 done
 
 #
+# multi-device filesystem sysfs
+#
+if [ -d /sys/fs/btrfs ]; then
+	for uuid_dir in /sys/fs/btrfs/*/; do
+		[ -d "$uuid_dir/devices" ] || continue
+		dst="${TS_DUMP}${uuid_dir}devices"
+		mkdir -p "$dst"
+		for dev in "$uuid_dir"devices/*; do
+			[ -e "$dev" ] || continue
+			cp --no-dereference "$dev" "$dst/" 2>/dev/null
+		done
+	done
+fi
+
+if [ -d /sys/fs/bcachefs ]; then
+	for uuid_dir in /sys/fs/bcachefs/*/; do
+		[ -d "$uuid_dir" ] || continue
+		for dev_dir in "$uuid_dir"dev-*/; do
+			[ -d "$dev_dir" ] || continue
+			dst="${TS_DUMP}${dev_dir}"
+			mkdir -p "$dst"
+			[ -L "${dev_dir}block" ] && \
+				cp --no-dereference "${dev_dir}block" "$dst/"
+		done
+	done
+fi
+
+#
 # udev a lsblk specific
 #
 mkdir -p $TS_DUMP/dev
@@ -114,6 +142,7 @@ mk_output rw RA,WSAME
 mk_output topo SIZE,ALIGNMENT,MIN-IO,OPT-IO,PHY-SEC,LOG-SEC,RQ-SIZE
 mk_output discard DISC-ALN,DISC-GRAN,DISC-MAX,DISC-ZERO
 mk_output zone ZONED
+mk_output mnt KNAME,FSTYPE,MOUNTPOINT,MOUNTPOINTS
 
 
 tar --xz -cvf ${TS_TARBALL} $TS_DUMP

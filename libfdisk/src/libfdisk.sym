@@ -332,3 +332,10 @@ FDISK_2_41 {
 FDISK_2_42 {
 	fdisk_is_collision_area;
 } FDISK_2_41;
+
+FDISK_2_43 {
+	fdisk_script_disable_devnames;
+	fdisk_script_has_devnames;
+	fdisk_get_recommended_labelname;
+	fdisk_set_vfs;
+} FDISK_2_42;

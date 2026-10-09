@@ -32,18 +32,17 @@
 #include <time.h>
 #include <utmpx.h>
 #include <signal.h>
-#include <err.h>
 #include <limits.h>
 #include <search.h>
 #include <lastlog.h>
 
 #include <libsmartcols.h>
 #ifdef HAVE_LIBSELINUX
-# include <selinux/selinux.h>
+# include "dl-selinux.h"
 #endif
 
 #ifdef HAVE_LIBSYSTEMD
-# include <systemd/sd-journal.h>
+# include "dl-systemd.h"
 #endif
 
 #ifdef HAVE_LIBLASTLOG2
@@ -571,7 +570,8 @@ static int get_lastlog2(struct lslogins_control *ctl, const char *user, void *ds
 			return -1;
 		}
 		if (res_tty) {
-			mem2strcpy(dst, res_tty, strlen(res_tty), strlen(res_tty) + 1);
+			mem2strcpy(dst, res_tty, strlen(res_tty),
+					sizeof_member(struct utmpx, ut_line) + 1);
 			free (res_tty);
 		}
 		break;
@@ -584,7 +584,8 @@ static int get_lastlog2(struct lslogins_control *ctl, const char *user, void *ds
 			return -1;
 		}
 		if (res_host) {
-			mem2strcpy(dst, res_host, strlen(res_host), strlen(res_host) + 1);
+			mem2strcpy(dst, res_host, strlen(res_host),
+					sizeof_member(struct utmpx, ut_host) + 1);
 			free(res_host);
 		}
 		break;
@@ -660,7 +661,7 @@ static int get_sgroups(gid_t **list, size_t *len, struct passwd *pwd)
 		++n;
 	}
 
-	if (*len)
+	if (n < *len)
 		(*list)[n] = (*list)[--(*len)];
 
 	return 0;
@@ -1020,7 +1021,7 @@ static struct lslogins_user *get_user_info(struct lslogins_control *ctl, const c
 			break;
 		case COL_SELINUX:
 #ifdef HAVE_LIBSELINUX
-			if (!ctl->selinux_enabled || getcon(&user->context) != 0)
+			if (!ctl->selinux_enabled || selinux_call(getcon)(&user->context) != 0)
 				user->context = NULL;
 #endif
 			break;
@@ -1383,7 +1384,7 @@ static char *get_journal_data(sd_journal *j, const char *name)
 	const char *data = NULL, *p;
 	size_t len = 0;
 
-	if (sd_journal_get_data(j, name, (const void **) &data, &len) < 0
+	if (systemd_call(sd_journal_get_data)(j, name, (const void **) &data, &len) < 0
 	    || !data || !len)
 		return NULL;
 
@@ -1401,24 +1402,27 @@ static void print_journal_tail(const char *journal_path, uid_t uid, size_t len, 
 	sd_journal *j;
 	char *match;
 
+	if (ul_dlopen_libsystemd() != 0)
+		return;
+
 	if (journal_path)
-		sd_journal_open_directory(&j, journal_path, 0);
+		systemd_call(sd_journal_open_directory)(&j, journal_path, 0);
 	else
-		sd_journal_open(&j, SD_JOURNAL_LOCAL_ONLY);
+		systemd_call(sd_journal_open)(&j, SD_JOURNAL_LOCAL_ONLY);
 
 	xasprintf(&match, "_UID=%u", uid);
 
-	sd_journal_add_match(j, match, 0);
-	sd_journal_seek_tail(j);
-	sd_journal_previous_skip(j, len);
+	systemd_call(sd_journal_add_match)(j, match, 0);
+	systemd_call(sd_journal_seek_tail)(j);
+	systemd_call(sd_journal_previous_skip)(j, len);
 
 	do {
 		char *id, *pid, *msg, *ts;
 		uint64_t x;
 		time_t t;
 
-		sd_journal_get_realtime_usec(j, &x);
-		t = x / 1000000;
+		systemd_call(sd_journal_get_realtime_usec)(j, &x);
+		t = x / USEC_PER_SEC;
 		ts = make_time(time_mode, t);
 
 		id = get_journal_data(j, "SYSLOG_IDENTIFIER");
@@ -1432,11 +1436,11 @@ static void print_journal_tail(const char *journal_path, uid_t uid, size_t len, 
 		free(id);
 		free(pid);
 		free(msg);
-	} while (sd_journal_next(j));
+	} while (systemd_call(sd_journal_next)(j));
 
 	free(match);
-	sd_journal_flush_matches(j);
-	sd_journal_close(j);
+	systemd_call(sd_journal_flush_matches)(j);
+	systemd_call(sd_journal_close)(j);
 }
 #endif
 
@@ -1510,7 +1514,8 @@ static void free_user(void *f)
 	free(u->shell);
 	free(u->pwd_status);
 #ifdef HAVE_LIBSELINUX
-	freecon(u->context);
+	if (u->context)
+		selinux_call(freecon)(u->context);
 #endif
 	free(u);
 }
@@ -1801,6 +1806,13 @@ int main(int argc, char *argv[])
 		case 'V':
 		{
 			static const char *const features[] = {
+#ifdef HAVE_LIBSELINUX
+# ifdef USE_DLOPEN_SELINUX
+				"selinux(dlopen)",
+# else
+				"selinux",
+# endif
+#endif
 #ifdef HAVE_LIBLASTLOG2
 				"lastlog2",
 #endif
@@ -1811,7 +1823,10 @@ int main(int argc, char *argv[])
 		case 'Z':
 		{
 #ifdef HAVE_LIBSELINUX
-			int sl = is_selinux_enabled();
+			int sl = 0;
+
+			if (ul_dlopen_libselinux() == 0)
+				sl = selinux_call(is_selinux_enabled)();
 			if (sl < 0)
 				warn(_("failed to request selinux state"));
 			else

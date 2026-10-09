@@ -89,7 +89,7 @@
 #include "widechar.h"
 #include "closestream.h"
 #include "env.h"
-#include "shells.h"
+#include "default_shell.h"
 
 #ifdef TEST_PROGRAM
 # define NON_INTERACTIVE_MORE 1
@@ -462,7 +462,7 @@ static void checkf(struct more_control *ctl, char *fs)
 	ctl->file_size = 0;
 	fflush(NULL);
 
-	ctl->current_file = fopen(fs, "r");
+	ctl->current_file = fopen(fs, "r" UL_CLOEXECSTR);
 	if (ctl->current_file == NULL) {
 		if (ctl->clear_line_ends)
 			putp(ctl->erase_line);
@@ -551,6 +551,8 @@ static int get_line(struct more_control *ctl, int *length)
 				break;
 
 			case (size_t)-1:	/* Invalid as a multibyte character. */
+				if (p >= &ctl->line_buf[ctl->line_sz - 1])
+					break;
 				*p++ = mbc[0];
 				state = state_bak;
 				column++;
@@ -2144,12 +2146,6 @@ int main(int argc, char **argv)
 	if (getenv("MORESECURE") || getenv("PAGERSECURE"))
 		ctl.is_secure = 1;
 
-	if ((s = getenv("MORE_SHELL_LINES")) && isdigit_string(s)) {
-		uint16_t x = 0;
-		if (ul_strtou16(s, (uint16_t *) &x, 10) == 0)
-			ctl.lines_per_screen = x;
-	}
-
 	if ((s = getenv("MORE")) != NULL)
 		env_argscan(&ctl, s);
 
@@ -2186,6 +2182,15 @@ int main(int argc, char **argv)
 	}
 	if (ctl.lines_per_screen == 0)
 		ctl.lines_per_screen = ctl.lines_per_page - 1;
+
+	if ((s = getenv("MORE_SHELL_LINES")) && isdigit_string(s)) {
+		uint16_t x = 0;
+		if (ul_strtou16(s, (uint16_t *) &x, 10) == 0
+		    && x > 0
+		    && x < (uint16_t) ctl.lines_per_screen)
+			ctl.lines_per_screen -= x;
+	}
+
 	left = ctl.lines_per_screen;
 	if (ctl.num_files > 1)
 		ctl.print_banner = 1;

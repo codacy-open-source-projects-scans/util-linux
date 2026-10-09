@@ -21,6 +21,12 @@ dist_noinst_HEADERS += \
 	include/crc64.h \
 	include/c_strtod.h \
 	include/debug.h \
+	include/default_shell.h \
+	include/dl-cryptsetup.h \
+	include/dl-econf.h \
+	include/dl-selinux.h \
+	include/dl-systemd.h \
+	include/dl-utils.h \
 	include/encode.h \
 	include/env.h \
 	include/exec_shell.h \
@@ -60,6 +66,7 @@ dist_noinst_HEADERS += \
 	include/plymouth-ctrl.h \
 	include/procfs.h \
 	include/pt-bsd.h \
+	include/pt-dasd.h \
 	include/pt-mbr.h \
 	include/pt-mbr-partnames.h \
 	include/pt-gpt-partnames.h \
@@ -82,6 +89,7 @@ dist_noinst_HEADERS += \
 	include/timer.h \
 	include/timeutils.h \
 	include/ttyutils.h \
+	include/vfs.h \
 	include/widechar.h \
 	include/xalloc.h \
 	include/xxhash.h \

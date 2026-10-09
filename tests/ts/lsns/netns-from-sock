@@ -75,7 +75,7 @@ RC=
 
     wait "${MKFDS_PID}"
     RC=$?
-} > $TS_OUTPUT 2>&1
+} > "$TS_OUTPUT" 2>&1
 if [[ "$RC" == "$EPERM" ]]; then
     ts_skip "unshare(2) is not permitted on this platform"
 fi

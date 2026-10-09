@@ -33,13 +33,13 @@ bingofile="$TS_OUTDIR/${TS_TESTNAME}-bingo"
 count=1000
 for i in `seq 1 $count`; do
 	$TS_CMD_SCRIPT -q -c "printf 'Bingo\n'" $bingofile
-done | grep -c Bingo >> $TS_OUTPUT
+done | grep -c Bingo >> "$TS_OUTPUT"
 
-seen=$(<$TS_OUTPUT)
+seen=$(<"$TS_OUTPUT")
 if [ "$seen" = "$count" ]; then
-	echo "all bingos seen" > $TS_OUTPUT
+	echo "all bingos seen" > "$TS_OUTPUT"
 else
-	echo "only $seen of $count bingos seen" > $TS_OUTPUT
+	echo "only $seen of $count bingos seen" > "$TS_OUTPUT"
 fi
 
 rm -f $bingofile

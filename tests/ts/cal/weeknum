@@ -30,7 +30,7 @@ USETERM=$( ts_has_option "useterm" "$*" )
 [ "$USETERM" == "yes" ] && TS_VERBOSE="yes"
 
 function call_cal {
-	local testname=$(echo "$2" | sed 's/-//g')
+	local testname="${2//-/}"
 
 	ts_init_subtest "$testname"
 	ts_log "$1"
@@ -39,19 +39,23 @@ function call_cal {
 		if [ "$USETERM" == "yes" ]; then
 			$TS_CMD_CAL "$@" 1 $x
 		fi
-		$TS_CMD_CAL "$@" 1 $x >> $TS_OUTPUT
+		$TS_CMD_CAL "$@" 1 $x >> "$TS_OUTPUT"
 	done
 	ts_finalize_subtest
 }
 
 call_cal "Gregorian - Monday-based week with week numbers" -ymw
 call_cal "Gregorian - Sunday-based week with week numbers" -ysw
+call_cal "Gregorian - Saturday-based week with week numbers" -ytw
 call_cal "Julian - Monday-based week with week numbers" -ymjw
 call_cal "Julian - Sunday-based week with week numbers" -ysjw
+call_cal "Julian - Saturday-based week with week numbers" -ytjw
 call_cal "Gregorian - Monday-based week with week number" -3mw
 call_cal "Gregorian - Sunday-based week with week numbers - 3 month" -3sw
+call_cal "Gregorian - Saturday-based week with week numbers - 3 month" -3tw
 call_cal "Julian - Monday-based week with week numbers - 3 month" -3mjw
 call_cal "Julian - Sunday-based week with week numbers - 3 month" -3sjw
+call_cal "Julian - Saturday-based week with week numbers - 3 month" -3tjw
 
 ts_finalize
 

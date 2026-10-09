@@ -51,7 +51,7 @@ SKIP_REASON=
     fi
     exec {BASH[1]}>&-
     wait ${BASH_PID}
-}  > $TS_OUTPUT 2>&1
+}  > "$TS_OUTPUT" 2>&1
 
 if [[ -n "$SKIP_REASON" ]]; then
     ts_skip "$SKIP_REASON"

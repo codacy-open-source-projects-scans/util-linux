@@ -50,7 +50,7 @@ ts_cd "$TS_OUTDIR"
     fi
     # Closing the connection to the coproc makes the cat process exit.
     exec {FLOCK[1]}>&-
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 wait "${FLOCK_PID}"
 
 ts_finalize

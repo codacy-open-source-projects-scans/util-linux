@@ -24,13 +24,13 @@ export TZ="GMT"
 export DMESG_TEST_BOOTIME="1234567890.123456"
 
 for I in {-1..12}; do
-        echo "Display facility list: $I" >> $TS_OUTPUT
-	$TS_HELPER_DMESG --kmsg-file $TS_SELF/cid-kmsg-input --facility $I --decode >> $TS_OUTPUT 2>/dev/null
+        echo "Display facility list: $I" >> "$TS_OUTPUT"
+	$TS_HELPER_DMESG --kmsg-file "$TS_SELF"/cid-kmsg-input --facility "$I" --decode >> "$TS_OUTPUT" 2>/dev/null
 done
 
 # dmesg kmsg output can have varying number of caller_id padding spaces
 # normalize caller_id padding by removing leading spaces
-sed -i 's/\[ *T/\[T/g' $TS_OUTPUT
-sed -i 's/\[ *C/\[C/g' $TS_OUTPUT
+sed -i 's/\[ *T/\[T/g' "$TS_OUTPUT"
+sed -i 's/\[ *C/\[C/g' "$TS_OUTPUT"
 
 ts_finalize

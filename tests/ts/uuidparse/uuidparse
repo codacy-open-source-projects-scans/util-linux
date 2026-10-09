@@ -61,7 +61,7 @@ f81d4fae-7dec-11d0-a765-00a0c91e6bf6
 01234567-89ab-1def-8000-123456789abc
 5c146b14-3c52-8afd-938a-375d0df1fbf6
 
-invalid-input' | $TS_CMD_UUIDPARSE >> $TS_OUTPUT 2>> $TS_ERRLOG
-echo "return value: $?" >> $TS_OUTPUT
+invalid-input' | $TS_CMD_UUIDPARSE >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+echo "return value: $?" >> "$TS_OUTPUT"
 
 ts_finalize

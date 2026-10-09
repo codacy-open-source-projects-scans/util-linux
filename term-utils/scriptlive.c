@@ -38,7 +38,7 @@
 #include "pty-session.h"
 #include "script-playutils.h"
 #include "monotonic.h"
-#include "shells.h"
+#include "default_shell.h"
 
 
 #define SCRIPT_MIN_DELAY 0.0001		/* from original scriptreplay.pl */
@@ -305,6 +305,8 @@ main(int argc, char *argv[])
 		err(EXIT_FAILURE, _("failed to create pseudo-terminal"));
 	if (ul_pty_signals_setup(ss.pty))
 		err(EXIT_FAILURE, _("failed to initialize signals handler"));
+	if (ul_pty_terminal_setup(ss.pty))
+		err(EXIT_FAILURE, _("failed to setup terminal"));
 
 	fflush(stdout);			/* ??? */
 

@@ -49,13 +49,17 @@
 
 #ifndef HAVE_CACHESTAT
 
-#ifndef SYS_cachestat
-#if defined (__alpha__)
-#define SYS_cachestat 561
-#else
-#define SYS_cachestat 451
-#endif
-#endif
+# ifdef HAVE_SYS_SYSCALL_H
+#  include <sys/syscall.h>
+# endif
+
+# ifndef SYS_cachestat
+#  if defined (__alpha__)
+#   define SYS_cachestat 561
+#  else
+#   define SYS_cachestat 451
+#  endif
+# endif
 
 struct cachestat_range {
 	uint64_t off;
@@ -77,7 +81,8 @@ static inline int cachestat(unsigned int fd,
 	return syscall(SYS_cachestat, fd, cstat_range, cstat, flags);
 }
 
-#endif // HAVE_CACHESTAT
+# define HAVE_CACHESTAT 1
+#endif /* !HAVE_CACHESTAT */
 
 struct colinfo {
 	const char * const name;
@@ -137,7 +142,7 @@ struct fincore_control {
 
 struct fincore_state {
 	const char * name;
-	long long unsigned int file_size;
+	uint64_t file_size;
 
 	struct cachestat cstat;
 	struct {

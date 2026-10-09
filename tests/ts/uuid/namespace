@@ -22,7 +22,7 @@ ts_init "$*"
 
 ts_check_test_command "$TS_HELPER_UUID_NAMESPACE"
 
-$TS_HELPER_UUID_NAMESPACE > $TS_OUTPUT
+$TS_HELPER_UUID_NAMESPACE > "$TS_OUTPUT"
 
 ts_finalize
 

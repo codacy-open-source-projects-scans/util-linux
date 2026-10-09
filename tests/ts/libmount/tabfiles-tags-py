@@ -42,13 +42,13 @@ echo "LABEL=$LABEL /mnt/mountpoint auto defaults" > $FSTAB
 ts_udevadm_settle "$DEVICE" "LABEL" "UUID"
 
 ts_init_subtest "fstab-label2uuid"
-$PYTHON $TESTPROG --find-forward $FSTAB source "UUID=$UUID" &> $TS_OUTPUT
-sed -i -e 's/fs: 0x.*/fs:/g' $TS_OUTPUT
+$PYTHON $TESTPROG --find-forward $FSTAB source "UUID=$UUID" &> "$TS_OUTPUT"
+sed -i -e 's/fs: 0x.*/fs:/g' "$TS_OUTPUT"
 ts_finalize_subtest
 
 ts_init_subtest "fstab-label2dev"
-$PYTHON $TESTPROG --find-forward $FSTAB source $TS_DEVICE &> $TS_OUTPUT
-sed -i -e 's/fs: 0x.*/fs:/g' $TS_OUTPUT
+$PYTHON $TESTPROG --find-forward $FSTAB source $TS_DEVICE &> "$TS_OUTPUT"
+sed -i -e 's/fs: 0x.*/fs:/g' "$TS_OUTPUT"
 ts_finalize_subtest
 
 #
@@ -58,21 +58,21 @@ echo "UUID=$UUID  /mnt/mountpoint2 auto defaults" >> $FSTAB
 
 ts_init_subtest "fstab-uuid"
 # has to return /mnt/mountpoint2
-$PYTHON $TESTPROG --find-forward $FSTAB source "UUID=$UUID" &> $TS_OUTPUT
-sed -i -e 's/fs: 0x.*/fs:/g' $TS_OUTPUT
+$PYTHON $TESTPROG --find-forward $FSTAB source "UUID=$UUID" &> "$TS_OUTPUT"
+sed -i -e 's/fs: 0x.*/fs:/g' "$TS_OUTPUT"
 ts_finalize_subtest
 
 ts_init_subtest "fstab-label"
 # has to return /mnt/mountpoint
-$PYTHON $TESTPROG --find-forward $FSTAB source "LABEL=$LABEL" &> $TS_OUTPUT
-sed -i -e 's/fs: 0x.*/fs:/g' $TS_OUTPUT
+$PYTHON $TESTPROG --find-forward $FSTAB source "LABEL=$LABEL" &> "$TS_OUTPUT"
+sed -i -e 's/fs: 0x.*/fs:/g' "$TS_OUTPUT"
 ts_finalize_subtest
 
 
 ts_init_subtest "fstab-dev2label"
 # has to return /mnt/mountpoint
-$PYTHON $TESTPROG --find-forward $FSTAB source $TS_DEVICE &> $TS_OUTPUT
-sed -i -e 's/fs: 0x.*/fs:/g' $TS_OUTPUT
+$PYTHON $TESTPROG --find-forward $FSTAB source $TS_DEVICE &> "$TS_OUTPUT"
+sed -i -e 's/fs: 0x.*/fs:/g' "$TS_OUTPUT"
 ts_finalize_subtest
 
 #
@@ -82,9 +82,9 @@ echo "$TS_DEVICE  /mnt/mountpoint3 auto defaults" >> $FSTAB
 
 ts_init_subtest "fstab-dev"
 # has to return /mnt/mountpoint3
-$PYTHON $TESTPROG --find-forward $FSTAB source $TS_DEVICE &> $TS_OUTPUT
-sed -i -e 's/fs: 0x.*/fs:/g' $TS_OUTPUT
-sed -i -e 's/source: .*//g' $TS_OUTPUT		# devname is generated, remove it
+$PYTHON $TESTPROG --find-forward $FSTAB source $TS_DEVICE &> "$TS_OUTPUT"
+sed -i -e 's/fs: 0x.*/fs:/g' "$TS_OUTPUT"
+sed -i -e 's/source: .*//g' "$TS_OUTPUT"		# devname is generated, remove it
 ts_finalize_subtest
 
 ts_finalize

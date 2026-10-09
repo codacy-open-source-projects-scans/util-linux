@@ -53,7 +53,7 @@ ${TS_CMD_LSFD} -n --summary=only \
 		 --counter=GROUP:'(NAME == "/etc/group")' \
 		 --counter=PASSWD:'(NAME == "/etc/passwd")' \
 		 --counter=PROC:'(ASSOC == "exe")' \
-		 > $TS_OUTPUT 2>&1
+		 > "$TS_OUTPUT" 2>&1
 
 for PID in ${PIDS}; do
     kill -CONT "${PID}"

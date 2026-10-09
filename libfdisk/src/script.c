@@ -67,7 +67,8 @@ struct fdisk_script {
 	unsigned long		sector_size;		/* as defined by script */
 
 	unsigned int		json : 1,		/* JSON output */
-				force_label : 1;	/* label: <name> specified */
+				force_label : 1,	/* label: <name> specified */
+				no_device_names  : 1;	/* 1=suppress device name, 0=display device name (default)  */
 };
 
 static void fdisk_script_free_header(struct fdisk_scriptheader *fi)
@@ -80,6 +81,44 @@ static void fdisk_script_free_header(struct fdisk_scriptheader *fi)
 	free(fi->data);
 	list_del(&fi->headers);
 	free(fi);
+}
+
+/**
+ * fdisk_script_disable_devnames:
+ * @dp: script instance
+ * @disable: 1 to suppress device names, 0 to show them (default)
+ *
+ * After setting this flag, the script output will use partition numbers
+ * instead of device names (e.g., "1 : ..." rather than "/dev/sda1 : ...").
+ * This does not affect the "device" header.
+ *
+ * Returns: 0 on success, negative number in case of error.
+ *
+ * Since: 2.43
+ */
+int fdisk_script_disable_devnames(struct fdisk_script *dp, int disable)
+{
+	if (!dp)
+		return -EINVAL;
+
+	dp->no_device_names = disable ? 1 : 0;
+	return 0;
+}
+
+/**
+ * fdisk_script_has_devnames:
+ * @dp: script instance
+ *
+ * Returns: 1 if device names are shown, 0 if suppressed, negative number in case of error.
+ *
+ * Since: 2.43
+ */
+int fdisk_script_has_devnames(struct fdisk_script *dp)
+{
+	if (!dp)
+		return -EINVAL;
+
+	return dp->no_device_names ? 0 : 1;
 }
 
 /**
@@ -128,7 +167,7 @@ struct fdisk_script *fdisk_new_script_from_file(struct fdisk_context *cxt,
 	assert(filename);
 
 	DBG(SCRIPT, ul_debug("opening %s", filename));
-	f = fopen(filename, "r");
+	f = fopen(filename, "r" UL_CLOEXECSTR);
 	if (!f)
 		return NULL;
 
@@ -590,7 +629,7 @@ static int write_file_json(struct fdisk_script *dp, FILE *f)
 		else
 			ul_jsonwrt_value_s(&json, name, fi->data);
 
-		if (strcmp(name, "device") == 0)
+		if (fdisk_script_has_devnames(dp) && strcmp(name, "device") == 0)
 			devname = fi->data;
 	}
 
@@ -611,6 +650,9 @@ static int write_file_json(struct fdisk_script *dp, FILE *f)
 		ul_jsonwrt_object_open(&json, NULL);
 		if (devname)
 			p = fdisk_partname(devname, pa->partno + 1);
+		else if (asprintf(&p, "%zu", pa->partno + 1) < 0)
+			return -ENOMEM;
+
 		if (p) {
 			DBG_OBJ(SCRIPT, dp, ul_debug("write %s entry", p));
 			ul_jsonwrt_value_s(&json, "node", p);
@@ -675,7 +717,7 @@ static int write_file_sfdisk(struct fdisk_script *dp, FILE *f)
 	list_for_each(h, &dp->headers) {
 		struct fdisk_scriptheader *fi = list_entry(h, struct fdisk_scriptheader, headers);
 		fprintf(f, "%s: %s\n", fi->name, fi->data);
-		if (strcmp(fi->name, "device") == 0)
+		if (fdisk_script_has_devnames(dp) && strcmp(fi->name, "device") == 0)
 			devname = fi->data;
 	}
 
@@ -695,6 +737,9 @@ static int write_file_sfdisk(struct fdisk_script *dp, FILE *f)
 
 		if (devname)
 			p = fdisk_partname(devname, pa->partno + 1);
+		else if (asprintf(&p, "%zu", pa->partno + 1) < 0)
+			return -ENOMEM;
+
 		if (p) {
 			DBG_OBJ(SCRIPT, dp, ul_debug("write %s entry", p));
 			fprintf(f, "%s : ", p);
@@ -1667,9 +1712,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 	fd = mkstemp_cloexec(name);
 	if (fd < 0)
 		err(EXIT_FAILURE, "mkstemp() failed");
-	if (write_all(fd, data, size) != 0)
+	if (ul_write_all(fd, data, size) != 0)
 		err(EXIT_FAILURE, "write() failed");
-	f = fopen(name, "r");
+	f = fopen(name, "r" UL_CLOEXECSTR);
 	if (!f)
 		err(EXIT_FAILURE, "cannot open %s", name);
 
@@ -1725,7 +1770,7 @@ static int test_read(struct fdisk_test *ts __attribute__((unused)),
 	struct fdisk_context *cxt;
 	FILE *f;
 
-	if (!(f = fopen(filename, "r")))
+	if (!(f = fopen(filename, "r" UL_CLOEXECSTR)))
 		err(EXIT_FAILURE, "%s: cannot open", filename);
 
 	cxt = fdisk_new_context();

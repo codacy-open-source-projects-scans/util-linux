@@ -25,7 +25,7 @@ ts_check_test_command "$TS_CMD_SETARCH"
 
 ts_cd "$TS_OUTDIR"
 
-LC_ALL=C "$TS_CMD_SETARCH" --pid=$$ 2 2> $TS_ERRLOG > $TS_OUTPUT
-echo "exit status: $?" >> $TS_OUTPUT
+LC_ALL=C "$TS_CMD_SETARCH" --pid=$$ 2 2> "$TS_ERRLOG" > "$TS_OUTPUT"
+echo "exit status: $?" >> "$TS_OUTPUT"
 
 ts_finalize

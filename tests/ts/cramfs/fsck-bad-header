@@ -52,7 +52,7 @@ function fsck_loop_sizes()
 		cp -a "$IMAGE_FILE" "$IMAGE_FILE.tmp"
 		num2binary "$size" $endian |
 			dd of="$IMAGE_FILE.tmp" bs=1 seek="$seek" count=4 conv=notrunc &> /dev/null
-		$TS_CMD_FSCKCRAMFS "$IMAGE_FILE.tmp" >> $TS_OUTPUT 2>> $TS_ERRLOG
+		$TS_CMD_FSCKCRAMFS "$IMAGE_FILE.tmp" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 		ts_log "ret: $?
 "
 	done

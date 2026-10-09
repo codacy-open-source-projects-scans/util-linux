@@ -19,13 +19,13 @@ TESTPROG="$TS_HELPER_PYLIBMOUNT_UPDATE"
 #
 # fstab - replace
 #
-export LIBMOUNT_FSTAB=$TS_OUTPUT.fstab
+export LIBMOUNT_FSTAB="$TS_OUTPUT".fstab
 rm -f $LIBMOUNT_FSTAB
 cp "$TS_SELF/files/fstab.comment" $LIBMOUNT_FSTAB
 
 ts_init_subtest "fstab-replace"
 $PYTHON $TESTPROG --replace "LABEL=foo" "/mnt/foo" >/dev/null 2>&1
-cp $LIBMOUNT_FSTAB $TS_OUTPUT	# save the fstab aside
+cp $LIBMOUNT_FSTAB "$TS_OUTPUT"	# save the fstab aside
 ts_finalize_subtest		#checks the fstab
 
 ts_finalize

@@ -65,6 +65,13 @@ unsupported_programs=$(grep 'unsupported_programs=' "${top_srcdir}"/tools/get-op
 # These are programs that we do not need to check on
 ignore_programs=""
 
+declare -A real_prog_ts_dir=(
+	[fsck.cramfs]="cramfs"
+	[mkfs.cramfs]="cramfs"
+	[fsck.minix]="minix"
+	[mkfs.minix]="minix"
+)
+
 # Each program has a dedicated subdirectory with test scripts
 program_test_subdirs="$(ls -1 ${top_testdir} | tr '\n' ' ')"
 
@@ -132,6 +139,31 @@ function progress_status() {
 	printf "\033[2K\rtesting program %d out of %d ('%s')" "$counter" "$num_total_progs" "$prog"
 }
 
+function opts_from_manual_validation() {
+	local opts
+	local ts="$1"
+	opts="$(awk -F= '/UL_TESTCOVERAGE_MANUAL_VALIDATION/ {print $2}' "$ts")"
+
+	echo " $opts " | tr ' ' '\n'
+}
+
+function get_full_cmdline() {
+	local test_script_path="$1"
+
+	awk -v pat="^.*TS_CMD_${prog^^}" '
+	{
+		if (multiline || $0 ~ pat) {
+			print_flag = 1
+		} else {
+			print_flag = 0
+		}
+
+		multiline = (print_flag && $0 ~ /\\[[:space:]]*$/)
+
+		if (print_flag) print
+	}' "$test_script_path"
+}
+
 # Since we do "cross-testing", we check if $prog is being tested
 # in other program's test scripts and store the found options too.
 function get_cross_test_long_opts() {
@@ -140,15 +172,13 @@ function get_cross_test_long_opts() {
 	test_scripts="$2"
 
 	[[ -z "$test_scripts" ]] && has_ts=0
-	# shellcheck disable=SC2016
-	regex="$( printf '\$TS_CMD_%s[[:space:]]+.*([[:space:]])*--(?![^[:alnum:]])[A-Za-z-.0-9_]*' "${prog^^}" )"
 
-	for t in $ALL_TEST_SCRIPTS; do
+	for ts in $ALL_TEST_SCRIPTS; do
 		# If the program has a test subdirectory we have probably
 		# already traversed it, so no need to do it again.
-		[[ "$has_ts" == 1 && "$t" =~ \/"$prog"\/ ]] && continue
+		[[ "$has_ts" == 1 && "$ts" =~ \/"$prog"\/ ]] && continue
 
-		found="$(grep -P -o "$regex" "${t}" \
+		found="$(get_full_cmdline "${ts}" \
 			| grep -P -o -- '--(?![^[:alnum:]])[A-Za-z-.0-9_]*' \
 			| uniq)"
 
@@ -167,9 +197,10 @@ function get_test_scripts_l_opts() {
 
 	# Look for all options in $prog test scripts
 	for ts in $test_scripts; do
-		found="$(grep -P -o '[[:space:]]--(?![^[:alnum:]])[A-Za-z-.0-9_]*' "${ts}" \
-			| grep -P -o -- '--(?![^[:alnum:]])[A-Za-z-.0-9_]*' \
-			| uniq)"
+		found="$(get_full_cmdline "${ts}" \
+			| grep -P -o -- '--(?![^[:alnum:]])[A-Za-z-.0-9_]*' )"
+
+		found+="$(opts_from_manual_validation "$ts")"
 
 		if [ -n "$found" ]; then
 			opts+="$(printf -- '\n%s' "$found")"
@@ -270,6 +301,7 @@ function generate_report() {
 		percentage=''
 		frac=''
 		notes=''
+		dirname="$prog"
 		((counter++))
 
 		[ -t 1 ] && progress_status "$prog" "$num_total_progs" "$counter"
@@ -292,7 +324,10 @@ function generate_report() {
 			continue
 		fi
 
-		if ! echo "$program_test_subdirs" | grep -E " $prog " &>/dev/null; then
+		# Some test directories are shared between programs
+		dirname=${real_prog_ts_dir[$prog]:-$dirname}
+
+		if ! echo "$program_test_subdirs" | grep -E " $dirname " &>/dev/null; then
 			percentage=0.00
 			frac=0/0
 			notes="missing test subdirectory, "
@@ -303,7 +338,7 @@ function generate_report() {
 		fi
 
 		if [[ "$has_ts_dir" == 1 ]]; then
-			test_scripts="$(find "${top_testdir}/${prog}" -maxdepth 1 -type f -executable \
+			test_scripts="$(find "${top_testdir}/${dirname}" -maxdepth 1 -type f -executable \
 							-exec grep -l 'ts_init' {} \; 2>/dev/null | tr '\n' ' ')"
 		fi
 

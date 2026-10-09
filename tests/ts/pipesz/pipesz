@@ -26,53 +26,53 @@ set -o pipefail
 DEFAULT_PIPE_SIZE=$(($($TS_HELPER_SYSINFO pagesize) * 16))
 
 ts_init_subtest "set-fd-bad"
-$TS_CMD_PIPESZ --check --set 4096 --fd 42 >> $TS_OUTPUT 2>> $TS_ERRLOG
-[[ $? -eq 0 ]] && ts_logerr "expected failure"
+$TS_CMD_PIPESZ --check --set 4096 --fd 42 >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" && ts_logerr "expected failure"
 ts_finalize_subtest
 
 ts_init_subtest "set-fd"
-echo -n | $TS_CMD_PIPESZ --check --set 4096 --stdin >> $TS_OUTPUT 2>> $TS_ERRLOG
-[[ $? -ne 0 ]] && ts_logerr "expected success"
+echo -n | $TS_CMD_PIPESZ --check --set 4096 --stdin >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+        || ts_logerr "expected success"
 ts_finalize_subtest
 
 ts_init_subtest "set-file-bad"
-$TS_CMD_PIPESZ --check --set 4096 --file "/dev/null" >> $TS_OUTPUT 2>> $TS_ERRLOG
-[[ $? -eq 0 ]] && ts_logerr "expected failure"
+$TS_CMD_PIPESZ --check --set 4096 --file "/dev/null" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+        && ts_logerr "expected failure"
 ts_finalize_subtest
 
 ts_init_subtest "set-file"
-echo -n | $TS_CMD_PIPESZ --check --set 4096 --file "/dev/stdin" >> $TS_OUTPUT 2>> $TS_ERRLOG
-[[ $? -ne 0 ]] && ts_logerr "expected success"
+echo -n | $TS_CMD_PIPESZ --check --set 4096 --file "/dev/stdin" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+        || ts_logerr "expected success"
 ts_finalize_subtest
 
 ts_init_subtest "get-fd-bad"
-$TS_CMD_PIPESZ --check --get --fd 42 >> $TS_OUTPUT 2>> $TS_ERRLOG
-[[ $? -eq 0 ]] && ts_logerr "expected failure"
+$TS_CMD_PIPESZ --check --get --fd 42 >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" && ts_logerr "expected failure"
 ts_finalize_subtest
 
 ts_init_subtest "get-fd"
-echo -n | $TS_CMD_PIPESZ --check --get --stdin 2>> $TS_ERRLOG | sed "s/$DEFAULT_PIPE_SIZE/DEFAULT_PIPE_SIZE/g" >> $TS_OUTPUT
-[[ $? -ne 0 ]] && ts_logerr "expected success"
+echo -n | $TS_CMD_PIPESZ --check --get --stdin 2>> "$TS_ERRLOG" \
+        | sed "s/$DEFAULT_PIPE_SIZE/DEFAULT_PIPE_SIZE/g" >> "$TS_OUTPUT" \
+        || ts_logerr "expected success"
 ts_finalize_subtest
 
 ts_init_subtest "get-file-bad"
-$TS_CMD_PIPESZ --check --get --file "/dev/null" >> $TS_OUTPUT 2>> $TS_ERRLOG
-[[ $? -eq 0 ]] && ts_logerr "expected failure"
+$TS_CMD_PIPESZ --check --get --file "/dev/null" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+        && ts_logerr "expected failure"
 ts_finalize_subtest
 
 ts_init_subtest "get-file"
-echo -n | $TS_CMD_PIPESZ --check --get --file "/dev/stdin" 2>> $TS_ERRLOG | sed "s/$DEFAULT_PIPE_SIZE/DEFAULT_PIPE_SIZE/g" >> $TS_OUTPUT
-[[ $? -ne 0 ]] && ts_logerr "expected success"
+echo -n | $TS_CMD_PIPESZ --check --get --file "/dev/stdin" 2>> "$TS_ERRLOG" \
+        | sed "s/$DEFAULT_PIPE_SIZE/DEFAULT_PIPE_SIZE/g" >> "$TS_OUTPUT" \
+        || ts_logerr "expected success"
 ts_finalize_subtest
 
 ts_init_subtest "pipe-max-size"
-echo -n | $TS_CMD_PIPESZ --check --stdin >> $TS_OUTPUT 2>> $TS_ERRLOG
-[[ $? -ne 0 ]] && ts_logerr "expected success"
+echo -n | $TS_CMD_PIPESZ --check --stdin >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+        || ts_logerr "expected success"
 ts_finalize_subtest
 
 ts_init_subtest "exec"
-echo this_should_be_output_by_cat | $TS_CMD_PIPESZ --check --stdin cat >> $TS_OUTPUT 2>> $TS_ERRLOG
-[[ $? -ne 0 ]] && ts_logerr "expected success"
+echo this_should_be_output_by_cat | $TS_CMD_PIPESZ --check --stdin cat >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+        || ts_logerr "expected success"
 ts_finalize_subtest
 
 set +o pipefail

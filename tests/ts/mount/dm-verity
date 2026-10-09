@@ -35,7 +35,7 @@ ts_skip_nonroot
 ts_check_prog "mksquashfs"
 ts_check_prog "veritysetup"
 
-grep -q '#define HAVE_CRYPTSETUP' ${top_builddir}/config.h || ts_skip "no dm-verity support"
+ts_skip_config HAVE_CRYPTSETUP "no dm-verity support"
 
 # Make a squashfs and prepare verity device out of it
 mksquashfs $TS_SELF $SQUASHFS &>/dev/null || ts_skip "error: mksquashfs on $TS_SELF"
@@ -52,8 +52,8 @@ ts_init_subtest "roothash"
 [ -d "$TS_MOUNTPOINT" ] || mkdir -p $TS_MOUNTPOINT
 $TS_CMD_MOUNT --options verity.hashdevice=$HASH_DEVICE,verity.roothash=$HASH,verity.hashoffset=0 \
     $VERITY_DEVICE_ABS \
-    $TS_MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_UMOUNT --lazy $TS_MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
+    $TS_MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_UMOUNT --lazy $TS_MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 
@@ -61,8 +61,8 @@ ts_init_subtest "roothashfile"
 [ -d "$TS_MOUNTPOINT" ] || mkdir -p $TS_MOUNTPOINT
 $TS_CMD_MOUNT --options verity.hashdevice=$HASH_DEVICE,verity.roothashfile=$ROOT_HASH_FILE \
     $VERITY_DEVICE_ABS \
-    $TS_MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_UMOUNT --lazy $TS_MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
+    $TS_MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_UMOUNT --lazy $TS_MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 

@@ -27,6 +27,7 @@ ts_check_test_command "$TS_CMD_FINDMNT"
 
 ts_skip_nonroot
 
+$TS_CMD_MOUNT --version | grep -q 'fd-based' || ts_skip "no fd-based API"
 [ "$("$TS_HELPER_SYSINFO" fsopen-ok)" == "1" ] || ts_skip "no fs-API"
 
 [ -d $TS_MOUNTPOINT ] || mkdir -p $TS_MOUNTPOINT
@@ -49,31 +50,31 @@ ln -s $FILE_B $SYMLINK_B
 # Symlink converted to file
 #
 ts_init_subtest "file-over-symlink"
-$TS_CMD_MOUNT -o X-mount.nocanonicalize --bind $FILE_A $SYMLINK_B >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_MOUNT -o X-mount.nocanonicalize --bind $FILE_A $SYMLINK_B >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 udevadm settle
-cat $SYMLINK_B >> $TS_OUTPUT
-stat -c '%F' $SYMLINK_B >> $TS_OUTPUT
-$TS_CMD_UMOUNT $SYMLINK_B >> $TS_OUTPUT 2>> $TS_ERRLOG
+cat $SYMLINK_B >> "$TS_OUTPUT"
+stat -c '%F' $SYMLINK_B >> "$TS_OUTPUT"
+$TS_CMD_UMOUNT $SYMLINK_B >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 # File converted to symlink
 #
 ts_init_subtest "symlink-over-file"
-$TS_CMD_MOUNT -o X-mount.nocanonicalize --bind $SYMLINK_A $FILE_B >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_MOUNT -o X-mount.nocanonicalize --bind $SYMLINK_A $FILE_B >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 udevadm settle
-cat $FILE_B >> $TS_OUTPUT
-stat -c '%F' $FILE_B >> $TS_OUTPUT
-$TS_CMD_UMOUNT $FILE_B >> $TS_OUTPUT 2>> $TS_ERRLOG
+cat $FILE_B >> "$TS_OUTPUT"
+stat -c '%F' $FILE_B >> "$TS_OUTPUT"
+$TS_CMD_UMOUNT $FILE_B >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 # Symlink converted to another symlink
 #
 ts_init_subtest "symlink-over-symlink"
-$TS_CMD_MOUNT -o X-mount.nocanonicalize --bind $SYMLINK_A $SYMLINK_B >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_MOUNT -o X-mount.nocanonicalize --bind $SYMLINK_A $SYMLINK_B >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 udevadm settle
-cat $SYMLINK_B >> $TS_OUTPUT
-stat -c '%F' $SYMLINK_B >> $TS_OUTPUT
-$TS_CMD_UMOUNT $SYMLINK_B >> $TS_OUTPUT 2>> $TS_ERRLOG
+cat $SYMLINK_B >> "$TS_OUTPUT"
+stat -c '%F' $SYMLINK_B >> "$TS_OUTPUT"
+$TS_CMD_UMOUNT $SYMLINK_B >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 

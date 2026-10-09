@@ -28,7 +28,7 @@ ts_check_prog "xz"
 
 mkdir -p $TS_OUTDIR/images-pt
 
-for img in $(ls $TS_SELF/images-pt/*.img.xz | sort); do
+for img in $(find "$TS_SELF"/images-pt/ -maxdepth 1 -name "*.img.xz" 2>/dev/null | sort); do
 	name=$(basename $img .img.xz)
 	outimg=$TS_OUTDIR/images-pt/${name}.img
 
@@ -36,7 +36,7 @@ for img in $(ls $TS_SELF/images-pt/*.img.xz | sort); do
 
 	xz -dc $img > $outimg
 
-	$TS_HELPER_PARTITIONS $outimg &> $TS_OUTPUT
+	$TS_HELPER_PARTITIONS $outimg &> "$TS_OUTPUT"
 	ts_finalize_subtest
 done
 

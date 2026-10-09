@@ -56,6 +56,9 @@
 #include "idcache.h"
 #include "pathnames.h"
 #include "pidfd-utils.h"
+#include "optutils.h"
+#include "xalloc.h"
+#include "buffer.h"
 
 #include "lsfd.h"
 
@@ -186,6 +189,18 @@ static const struct colinfo infos[] = {
 	[COL_BLKDRV]           = { "BLKDRV",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
 				   N_("block device driver name resolved by /proc/devices") },
+	[COL_BPF_LINK_ID]      = { "BPF-LINK.ID",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("bpf link ID") },
+	[COL_BPF_LINK_TYPE]    = { "BPF-LINK.TYPE",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
+				   N_("bpf link type (decoded)") },
+	[COL_BPF_LINK_TYPE_RAW]= { "BPF-LINK.TYPE.RAW",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("bpf link type (raw)") },
+	[COL_BPF_LINK_PROG_ID] = { "BPF-LINK.PROG-ID",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("bpf prog ID that this link attaches") },
 	[COL_BPF_MAP_ID]       = { "BPF-MAP.ID",
 				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
 				   N_("bpf map id associated with the fd") },
@@ -264,6 +279,45 @@ static const struct colinfo infos[] = {
 	[COL_INOTIFY_INODES_RAW]={ "INOTIFY.INODES.RAW",
 				   0,   SCOLS_FL_WRAP,  SCOLS_JSON_ARRAY_STRING,
 				   N_("list of monitoring inodes (raw, don't decode devices)") },
+	[COL_IO_URING_CQ_HEAD] = { "IO-URING.CQ-HEAD",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("io_uring completion queue head") },
+	[COL_IO_URING_CQ_MASK] = { "IO-URING.CQ-MASK",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("io_uring completion queue ring mask") },
+	[COL_IO_URING_CQ_TAIL] = { "IO-URING.CQ-TAIL",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("io_uring completion queue tail") },
+	[COL_IO_URING_CQES]    = { "IO-URING.CQES",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("io_uring unconsumed completion queue entries") },
+	[COL_IO_URING_NAPI]    = { "IO-URING.NAPI",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_STRING,
+				   N_("io_uring NAPI mode") },
+	[COL_IO_URING_SQ_HEAD] = { "IO-URING.SQ-HEAD",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("io_uring submission queue head") },
+	[COL_IO_URING_SQ_MASK] = { "IO-URING.SQ-MASK",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("io_uring submission queue ring mask") },
+	[COL_IO_URING_SQ_TAIL] = { "IO-URING.SQ-TAIL",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("io_uring submission queue tail") },
+	[COL_IO_URING_SQES]    = { "IO-URING.SQES",
+				   0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				   N_("io_uring unconsumed submission queue entries") },
+	[COL_IO_URING_SQTHREAD] = { "IO-URING.SQTHREAD",
+				    0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				    N_("io_uring SQ poll kernel thread PID") },
+	[COL_IO_URING_SQTHREAD_CPU] = { "IO-URING.SQTHREAD-CPU",
+					0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+					N_("io_uring SQ poll thread CPU affinity") },
+	[COL_IO_URING_USER_BUFS] = { "IO-URING.USER-BUFS",
+				     0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				     N_("io_uring count of registered buffers") },
+	[COL_IO_URING_USER_FILES] = { "IO-URING.USER-FILES",
+				      0,   SCOLS_FL_RIGHT, SCOLS_JSON_NUMBER,
+				      N_("io_uring count of registered files") },
 	[COL_KNAME]            = { "KNAME",
 				   0.4, SCOLS_FL_TRUNC, SCOLS_JSON_STRING,
 				   N_("name of the file (raw)"),
@@ -1932,6 +1986,7 @@ static void mark_poll_fds_as_multiplexed(char *buf,
 {
 	long fds;
 	long nfds;
+	long max_nfds;
 
 	struct iovec  local;
 	struct iovec  remote;
@@ -1942,11 +1997,17 @@ static void mark_poll_fds_as_multiplexed(char *buf,
 	if (sscanf(buf, "%lx %lx", &fds, &nfds) != 2)
 		return;
 
-	if (nfds == 0)
+	if (nfds <= 0)
+		/* Unexpected value */
+		return;
+
+	max_nfds = sysconf (_SC_OPEN_MAX);
+	if (max_nfds >= 0 && nfds > max_nfds)
 		return;
 
 	local.iov_len = sizeof(struct pollfd) * nfds;
 	local.iov_base = xmalloc(local.iov_len);
+
 	remote.iov_len = local.iov_len;
 	remote.iov_base = (void *)fds;
 
@@ -1987,7 +2048,8 @@ static void mark_select_fds_as_multiplexed(char *buf,
 	if (sscanf(buf, "%lx %lx %lx %lx", &nfds, fds + 0, fds + 1, fds + 2) != 4)
 		return;
 
-	if (nfds == 0)
+	if (nfds <= 0)
+		/* Unexpected value */
 		return;
 
 	for (int i = 0; i < 3; i++) {
@@ -2000,7 +2062,7 @@ static void mark_select_fds_as_multiplexed(char *buf,
 
 	n = process_vm_readv(pid, local, 3, remote, 3, 0);
 	if (n < 0 || n != expected_n)
-			return;
+		return;
 
 	list_for_each (f, &proc->files) {
 		struct file *file = list_entry(f, struct file, files);
@@ -2085,20 +2147,22 @@ static void read_process(struct lsfd_control *ctl, struct path_cxt *pc,
 	if (procfs_process_get_stat(pc, buf, sizeof(buf)) > 0) {
 		char *p;
 		unsigned int flags;
-		char *pat = NULL;
+		struct ul_buffer ul_buf = UL_INIT_BUFFER;
+		char *pat;
 
 		/* See proc(5) about the column in the line. */
-		xstrappend(&pat, "%*d (");
+		ul_buffer_xappend_string(&ul_buf, "%*d (");
 		for (p = proc->command; *p != '\0'; p++) {
 			if (*p == '%')
-				xstrappend(&pat, "%%");
+				ul_buffer_xappend_string(&ul_buf, "%%");
 			else
-				xstrputc(&pat, *p);
+				ul_buffer_xappend_char(&ul_buf, *p);
 		}
-		xstrappend(&pat, ") %*c %*d %*d %*d %*d %*d %u %*[^\n]");
+		ul_buffer_xappend_string(&ul_buf, ") %*c %*d %*d %*d %*d %*d %u %*[^\n]");
+		pat = ul_buffer_get_data(&ul_buf, NULL, NULL);
 		if (sscanf(buf, pat, &flags) == 1)
 			proc->kthread = !!(flags & PF_KTHREAD);
-		free(pat);
+		ul_buffer_free_data(&ul_buf);
 	}
 	if (proc->kthread && !ctl->threads) {
 		free_proc(proc);
@@ -2695,6 +2759,12 @@ int main(int argc, char *argv[])
 		{ NULL, 0, NULL, 0 },
 	};
 
+	static const ul_excl_t excl[] = {       /* rows and cols in ASCII order */
+		{ 'J', 'r' },
+		{ 0 }
+	};
+	int excl_st[ARRAY_SIZE(excl)] = UL_EXCL_STATUS_INIT;
+
 	lsfd_init_debug();
 
 	setlocale(LC_ALL, "");
@@ -2703,6 +2773,8 @@ int main(int argc, char *argv[])
 	close_stdout_atexit();
 
 	while ((c = getopt_long(argc, argv, "no:JrVhluQ:p:i::C:sH", longopts, NULL)) != -1) {
+		err_exclusive_options(c, longopts, excl, excl_st);
+
 		switch (c) {
 		case 'n':
 			ctl.noheadings = 1;
@@ -2790,6 +2862,16 @@ int main(int argc, char *argv[])
 		default:
 			errtryhelp(EXIT_FAILURE);
 		}
+	}
+
+	if (ctl.uri) {
+		char *badopt =
+			ctl.json ? "json" :
+			ctl.raw  ? "raw"  :
+			NULL;
+		if (badopt)
+			errexclusive(OPTUTILS_EXIT_CODE,
+				     "--", "hyperlink", "--", badopt);
 	}
 
 	if (collist)

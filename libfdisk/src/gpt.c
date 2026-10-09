@@ -52,6 +52,7 @@
 #define MSDOS_MBR_SIGNATURE 0xAA55
 #define GPT_PART_NAME_LEN   (72 / sizeof(uint16_t))
 #define GPT_NPARTITIONS     ((size_t) FDISK_GPT_NPARTITIONS_DEFAULT)
+#define GPT_NPARTITIONS_MAX (4 * 1024 * 1024 / sizeof(struct gpt_entry))
 
 /* Globally unique identifier */
 struct gpt_guid {
@@ -710,7 +711,8 @@ static struct gpt_header *gpt_copy_header(struct fdisk_context *cxt,
 	if (res->my_lba == GPT_PRIMARY_PARTITION_TABLE_LBA)
 		res->partition_entry_lba = cpu_to_le64(2ULL);
 	else {
-		uint64_t esz = (uint64_t) le32_to_cpu(src->npartition_entries) * sizeof(struct gpt_entry);
+		uint64_t esz = (uint64_t) le32_to_cpu(src->npartition_entries)
+				* le32_to_cpu(src->sizeof_partition_entry);
 		uint64_t esects = (esz + cxt->sector_size - 1) / cxt->sector_size;
 
 		res->partition_entry_lba = cpu_to_le64(cxt->total_sectors - 1ULL - esects);
@@ -997,9 +999,9 @@ static ssize_t read_lba(struct fdisk_context *cxt, uint64_t lba,
 {
 	off_t offset = lba * cxt->sector_size;
 
-	if (lseek(cxt->dev_fd, offset, SEEK_SET) == (off_t) -1)
+	if (ul_vfs_lseek(cxt->vfs, cxt->dev_fd, offset, SEEK_SET) == (off_t) -1)
 		return -1;
-	return (size_t)read(cxt->dev_fd, buffer, bytes) != bytes;
+	return (size_t)ul_vfs_read(cxt->vfs, cxt->dev_fd, buffer, bytes) != bytes;
 }
 
 
@@ -1018,6 +1020,11 @@ static unsigned char *gpt_read_entries(struct fdisk_context *cxt,
 
 	if (gpt_sizeof_entries(header, &sz))
 		return NULL;
+	if (sz > GPT_NPARTITIONS_MAX * sizeof(struct gpt_entry)
+	    || sz / cxt->sector_size >= le64_to_cpu(header->first_usable_lba)) {
+		DBG(GPT, ul_debug("entries array too large"));
+		return NULL;
+	}
 
 	ret = calloc(1, sz);
 	if (!ret)
@@ -1026,10 +1033,10 @@ static unsigned char *gpt_read_entries(struct fdisk_context *cxt,
 	offset = (off_t) le64_to_cpu(header->partition_entry_lba) *
 		       cxt->sector_size;
 
-	if (offset != lseek(cxt->dev_fd, offset, SEEK_SET))
+	if (offset != ul_vfs_lseek(cxt->vfs, cxt->dev_fd, offset, SEEK_SET))
 		goto fail;
 
-	ssz = read(cxt->dev_fd, ret, sz);
+	ssz = ul_vfs_read(cxt->vfs, cxt->dev_fd, ret, sz);
 	if (ssz < 0 || (size_t) ssz != sz)
 		goto fail;
 
@@ -1197,19 +1204,23 @@ static struct gpt_header *gpt_read_header(struct fdisk_context *cxt,
 	if (!gpt_check_header_crc(header, NULL))
 		goto invalid;
 
+	/* valid header must be at MyLBA */
+	if (le64_to_cpu(header->my_lba) != lba)
+		goto invalid;
+
+	/* entry size must be large enough to hold struct gpt_entry */
+	if (le32_to_cpu(header->sizeof_partition_entry) < sizeof(struct gpt_entry))
+		goto invalid;
+
+	if (!gpt_check_lba_sanity(cxt, header))
+		goto invalid;
+
 	/* read and verify entries */
 	ents = gpt_read_entries(cxt, header);
 	if (!ents)
 		goto invalid;
 
 	if (!gpt_check_entryarr_crc(header, ents))
-		goto invalid;
-
-	if (!gpt_check_lba_sanity(cxt, header))
-		goto invalid;
-
-	/* valid header must be at MyLBA */
-	if (le64_to_cpu(header->my_lba) != lba)
 		goto invalid;
 
 	if (_ents)
@@ -1818,11 +1829,13 @@ static int gpt_entry_attrs_from_string(
 
 	while (p && *p) {
 		int bit = -1;
+		const char *item;
 
 		while (isblank(*p)) p++;
 		if (!*p)
 			break;
 
+		item = p;
 		DBG(GPT, ul_debug(" item '%s'", p));
 
 		if (strncmp(p, GPT_ATTRSTR_REQ,
@@ -1842,27 +1855,50 @@ static int gpt_entry_attrs_from_string(
 			bit = GPT_ATTRBIT_NOBLOCK;
 			p += sizeof(GPT_ATTRSTR_NOBLOCK) - 1;
 
-		/* GUID:<bit> as well as <bit> */
+		/* GUID:<bit> as well as <bit>. Bare numeric input accepts
+		 * the named-flag bits (0..2) and the GUID-specific range
+		 * (48..63). The GUID: prefix is the documented namespace
+		 * for 48..63 only. Bits 3..47 are reserved by UEFI. */
 		} else if (isdigit((unsigned char) *p)
 			   || (strncmp(p, "GUID:", 5) == 0
 			       && isdigit((unsigned char) *(p + 5)))) {
-			char *end = NULL;
+			const char *num_start, *num_end;
+			char buf[32];
+			size_t len;
+			uint16_t val;
+			int is_guid = (*p == 'G');
 
-			if (*p == 'G')
+			if (is_guid)
 				p += 5;
 
-			errno = 0;
-			bit = strtol(p, &end, 0);
-			if (errno || !end || end == str
-			    || bit < GPT_ATTRBIT_GUID_FIRST
-			    || bit >= GPT_ATTRBIT_GUID_FIRST + GPT_ATTRBIT_GUID_COUNT)
+			num_start = p;
+			num_end = p;
+			while (*num_end && *num_end != ',' && !isblank(*num_end))
+				num_end++;
+			len = num_end - num_start;
+
+			if (len == 0 || len >= sizeof(buf)) {
 				bit = -1;
-			else
-				p = end;
+			} else {
+				memcpy(buf, num_start, len);
+				buf[len] = '\0';
+
+				if (ul_strtou16(buf, &val, 0) != 0)
+					bit = -1;
+				else if (val >= GPT_ATTRBIT_GUID_FIRST
+					 && val < GPT_ATTRBIT_GUID_FIRST + GPT_ATTRBIT_GUID_COUNT) {
+					bit = val;
+					p = num_end;
+				} else if (!is_guid && val <= GPT_ATTRBIT_LEGACY) {
+					bit = val;
+					p = num_end;
+				} else
+					bit = -1;
+			}
 		}
 
 		if (bit < 0) {
-			fdisk_warnx(cxt, _("unsupported GPT attribute bit '%s'"), p);
+			fdisk_warnx(cxt, _("unsupported GPT attribute bit '%s'"), item);
 			return -EINVAL;
 		}
 
@@ -2028,10 +2064,10 @@ static int gpt_set_partition(struct fdisk_context *cxt, size_t n,
 
 static int gpt_read(struct fdisk_context *cxt, off_t offset, void *buf, size_t count)
 {
-	if (offset != lseek(cxt->dev_fd, offset, SEEK_SET))
+	if (offset != ul_vfs_lseek(cxt->vfs, cxt->dev_fd, offset, SEEK_SET))
 		return -errno;
 
-	if (read_all(cxt->dev_fd, buf, count))
+	if (ul_vfs_read_all(cxt->vfs, cxt->dev_fd, buf, count))
 		return -errno;
 
 	DBG(GPT, ul_debug("  read OK [offset=%zu, size=%zu]",
@@ -2041,13 +2077,13 @@ static int gpt_read(struct fdisk_context *cxt, off_t offset, void *buf, size_t c
 
 static int gpt_write(struct fdisk_context *cxt, off_t offset, void *buf, size_t count)
 {
-	if (offset != lseek(cxt->dev_fd, offset, SEEK_SET))
+	if (offset != ul_vfs_lseek(cxt->vfs, cxt->dev_fd, offset, SEEK_SET))
 		return -errno;
 
-	if (write_all(cxt->dev_fd, buf, count))
+	if (ul_vfs_write_all(cxt->vfs, cxt->dev_fd, buf, count))
 		return -errno;
 
-	if (fsync(cxt->dev_fd) != 0)
+	if (ul_vfs_fsync(cxt->vfs, cxt->dev_fd) != 0)
 		return -errno;
 
 	DBG(GPT, ul_debug("  write OK [offset=%zu, size=%zu]",
@@ -2845,7 +2881,7 @@ int fdisk_gpt_set_npartitions(struct fdisk_context *cxt, uint32_t nents)
 	struct fdisk_gpt_label *gpt;
 	size_t new_size = 0;
 	uint32_t old_nents;
-	uint64_t first_usable = 0ULL, last_usable = 0ULL;
+	uint64_t first_usable = 0ULL, last_usable = 0ULL, esects = 0ULL;
 	int rc;
 
 	assert(cxt);
@@ -2873,11 +2909,18 @@ int fdisk_gpt_set_npartitions(struct fdisk_context *cxt, uint32_t nents)
 		return rc;
 	}
 
-	rc = gpt_calculate_first_lba(gpt->pheader, nents, &first_usable, cxt);
+	/* The primary entries array is not relocated when the table length
+	 * changes, so derive the first usable LBA from its real on-disk
+	 * location rather than the default LBA 2. */
+	rc = gpt_calculate_sectorsof_entries(gpt->pheader, nents, &esects, cxt);
+	if (rc == 0)
+		first_usable = le64_to_cpu(gpt->pheader->partition_entry_lba) + esects;
 	if (rc == 0)
 		rc = gpt_calculate_last_lba(gpt->pheader, nents, &last_usable, cxt);
 	if (rc)
 		return rc;
+	if (first_usable > last_usable)
+		return -ENOSPC;
 
 	/* if expanding the table, first check that everything fits,
 	 * then allocate more memory and zero. */
@@ -3162,7 +3205,8 @@ static int gpt_reorder(struct fdisk_context *cxt)
 	if (!mess)
 		return 1;
 
-	qsort(gpt->ents, nparts, sizeof(struct gpt_entry),
+	qsort(gpt->ents, nparts,
+			le32_to_cpu(gpt->pheader->sizeof_partition_entry),
 			gpt_entry_cmp_start);
 
 	gpt_recompute_crc(gpt->pheader, gpt->ents);

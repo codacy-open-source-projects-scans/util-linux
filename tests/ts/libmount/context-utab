@@ -45,8 +45,7 @@ DEVICE="${TS_DEVICE}1"
 
 udevadm settle
 
-grep -q " $DEVNAME\$" /proc/partitions
-if [ $? -ne 0 ]; then
+if ! grep -q " $DEVNAME\$" /proc/partitions; then
 	ts_skip "no partition!"
 fi
 
@@ -55,7 +54,7 @@ mkfs.ext4 -L "$LABEL" -U "$UUID" $DEVICE &> /dev/null
 
 ts_log "Do tests..."
 
-export LIBMOUNT_UTAB=$TS_OUTPUT.utab
+export LIBMOUNT_UTAB="$TS_OUTPUT".utab
 rm -f $LIBMOUNT_UTAB
 > $LIBMOUNT_UTAB
 
@@ -63,31 +62,31 @@ udevadm settle
 
 ts_init_subtest "mount-by-devname"
 mkdir -p $MOUNTPOINT &>  /dev/null
-ts_run $TESTPROG --mount $DEVICE $MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_run $TESTPROG --mount $DEVICE $MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_is_mounted "$DEVICE" || \
-	echo "(by device) cannot find $DEVICE in /proc/mounts" >> $TS_OUTPUT 2>> $TS_ERRLOG
+	echo "(by device) cannot find $DEVICE in /proc/mounts" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 
 ts_init_subtest "umount-by-devname"
-ts_run $TESTPROG --umount $DEVICE >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_run $TESTPROG --umount $DEVICE >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_is_mounted "$DEVICE" &&
-	echo "umount (device) failed: found $DEVICE in /proc/mounts" >> $TS_OUTPUT 2>> $TS_ERRLOG
+	echo "umount (device) failed: found $DEVICE in /proc/mounts" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 
 ts_init_subtest "mount-uhelper"
 mkdir -p $MOUNTPOINT &>  /dev/null
-ts_run $TESTPROG --mount -o uhelper=foo,rw LABEL="$LABEL" $MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_run $TESTPROG --mount -o uhelper=foo,rw LABEL="$LABEL" $MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 grep -q "SRC=$DEVICE\b" "$LIBMOUNT_UTAB" || \
-	echo "(by label) cannot find $DEVICE in $LIBMOUNT_UTAB" >> $TS_OUTPUT 2>> $TS_ERRLOG
+	echo "(by label) cannot find $DEVICE in $LIBMOUNT_UTAB" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 
 ts_init_subtest "umount"
-ts_run $TESTPROG --umount $MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_run $TESTPROG --umount $MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 grep -q "SRC=$DEVICE\b" "$LIBMOUNT_UTAB" && \
-	echo "umount (mountpoint) failed: found $DEVICE in $LIBMOUNT_UTAB" >> $TS_OUTPUT 2>> $TS_ERRLOG
+	echo "umount (mountpoint) failed: found $DEVICE in $LIBMOUNT_UTAB" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 
@@ -105,9 +104,9 @@ if type "mkfs.btrfs" &>/dev/null && mkfs.btrfs --version &>/dev/null; then
 
 	ts_init_subtest "mount-uhelper-subvol"
 	mkdir -p $MOUNTPOINT &>  /dev/null
-	ts_run $TESTPROG --mount -o uhelper=foo,rw,subvol=sub $DEVICE  $MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
+	ts_run $TESTPROG --mount -o uhelper=foo,rw,subvol=sub $DEVICE  $MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 	grep -q "SRC=$DEVICE\b" "$LIBMOUNT_UTAB" || \
-		echo "cannot find $DEVICE in $LIBMOUNT_UTAB" >> $TS_OUTPUT 2>> $TS_ERRLOG
+		echo "cannot find $DEVICE in $LIBMOUNT_UTAB" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 	ts_finalize_subtest
 
 	# Don't temporary write btrfs mount options to the test output,
@@ -115,13 +114,13 @@ if type "mkfs.btrfs" &>/dev/null && mkfs.btrfs --version &>/dev/null; then
 	# subvol= and subvolid=).
 	#
 	#ts_log "All mount options (btrfs subvolume + utab) ---"
-	#$TS_CMD_FINDMNT --mtab --mountpoint $MOUNTPOINT -o OPTIONS -n >> $TS_OUTPUT 2>> $TS_ERRLOG
+	#$TS_CMD_FINDMNT --mtab --mountpoint $MOUNTPOINT -o OPTIONS -n >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 	#ts_log "---"
 
 	ts_init_subtest "umount-subvol"
-	ts_run $TESTPROG --umount $MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
+	ts_run $TESTPROG --umount $MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 	grep -q "SRC=$DEVICE\b" "$LIBMOUNT_UTAB" && \
-		echo "umount (mountpoint) failed: found $DEVICE in $LIBMOUNT_UTAB" >> $TS_OUTPUT 2>> $TS_ERRLOG
+		echo "umount (mountpoint) failed: found $DEVICE in $LIBMOUNT_UTAB" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 	ts_finalize_subtest
 fi
 

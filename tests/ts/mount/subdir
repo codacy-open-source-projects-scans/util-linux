@@ -45,21 +45,21 @@ MOUNTPOINT="$TS_MOUNTPOINT"
 
 # create subdirectory on the filesystem
 ts_init_subtest "init"
-$TS_CMD_MOUNT $DEVICE $MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_MOUNT $DEVICE $MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_is_mounted $DEVICE || ts_log "Cannot find $DEVICE in /proc/mounts"
 mkdir -p $MOUNTPOINT/submnt
 touch $MOUNTPOINT/submnt/file
-$TS_CMD_UMOUNT $MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_UMOUNT $MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 
 ts_init_subtest "subdir"
-$TS_CMD_MOUNT -o X-mount.subdir=submnt $DEVICE $MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_MOUNT -o X-mount.subdir=submnt $DEVICE $MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_is_mounted $DEVICE || ts_log "Cannot find $DEVICE in /proc/mounts"
 if [ ! -f "$MOUNTPOINT/file" ]; then
-	echo "$MOUNTPOINT/file not found" >> $TS_OUTPUT 
+	echo "$MOUNTPOINT/file not found" >> "$TS_OUTPUT" 
 fi
-$TS_CMD_UMOUNT $MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_UMOUNT $MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 

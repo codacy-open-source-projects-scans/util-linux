@@ -26,7 +26,7 @@ bits - convert bit masks or lists from/to various formats
 
 == SYNOPSIS
 
-*bits* [*-h*] [*-V*] [*-w* _number_] [_mode_] [_mask_|_list_]...
+*bits* [*-h*] [*-V*] [*-w* _number_] [*-f*] [_mode_] [_mask_|_list_]...
 
 == DESCRIPTION
 
@@ -75,7 +75,12 @@ groups so far.
 
 *-w* _number_, *--width* _number_::
 The maximum number of bits in the masks handled by *bits*.
-The default is *8192*. Any bit larger than this number will be truncated.
+The default is *8192*. Any bit larger than this number will be truncated
+unless *--fail-width* is specified.
+
+*-f*, *--fail-width*::
+Fail with an error if the bit list contains values larger than the
+*--width* limit. By default, such values are silently ignored.
 
 include::man-common/help-version.adoc[]
 
@@ -90,6 +95,9 @@ Print the combined arguments as a binary mask value.
 *-g*, *--grouped-mask*::
 Print the combined arguments as a hexadecimal mask value
 in 32-bit comma-separated groups.
+
+*-e*, *--expand*::
+Print the combined arguments as a list of individual bit IDs.
 
 *-l*, *--list*::
 Print the combined arguments as a list of bit IDs.
@@ -121,6 +129,9 @@ Print the combined arguments as a hexadecimal mask value (default).
 
 ~$ bits --grouped-mask 2,22,74,79
 8400,00000000,00400004
+
+~$ bits --expand 1,3-5,7
+1,3,4,5,7
 
 ~$ bits --width 64 --list 2,22,74,79
 2,22

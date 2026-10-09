@@ -26,27 +26,27 @@ ts_check_test_command "$TS_CMD_LSBLK"
 ts_check_prog xz
 ts_check_prog tar
 
-for dump in $(ls $TS_SELF/dumps/*.tar.xz | sort); do
+for dump in $(find "$TS_SELF"/dumps/ -maxdepth 1 -name "*.tar.xz" | sort); do
 	name=$(basename $dump .tar.xz)
 	dumpdir="$TS_OUTDIR/dumps"
 
 	mkdir -p $dumpdir
-	tar -C $dumpdir --xz -xf $dump
+	tar --no-same-owner -C $dumpdir --xz -xf $dump
 
 	#
 	# Read *.cols from the tarball, but the expected output is not used
 	# from the tarball due to changes in lsblk formatting etc. We keep up to
 	# date version in tests/expected/lsblk.
 	#
-	for cols_file in $(ls $dumpdir/$name/*.cols | sort); do
+	for cols_file in $(find "$dumpdir"/"$name"/ -iname "*.cols" | sort); do
 		subname=$(basename $cols_file .cols)
 		subtestname="${name}-${subname}"
 
 		ts_init_subtest $subtestname
-		cols=$(cat $cols_file)
+		cols=$(<"$cols_file")
 		${TS_CMD_LSBLK} --sysroot "${dumpdir}/${name}" \
 			        --output $cols \
-			        >> ${TS_OUTPUT} 2>> $TS_ERRLOG
+			        >> ${TS_OUTPUT} 2>> "$TS_ERRLOG"
 
 		ts_finalize_subtest
 	done

@@ -25,27 +25,27 @@ ts_check_wcsspn
 ts_check_test_command "$TS_CMD_COLCRT"
 
 ts_init_subtest 'no-options'
-$TS_CMD_COLCRT < $TS_SELF/nasty-input >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_COLCRT < $TS_SELF/underlines >> $TS_OUTPUT 2>> $TS_ERRLOG
-echo "return value: $?" >> $TS_OUTPUT
+$TS_CMD_COLCRT < $TS_SELF/nasty-input >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_COLCRT < $TS_SELF/underlines >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+echo "return value: $?" >> "$TS_OUTPUT"
 ts_finalize_subtest
 
 ts_init_subtest 'no-underlining'
-$TS_CMD_COLCRT --no-underlining < $TS_SELF/nasty-input >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_COLCRT --no-underlining < $TS_SELF/underlines >> $TS_OUTPUT 2>> $TS_ERRLOG
-echo "return value: $?" >> $TS_OUTPUT
+$TS_CMD_COLCRT --no-underlining < $TS_SELF/nasty-input >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_COLCRT --no-underlining < $TS_SELF/underlines >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+echo "return value: $?" >> "$TS_OUTPUT"
 ts_finalize_subtest
 
 ts_init_subtest 'half-lines'
-$TS_CMD_COLCRT --half-lines < $TS_SELF/nasty-input >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_COLCRT --half-lines < $TS_SELF/underlines >> $TS_OUTPUT 2>> $TS_ERRLOG
-echo "return value: $?" >> $TS_OUTPUT
+$TS_CMD_COLCRT --half-lines < $TS_SELF/nasty-input >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_COLCRT --half-lines < $TS_SELF/underlines >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+echo "return value: $?" >> "$TS_OUTPUT"
 ts_finalize_subtest
 
 ts_init_subtest 'short-options'
-$TS_CMD_COLCRT - -2 $TS_SELF/nasty-input >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_COLCRT - -2 $TS_SELF/underlines >> $TS_OUTPUT 2>> $TS_ERRLOG
-echo "return value: $?" >> $TS_OUTPUT
+$TS_CMD_COLCRT - -2 $TS_SELF/nasty-input >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_COLCRT - -2 $TS_SELF/underlines >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+echo "return value: $?" >> "$TS_OUTPUT"
 ts_finalize_subtest
 
 ts_finalize

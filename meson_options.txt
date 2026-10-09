@@ -6,7 +6,14 @@ option('ncurses',     type : 'feature')
 option('slang',       type : 'feature', value : 'disabled',
        description : 'compile cfdisk with slang rather than ncurses')
 option('cryptsetup',  type : 'feature')
-option('cryptsetup-dlopen',  type : 'feature')
+option('selinux-dlopen', type : 'boolean', value : false,
+       description : 'dlopen SELinux at runtime instead of linking')
+option('cryptsetup-dlopen', type : 'boolean', value : false,
+       description : 'dlopen cryptsetup at runtime instead of linking')
+option('systemd-dlopen', type : 'boolean', value : false,
+       description : 'dlopen systemd at runtime instead of linking')
+option('econf-dlopen', type : 'boolean', value : false,
+       description : 'dlopen econf at runtime instead of linking')
 option('zlib',        type : 'feature')
 option('readline',    type : 'feature')
 option('nls',         type : 'feature')
@@ -27,6 +34,8 @@ option('widechar',    type : 'feature',
        description : 'compile with wide character support')
 option('translate-docs', type : 'feature',
        description : 'translate documentation')
+option('fuse',           type : 'feature',
+       description : 'build the test_mkfds helper with libfuse')
 
 # enable building of various programs and features ("build-" prefix)
 
@@ -263,6 +272,12 @@ option('build-getino', type : 'feature',
        description : 'build getino')
 option('build-copyfilerange', type : 'feature',
        description : 'build copyfilerange')
+option('build-prlimit', type : 'feature',
+       description : 'build prlimit')
+option('build-fincore', type : 'feature',
+       description : 'build fincore')
+option('build-lscpu', type : 'feature',
+       description : 'build lscpu')
 
 # static programs
 

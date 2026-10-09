@@ -48,12 +48,12 @@ RANGES="0 \
 
 ts_log "masks:"
 for i in $MASKS; do
-	$TS_HELPER_CPUSET --mask $i >> $TS_OUTPUT
+	$TS_HELPER_CPUSET --mask $i >> "$TS_OUTPUT"
 done
 
 ts_log "strings:"
 for i in $RANGES; do
-	$TS_HELPER_CPUSET --range $i >> $TS_OUTPUT
+	$TS_HELPER_CPUSET --range $i >> "$TS_OUTPUT"
 done
 
 ts_finalize

@@ -96,11 +96,20 @@ struct filter_node *filter_new_param(
 		enum filter_holder holder,
 		void *data)
 {
-	struct filter_param *n = (struct filter_param *) __filter_new_node(
+	struct filter_param *n;
+
+	if (fltr && fltr->parsing && fltr->parse_nodes >= SCOLS_FILTER_MAX_NODES) {
+		errno = ERANGE;
+		return NULL;
+	}
+
+	n = (struct filter_param *) __filter_new_node(
 					F_NODE_PARAM,
 					sizeof(struct filter_param));
 	if (!n)
 		return NULL;
+	if (fltr && fltr->parsing)
+		fltr->parse_nodes++;
 
 	n->type = type;
 	n->holder = holder;
@@ -122,13 +131,65 @@ struct filter_node *filter_new_param(
 	return (struct filter_node *) n;
 }
 
+/* Consecutive ERE quantifiers (a++, a**), nested group repetitions
+ * ((a+)+, (a*)*), and large interval bounds ({,N} where N is huge)
+ * cause glibc regcomp() to allocate gigabytes for the NFA. */
+static int is_unsafe_regex(const char *pattern)
+{
+	size_t i, len = strlen(pattern);
+
+	for (i = 0; i + 1 < len; i++) {
+		if ((pattern[i] == '+' || pattern[i] == '*')
+		    && (pattern[i + 1] == '+' || pattern[i + 1] == '*'))
+			return 1;
+
+		if (pattern[i] == ')'
+		    && (pattern[i + 1] == '+' || pattern[i + 1] == '*')) {
+			int j;
+
+			for (j = (int) i - 1; j >= 0; j--) {
+				if (pattern[j] == '(')
+					break;
+				if (pattern[j] == '+' || pattern[j] == '*')
+					return 1;
+			}
+		}
+
+		/* reject large ERE interval bounds like {,32232} or {1,9999} */
+		if (pattern[i] == '{') {
+			const char *p = &pattern[i + 1];
+
+			while (*p && *p != '}') {
+				if (*p >= '0' && *p <= '9') {
+					unsigned long val;
+					char *end = NULL;
+
+					errno = 0;
+					val = strtoul(p, &end, 10);
+					if (errno || val > SCOLS_FILTER_MAX_REPCNT)
+						return 1;
+					p = end;
+				} else
+					p++;
+			}
+		}
+	}
+	return 0;
+}
+
 int filter_compile_param(struct libscols_filter *fltr, struct filter_param *n)
 {
 	int rc;
 
+	if (filter_node_get_type((struct filter_node *) n) != F_NODE_PARAM)
+		return -EINVAL;
 	if (n->re)
 		return 0;
-	if (!n->val.str)
+	if (n->type != SCOLS_DATA_STRING || !n->val.str)
+		return -EINVAL;
+	if (strlen(n->val.str) > SCOLS_FILTER_MAX_REGSZ)
+		return -EINVAL;
+	if (is_unsafe_regex(n->val.str))
 		return -EINVAL;
 
 	n->re = calloc(1, sizeof(regex_t));
@@ -195,6 +256,16 @@ void filter_free_param(struct filter_param *n)
 	list_del_init(&n->pr_params);
 	scols_unref_column(n->col);
 	free(n);
+}
+
+void filter_free_params(struct libscols_filter *fltr)
+{
+	while (!list_empty(&fltr->params)) {
+		struct filter_param *n = list_entry(fltr->params.next,
+					struct filter_param, pr_params);
+		filter_unref_node((struct filter_node *) n);
+	}
+	INIT_LIST_HEAD(&fltr->params);
 }
 
 int filter_param_get_datatype(struct filter_param *n)

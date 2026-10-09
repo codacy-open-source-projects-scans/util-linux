@@ -29,6 +29,7 @@ ts_skip_nonroot
 IMAGE_DATA="$TS_OUTDIR/${TS_TESTNAME}-data"
 IMAGE_CREATED="$TS_OUTDIR/${TS_TESTNAME}-cramfs.img"	#Image created during the test and compared against the known images.
 
+umask_saved=$(umask)
 umask 133
 
 test_image() {
@@ -36,9 +37,9 @@ test_image() {
 	ts_log "create $TO_ENDIANNESS endian"
 
 	$TS_CMD_MKCRAMFS -N "$TO_ENDIANNESS" -b 4096 "$IMAGE_DATA" \
-		"$IMAGE_CREATED" >> $TS_OUTPUT 2>> $TS_ERRLOG
+		"$IMAGE_CREATED" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
-	$TS_CMD_HEXDUMP -C $IMAGE_CREATED >> $TS_OUTPUT
+	$TS_CMD_HEXDUMP -C $IMAGE_CREATED >> "$TS_OUTPUT"
 
 	rm "$IMAGE_CREATED"
 }
@@ -54,6 +55,8 @@ cp $TS_SELF/mkfs-endianness_testdata_b $IMAGE_DATA/dirA/dirB/b
 
 # sudo may use whatever group
 chgrp -R 0 $IMAGE_DATA
+
+umask "$umask_saved"
 
 #perform tests for both endians
 test_image "little"

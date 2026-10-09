@@ -31,6 +31,7 @@
 #include "list.h"
 #include "debug.h"
 #include "buffer.h"
+#include "vfs.h"
 #include "libmount.h"
 
 #include "mountutils.h"
@@ -140,6 +141,7 @@ extern int mnt_tmptgt_unshare(int *old_ns_fd);
 extern int mnt_tmptgt_cleanup(int old_ns_fd);
 
 extern int mnt_id_from_fd(int fd, uint64_t *uniq_id, int *id);
+extern int mnt_fs_fetch_ids(struct libmnt_fs *fs, int fd);
 
 /* tab.c */
 extern int is_mountinfo(struct libmnt_table *tb);
@@ -150,6 +152,8 @@ extern int mnt_table_set_parser_fltrcb(	struct libmnt_table *tb,
 extern int __mnt_table_parse_mountinfo(struct libmnt_table *tb,
 					const char *filename,
 					struct libmnt_table *u_tb);
+extern int mnt_table_merge_utab(struct libmnt_table *tb,
+				struct libmnt_table *u_tb);
 
 extern struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
 					struct libmnt_fs *fs,
@@ -159,9 +163,6 @@ extern struct libmnt_fs *mnt_table_get_fs_root(struct libmnt_table *tb,
 extern int __mnt_table_is_fs_mounted(	struct libmnt_table *tb,
 					struct libmnt_fs *fstab_fs,
 					const char *tgt_prefix);
-
-extern int mnt_table_enable_noautofs(struct libmnt_table *tb, int ignore);
-extern int mnt_table_is_noautofs(struct libmnt_table *tb);
 
 /* tab_listmount.c */
 extern int mnt_table_next_lsmnt(struct libmnt_table *tb, int direction);
@@ -324,6 +325,7 @@ struct libmnt_table {
 	char		*comm_tail;	/* Last comment in file */
 
 	struct libmnt_cache *cache;		/* canonicalized paths/tags cache */
+	const struct ul_vfs_ops *vfs;		/* borrowed VFS ops (not owned) */
 
         int		(*errcb)(struct libmnt_table *tb,
 				 const char *filename, int line);
@@ -335,6 +337,7 @@ struct libmnt_table {
 	struct libmnt_statmnt	*stmnt; /* statmount() stuff */
 
 	int		noautofs;	/* ignore autofs mounts */
+	int		nouseropts;	/* do not merge utab */
 
 	struct list_head	ents;	/* list of entries (libmnt_fs) */
 	void		*userdata;
@@ -473,6 +476,7 @@ struct libmnt_context
 	const void	*mountdata;	/* final mount(2) data, string or binary data */
 
 	struct libmnt_cache	*cache;		/* paths cache */
+	struct ul_vfs_ops	*vfs;		/* pluggable I/O ops (owned, or NULL) */
 	struct libmnt_lock	*lock;		/* utab lock */
 	struct libmnt_update	*update;	/* utab update */
 
@@ -494,6 +498,7 @@ struct libmnt_context
 	char	*helper;	/* name of the used /sbin/[u]mount.<type> helper */
 	int	helper_status;	/* helper wait(2) status */
 	int	helper_exec_status; /* 1: not called yet, 0: success, <0: -errno */
+	int	helper_errno;	/* errno from helper's failed execv(), 0 if unknown/none */
 
 	pid_t	*children;	/* "mount -a --fork" PIDs */
 	int	nchildren;	/* number of children */
@@ -512,6 +517,8 @@ struct libmnt_context
 	unsigned int	noautofs : 1;		/* ignore autofs mounts */
 	unsigned int	has_selinux_opt : 1;	/* temporary for broken fsconfig() syscall */
 	unsigned int    force_clone : 1;	/* OPEN_TREE_CLONE */
+
+	int		fd_target;	/* pinned target fd (RESOLVE_NO_SYMLINKS) */
 
 	struct list_head	hooksets_datas;	/* global hooksets data */
 	struct list_head	hooksets_hooks;	/* global hooksets data */
@@ -696,6 +703,13 @@ extern int mnt_context_prepare_update(struct libmnt_context *cxt);
 extern int mnt_context_merge_mflags(struct libmnt_context *cxt);
 extern int mnt_context_update_tabs(struct libmnt_context *cxt);
 
+extern void mnt_cache_enable_noprobe(struct libmnt_cache *cache, int enable);
+
+extern int mnt_context_target_fd_required(struct libmnt_context *cxt);
+extern int mnt_context_get_target_fd(struct libmnt_context *cxt);
+extern void mnt_context_close_target_fd(struct libmnt_context *cxt);
+extern int mnt_context_finalize_target(struct libmnt_context *cxt);
+
 extern int mnt_context_umount_setopt(struct libmnt_context *cxt, int c, char *arg);
 extern int mnt_context_mount_setopt(struct libmnt_context *cxt, int c, char *arg);
 
@@ -760,6 +774,8 @@ static inline struct libmnt_sysapi *mnt_context_get_sysapi(struct libmnt_context
 }
 
 int mnt_context_open_tree(struct libmnt_context *cxt, const char *path, unsigned long mflg);
+int mnt_open_tree(int dirfd, const char *path, unsigned long flags,
+		  unsigned long long resolve);
 
 #endif
 

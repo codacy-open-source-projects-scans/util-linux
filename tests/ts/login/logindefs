@@ -13,14 +13,14 @@ ts_init "$*"
 ts_check_test_command "$TS_HELPER_LOGINDEFS"
 
 # list all items
-$TS_HELPER_LOGINDEFS "$TS_SELF/logindefs.data" | sed 's:'$TS_SELF'/::g' >> $TS_OUTPUT
+$TS_HELPER_LOGINDEFS "$TS_SELF/logindefs.data" | sed 's:'$TS_SELF'/::g' >> "$TS_OUTPUT"
 
 # search
-$TS_HELPER_LOGINDEFS "$TS_SELF/logindefs.data" str STRING >> $TS_OUTPUT
-$TS_HELPER_LOGINDEFS "$TS_SELF/logindefs.data" num NUMBER >> $TS_OUTPUT
-$TS_HELPER_LOGINDEFS "$TS_SELF/logindefs.data" bool BOOLEAN >> $TS_OUTPUT
-$TS_HELPER_LOGINDEFS "$TS_SELF/logindefs.data" str EMPTY >> $TS_OUTPUT
+$TS_HELPER_LOGINDEFS "$TS_SELF/logindefs.data" str STRING >> "$TS_OUTPUT"
+$TS_HELPER_LOGINDEFS "$TS_SELF/logindefs.data" num NUMBER >> "$TS_OUTPUT"
+$TS_HELPER_LOGINDEFS "$TS_SELF/logindefs.data" bool BOOLEAN >> "$TS_OUTPUT"
+$TS_HELPER_LOGINDEFS "$TS_SELF/logindefs.data" str EMPTY >> "$TS_OUTPUT"
 
-$TS_HELPER_LOGINDEFS "$TS_SELF/logindefs.data" str UNKNOWN >> $TS_OUTPUT
+$TS_HELPER_LOGINDEFS "$TS_SELF/logindefs.data" str UNKNOWN >> "$TS_OUTPUT"
 
 ts_finalize

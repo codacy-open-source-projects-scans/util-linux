@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * Copyright (c) 1989 The Regents of the University of California.
  * All rights reserved.
@@ -10,11 +11,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -230,7 +227,7 @@ static const char *color_cond(struct hexdump_pr *pr, unsigned char *bp, int bcnt
 		/* no offset or offset outside this print unit */
 		if (offt < 0)
 			offt = address;
-		if (offt < address || offt + clr->range > address + bcnt)
+		if (offt < address || offt + (off_t) clr->range > address + bcnt)
 			continue;
 
 		/* match a string */
@@ -243,13 +240,13 @@ static const char *color_cond(struct hexdump_pr *pr, unsigned char *bp, int bcnt
 				match = 1;
 		/* match a value */
 		} else if (clr->val != -1) {
-			int val = 0;
+			int64_t val = 0;
 			/* addresses are not part of the input, so we can't
 			 * compare with the contents of bp */
 			if (pr->flags == F_ADDRESS) {
 				if (clr->val == address)
 					match = 1;
-			} else {
+			} else if (clr->range <= sizeof(val)) {
 				memcpy(&val, bp + offt - address, clr->range);
 				if (val == clr->val)
 					match = 1;
@@ -456,6 +453,11 @@ void display(struct hexdump *hex)
 			bp = savebp;
 			rem = hex->blocksize;
 			address = saveaddress;
+		}
+		if (ferror(stdout)) {
+			hex->stdout_errno = errno;
+			hex->exitval = errno == EPIPE ? EXIT_SUCCESS : EXIT_FAILURE;
+			return;
 		}
 	}
 	if (endfu) {

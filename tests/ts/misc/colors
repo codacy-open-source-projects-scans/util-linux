@@ -34,8 +34,8 @@ COLOR_NAMES=$(awk '
 ' "$SRC")
 
 for color in $COLOR_NAMES; do
-	printf "%15s: " "$color" >> $TS_OUTPUT
-	$TS_HELPER_COLORS --mode always --color "$color" >> $TS_OUTPUT 2>> $TS_ERRLOG
+	printf "%15s: " "$color" >> "$TS_OUTPUT"
+	$TS_HELPER_COLORS --mode always --color "$color" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 done
 
 ts_finalize

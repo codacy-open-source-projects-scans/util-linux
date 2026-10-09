@@ -18,18 +18,18 @@ FIRST_MOUNTPOINT=$($TS_CMD_FINDMNT -no TARGET / || $TS_CMD_FINDMNT -fno TARGET)
 ln -s $FIRST_MOUNTPOINT ./symlink-to-mountpoint
 
 ts_init_subtest "default"
-$TS_CMD_MOUNTPOINT ./symlink-to-mountpoint >> $TS_OUTPUT 2>> $TS_ERRLOG
-echo $? >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_MOUNTPOINT ./symlink-to-mountpoint >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+echo $? >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 ts_init_subtest "nofollow"
-$TS_CMD_MOUNTPOINT --nofollow ./symlink-to-mountpoint >> $TS_OUTPUT 2>> $TS_ERRLOG
-echo $? >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_MOUNTPOINT --nofollow ./symlink-to-mountpoint >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+echo $? >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 ts_init_subtest "mutually-exclusive"
-$TS_CMD_MOUNTPOINT --devno --nofollow / >> $TS_OUTPUT 2>> $TS_ERRLOG
-echo $? >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_MOUNTPOINT --devno --nofollow / >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+echo $? >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 rm -f ./symlink-to-mountpoint

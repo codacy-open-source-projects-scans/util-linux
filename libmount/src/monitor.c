@@ -482,19 +482,27 @@ int mnt_monitor_event_cleanup(struct libmnt_monitor *mn)
  * (as returned by mnt_monitor_next_change()). If the event does not provide
  * details, it returns -ENOTSUP.
  *
+ * If the fanotify event queue has overflowed (events were lost due to
+ * sustained mount churn), this function returns -EOVERFLOW. In this case,
+ * the remaining buffered events are discarded and the caller should
+ * perform a full rescan to recover a consistent mount state.
+ *
  * <informalexample>
  *  <programlisting>
  *   while (mnt_monitor_next_change(mn, NULL, &type) == 0) {
  *     if (type == MNT_MONITOR_TYPE_FANOTIFY) {
- *       while (mnt_monitor_event_next_fs(mn, fs) == 0) {
+ *       int rc;
+ *       while ((rc = mnt_monitor_event_next_fs(mn, fs)) == 0) {
  *         printf("ID=%ju\n", mnt_fs_get_uniq_id(fs));
  *       }
+ *       if (rc == -EOVERFLOW)
+ *         full_rescan();
  *     }
  *   }
  *  </programlisting>
  * </informalexample>
  *
- * Returns: 0 on success, 1 no more data, <0 on error
+ * Returns: 0 on success, 1 no more data, -EOVERFLOW on queue overflow, <0 on error
  *
  * Since: 2.42
  */
@@ -607,6 +615,7 @@ static int __test_epoll(struct libmnt_test *ts __attribute__((unused)),
 			continue;
 
 		printf(" top-level FD active\n");
+		fflush(stdout);
 		if (cleanup)
 			mnt_monitor_event_cleanup(mn);
 		else {
@@ -628,6 +637,7 @@ static int __test_epoll(struct libmnt_test *ts __attribute__((unused)),
 							mnt_fs_is_moved(fs) ? "MOVED" : "???");
 					}
 				}
+				fflush(stdout);
 			}
 		}
 	} while (1);

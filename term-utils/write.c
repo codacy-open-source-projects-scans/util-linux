@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -13,11 +14,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -60,8 +57,7 @@
 #include <utmpx.h>
 
 #if defined(USE_SYSTEMD) && HAVE_DECL_SD_SESSION_GET_USERNAME == 1
-# include <systemd/sd-login.h>
-# include <systemd/sd-daemon.h>
+# include "dl-systemd.h"
 #endif
 
 #include "c.h"
@@ -142,27 +138,25 @@ static int check_utmp(const struct write_control *ctl)
 	struct utmpx *u;
 	int res = 1;
 #if defined(USE_SYSTEMD) && HAVE_DECL_SD_SESSION_GET_USERNAME == 1
-	if (sd_booted() > 0) {
+	if (ul_dlopen_libsystemd() == 0 && systemd_call(sd_booted)() > 0) {
 		char **sessions_list;
-		int sessions = sd_get_sessions(&sessions_list);
+		int sessions = systemd_call(sd_get_sessions)(&sessions_list);
+
 		if (sessions < 0)
-			errx(EXIT_FAILURE, _("error getting sessions: %s"),
-				strerror(-sessions));
+			goto utmp;
 
 		for (int i = 0; i < sessions; i++) {
-
 			char *name, *tty;
-			int r;
 
-			if ((r = sd_session_get_username(sessions_list[i], &name)) < 0)
-				errx(EXIT_FAILURE, _("get user name failed: %s"), strerror (-r));
-			if (sd_session_get_tty(sessions_list[i], &tty) < 0) {
+			if (systemd_call(sd_session_get_username)(sessions_list[i], &name) < 0)
+				continue;
+			if (systemd_call(sd_session_get_tty)(sessions_list[i], &tty) < 0) {
 				free(name);
 				continue;
 			}
 
-			if  (strcmp(ctl->dst_login, name) == 0 &&
-					strcmp(ctl->dst_tty_name, tty) == 0) {
+			if (strcmp(ctl->dst_login, name) == 0 &&
+			    strcmp(ctl->dst_tty_name, tty) == 0) {
 				free(name);
 				free(tty);
 				res = 0;
@@ -174,23 +168,30 @@ static int check_utmp(const struct write_control *ctl)
 		for (int i = 0; i < sessions; i++)
 			free(sessions_list[i]);
 		free(sessions_list);
-	} else {
-#endif
-		utmpxname(_PATH_UTMP);
-		setutxent();
 
-		while ((u = getutxent())) {
-			if (strncmp(ctl->dst_login, u->ut_user, sizeof(u->ut_user)) == 0 &&
-		    		strncmp(ctl->dst_tty_name, u->ut_line, sizeof(u->ut_line)) == 0) {
-				res = 0;
-				break;
-			}
-		}
-
-		endutxent();
-#if defined(USE_SYSTEMD) && HAVE_DECL_SD_SESSION_GET_USERNAME == 1
+		if (res == 0)
+			return res;
 	}
+utmp:
 #endif
+	utmpxname(_PATH_UTMP);
+	setutxent();
+
+	while ((u = getutxent())) {
+		char user[sizeof(u->ut_user) + 1];
+		char line[sizeof(u->ut_line) + 1];
+
+		mem2strcpy(user, u->ut_user, sizeof(u->ut_user), sizeof(user));
+		mem2strcpy(line, u->ut_line, sizeof(u->ut_line), sizeof(line));
+
+		if (strcmp(ctl->dst_login, user) == 0 &&
+		    strcmp(ctl->dst_tty_name, line) == 0) {
+			res = 0;
+			break;
+		}
+	}
+
+	endutxent();
 	return res;
 }
 
@@ -212,27 +213,24 @@ static void search_utmp(struct write_control *ctl)
 	int num_ttys = 0, valid_ttys = 0, tty_writeable = 0, user_is_me = 0;
 
 #if defined(USE_SYSTEMD) && HAVE_DECL_SD_SESSION_GET_USERNAME == 1
-	if (sd_booted() > 0) {
+	if (ul_dlopen_libsystemd() == 0 && systemd_call(sd_booted)() > 0) {
 		char path[256];
 		char **sessions_list;
-		int sessions = sd_get_sessions(&sessions_list);
+		int sessions = systemd_call(sd_get_sessions)(&sessions_list);
+
 		if (sessions < 0)
-			errx(EXIT_FAILURE, _("error getting sessions: %s"),
-			     strerror(-sessions));
+			goto utmp;
 
 		for (int i = 0; i < sessions; i++) {
 			char *name, *tty;
-			int r;
 
-			if ((r = sd_session_get_username(sessions_list[i], &name)) < 0)
-				errx(EXIT_FAILURE, _("get user name failed: %s"), strerror (-r));
-
-			if  (strcmp(ctl->dst_login, name) != 0) {
+			if (systemd_call(sd_session_get_username)(sessions_list[i], &name) < 0)
+				continue;
+			if (strcmp(ctl->dst_login, name) != 0) {
 				free(name);
 				continue;
 			}
-
-			if (sd_session_get_tty(sessions_list[i], &tty) < 0) {
+			if (systemd_call(sd_session_get_tty)(sessions_list[i], &tty) < 0) {
 				free(name);
 				continue;
 			}
@@ -271,26 +269,32 @@ static void search_utmp(struct write_control *ctl)
 		for (int i = 0; i < sessions; i++)
 			free(sessions_list[i]);
 		free(sessions_list);
-	} else
+	}
+utmp:
 #endif
 	{
+		char user[sizeof(u->ut_user) + 1];
+		char line[sizeof(u->ut_line) + 1];
 		char path[sizeof(u->ut_line) + 6];
 
 		utmpxname(_PATH_UTMP);
 		setutxent();
 
 		while ((u = getutxent())) {
-			if (strncmp(ctl->dst_login, u->ut_user, sizeof(u->ut_user)) != 0)
+			mem2strcpy(user, u->ut_user, sizeof(u->ut_user), sizeof(user));
+			mem2strcpy(line, u->ut_line, sizeof(u->ut_line), sizeof(line));
+
+			if (strcmp(ctl->dst_login, user) != 0)
 				continue;
 			num_ttys++;
-			snprintf(path, sizeof(path), "/dev/%s", u->ut_line);
+			snprintf(path, sizeof(path), "/dev/%s", line);
 			if (check_tty(path, &tty_writeable, &tty_atime, 0))
 				/* bad term? skip */
 				continue;
 			if (ctl->src_uid && !tty_writeable)
 				/* skip ttys with msgs off */
 				continue;
-			if (memcmp(u->ut_line, ctl->src_tty_name, strlen(ctl->src_tty_name) + 1) == 0) {
+			if (strcmp(line, ctl->src_tty_name) == 0) {
 				user_is_me = 1;
 				/* don't write to yourself */
 				continue;
@@ -306,7 +310,6 @@ static void search_utmp(struct write_control *ctl)
 				ctl->dst_tty_name = ctl->dst_tty_path + 5;
 			}
 		}
-
 		endutxent();
 	}
 
@@ -346,6 +349,7 @@ static void do_write(const struct write_control *ctl)
 	time_t now;
 	struct tm *tm;
 	char *host, *line = NULL;
+	char buf[512];
 	size_t linelen = 0;
 	struct sigaction sigact;
 
@@ -375,14 +379,15 @@ static void do_write(const struct write_control *ctl)
 	/* print greeting */
 	printf("\r\n\a\a\a");
 	if (strcmp(login, pwuid) != 0)
-		printf(_("Message from %s@%s (as %s) on %s at %02d:%02d ..."),
+		snprintf(buf, sizeof(buf), _("Message from %s@%s (as %s) on %s at %02d:%02d ..."),
 		       login, host, pwuid, ctl->src_tty_name,
 		       tm->tm_hour, tm->tm_min);
 	else
-		printf(_("Message from %s@%s on %s at %02d:%02d ..."),
+		snprintf(buf, sizeof(buf), _("Message from %s@%s on %s at %02d:%02d ..."),
 		       login, host, ctl->src_tty_name,
 		       tm->tm_hour, tm->tm_min);
 	free(host);
+	fputs_careful(buf, stdout, '^', true, 0);
 	printf("\r\n");
 
 	while (getline(&line, &linelen, stdin) >= 0) {

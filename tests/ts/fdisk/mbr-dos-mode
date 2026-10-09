@@ -40,9 +40,9 @@ FDISK_CMD_DELETE_EXTENDED="d\n2\n" # delete second primary
 FDISK_OPTIONS="--cylinders 1024 --compatibility=dos --units=cylinders"
 
 function print_layout {
-	echo -ne "\n---layout----------\n" >> $TS_OUTPUT
-	$TS_CMD_FDISK ${FDISK_OPTIONS} -x ${TEST_IMAGE_NAME} >> $TS_OUTPUT
-	echo -ne   "-------------------\n\n" >> $TS_OUTPUT
+	echo -ne "\n---layout----------\n" >> "$TS_OUTPUT"
+	$TS_CMD_FDISK ${FDISK_OPTIONS} -x ${TEST_IMAGE_NAME} >> "$TS_OUTPUT"
+	echo -ne   "-------------------\n\n" >> "$TS_OUTPUT"
 
     ts_fdisk_clean ${TEST_IMAGE_NAME}
 }
@@ -53,11 +53,11 @@ function print_layout {
 #
 ts_init_subtest "empty-pt"
 TEST_IMAGE_NAME=$(ts_image_init 10)
-ts_image_md5sum >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_image_md5sum >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 echo -e "${FDISK_CMD_CREATE_DOSLABEL}${FDISK_CMD_INIT}${FDISK_CMD_WRITE_CLOSE}" \
 	 | $TS_CMD_FDISK --noauto-pt ${FDISK_OPTIONS} ${TEST_IMAGE_NAME} &> /dev/null
-ts_image_md5sum >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_image_md5sum >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 print_layout
 ts_finalize_subtest
@@ -65,7 +65,7 @@ ts_finalize_subtest
 ts_init_subtest "create-primary-partition"
 echo -e "${FDISK_CMD_CREATE_PRIMARY}${FDISK_CMD_WRITE_CLOSE}" | \
 	$TS_CMD_FDISK ${FDISK_OPTIONS} ${TEST_IMAGE_NAME} &> /dev/null
-ts_image_md5sum >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_image_md5sum >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 print_layout
 ts_finalize_subtest
@@ -73,7 +73,7 @@ ts_finalize_subtest
 ts_init_subtest "set-partition-type"
 echo -e "${FDISK_CMD_CHANGE_PARTTYPE}${FDISK_CMD_WRITE_CLOSE}" | \
 	$TS_CMD_FDISK ${FDISK_OPTIONS} ${TEST_IMAGE_NAME} &> /dev/null
-ts_image_md5sum >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_image_md5sum >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 print_layout
 ts_finalize_subtest
@@ -81,7 +81,7 @@ ts_finalize_subtest
 ts_init_subtest "set-primary-par-active"
 echo -e "${FDISK_CMD_SET_ACTIVE}${FDISK_CMD_WRITE_CLOSE}" | \
 	$TS_CMD_FDISK ${FDISK_OPTIONS} ${TEST_IMAGE_NAME} &> /dev/null
-ts_image_md5sum >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_image_md5sum >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 print_layout
 ts_finalize_subtest
@@ -89,7 +89,7 @@ ts_finalize_subtest
 ts_init_subtest "re-create-primary-par"
 echo -e "d\n${FDISK_CMD_CREATE_PRIMARY}${FDISK_CMD_WRITE_CLOSE}" | \
 	$TS_CMD_FDISK ${FDISK_OPTIONS} ${TEST_IMAGE_NAME} &> /dev/null
-ts_image_md5sum >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_image_md5sum >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 print_layout
 ts_finalize_subtest
@@ -97,7 +97,7 @@ ts_finalize_subtest
 ts_init_subtest "create-extended-par"
 echo -e "${FDISK_CMD_CREATE_EXTENDED}${FDISK_CMD_WRITE_CLOSE}" | \
 	$TS_CMD_FDISK ${FDISK_OPTIONS} ${TEST_IMAGE_NAME} &> /dev/null
-ts_image_md5sum >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_image_md5sum >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 print_layout
 ts_finalize_subtest
@@ -105,7 +105,7 @@ ts_finalize_subtest
 ts_init_subtest "create-logical-par"
 echo -e "${FDISK_CMD_CREATE_LOGICAL}${FDISK_CMD_CREATE_LOGICAL}${FDISK_CMD_CREATE_LOGICAL}${FDISK_CMD_CREATE_LOGICAL}${FDISK_CMD_WRITE_CLOSE}" \
 	| $TS_CMD_FDISK ${FDISK_OPTIONS} ${TEST_IMAGE_NAME} &> /dev/null
-ts_image_md5sum >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_image_md5sum >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 print_layout
 ts_finalize_subtest
@@ -113,7 +113,7 @@ ts_finalize_subtest
 ts_init_subtest "delete-logical-par"
 echo -e "${FDISK_CMD_DELETE_LOGICALS}${FDISK_CMD_WRITE_CLOSE}" \
 	| $TS_CMD_FDISK ${FDISK_OPTIONS} ${TEST_IMAGE_NAME} &> /dev/null
-ts_image_md5sum >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_image_md5sum >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 print_layout
 ts_finalize_subtest
@@ -121,7 +121,7 @@ ts_finalize_subtest
 ts_init_subtest "create-another-log-par"
 echo -e "${FDISK_CMD_CREATE_LOGICAL}${FDISK_CMD_WRITE_CLOSE}" \
 	| $TS_CMD_FDISK ${FDISK_OPTIONS} ${TEST_IMAGE_NAME} &> /dev/null
-ts_image_md5sum >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_image_md5sum >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 print_layout
 ts_finalize_subtest
@@ -129,7 +129,7 @@ ts_finalize_subtest
 ts_init_subtest "delete-primary-par"
 echo -e "${FDISK_CMD_DELETE_PRIMARY}${FDISK_CMD_WRITE_CLOSE}" \
 	| $TS_CMD_FDISK ${FDISK_OPTIONS} ${TEST_IMAGE_NAME} &> /dev/null
-ts_image_md5sum >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_image_md5sum >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 print_layout
 ts_finalize_subtest
@@ -137,7 +137,7 @@ ts_finalize_subtest
 ts_init_subtest "delete-extended-par"
 echo -e "${FDISK_CMD_DELETE_EXTENDED}${FDISK_CMD_WRITE_CLOSE}" \
 	| $TS_CMD_FDISK ${FDISK_OPTIONS} ${TEST_IMAGE_NAME} &> /dev/null
-ts_image_md5sum >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_image_md5sum >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 print_layout
 ts_finalize_subtest

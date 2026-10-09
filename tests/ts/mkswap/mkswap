@@ -50,7 +50,7 @@ for PAGESIZE in 4096 8192; do
 		ts_init_subtest $name
 
 		rm -f "$outimg"
-		truncate -s $(( PAGESIZE * 10 )) "$outimg" >> $TS_ERRLOG 2>&1
+		truncate -s $(( PAGESIZE * 10 )) "$outimg" >> "$TS_ERRLOG" 2>&1
 
 		"$TS_CMD_MKSWAP" -q -L label -U "$UUID" -e "$ENDIANNESS" -p "$PAGESIZE" "$outimg" \
 			>> "$TS_OUTPUT" 2>/dev/null \
@@ -82,10 +82,10 @@ offset=10000
 outimg="$TS_OUTDIR/offset.img"
 
 rm -f "$outimg"
-truncate -s $(( 4096 * 10 )) "$outimg" > $TS_ERRLOG 2>&1
+truncate -s $(( 4096 * 10 )) "$outimg" > "$TS_ERRLOG" 2>&1
 
 rm -f "$outimg.offset"
-truncate -s $(( 4096 * 10 + $offset )) "$outimg.offset" > $TS_ERRLOG 2>&1
+truncate -s $(( 4096 * 10 + offset )) "$outimg.offset" > "$TS_ERRLOG" 2>&1
 
 "$TS_CMD_MKSWAP" -q -U "$UUID" -p 4096 "$outimg" \
 	>> "$TS_OUTPUT" 2>/dev/null \

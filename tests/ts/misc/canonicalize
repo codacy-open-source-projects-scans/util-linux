@@ -24,11 +24,11 @@ ts_check_test_command "$TS_CMD_SETPRIV"
 ts_check_test_command "$TS_HELPER_CANONICALIZE"
 
 grep -q 'nodev[[:space:]]*tmpfs' /proc/filesystems || \
-	ts_skip_subtest "tmpfs unsupported"
+	ts_skip "tmpfs unsupported"
 
 mkdir -p $TS_MOUNTPOINT &>  /dev/null
-$TS_CMD_MOUNT -t tmpfs tmpfs $TS_MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
-[ $? -eq 0 ] || ts_skip "tmpfs mount failed"
+$TS_CMD_MOUNT -t tmpfs tmpfs $TS_MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+		|| ts_skip "tmpfs mount failed"
 
 # reuse the same TS_MOUNTPOINT in all subtests
 BASE=$TS_MOUNTPOINT
@@ -49,7 +49,7 @@ ts_init_subtest root-user
 mkdir -p ${BASE}/aaa/bbb
 mkdir -p ${BASE}/ccc/ddd
 ln -s ${BASE}/ccc ${BASE}/aaa/bbb/ccc-sym
-$TESTPROG ${BASE}/aaa/bbb/ccc-sym/ddd | sed "s:${BASE}::g" >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TESTPROG ${BASE}/aaa/bbb/ccc-sym/ddd | sed "s:${BASE}::g" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 
@@ -66,12 +66,11 @@ if id $uid &>/dev/null; then
 	$TS_CMD_SETPRIV --reuid="$uid" --regid="$gid" --clear-groups \
 			--inh-caps=-all --reset-env \
 			-- $TESTPROG ${BASE}/root-sym/foo \
-		| sed "s:${BASE}::g" >> $TS_OUTPUT 2>> $TS_ERRLOG
-
-	ts_finalize_subtest
+		| sed "s:${BASE}::g" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 else
-	ts_skip_subtest "nobody user is missing"
+	ts_skip "nobody user is missing"
 fi
+ts_finalize_subtest
 
 
 # cleanup

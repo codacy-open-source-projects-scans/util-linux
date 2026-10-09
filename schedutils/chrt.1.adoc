@@ -40,11 +40,12 @@ chrt - manipulate the real-time attributes of a process
 
 *chrt* [options] [_priority_] _command_ [_argument_...]
 
-*chrt --pid* [options] [_priority_] _PID_
+*chrt --pid* [options] [_priority_] _PID_[:_inode_]
 
 == DESCRIPTION
 
-*chrt* sets or retrieves the real-time scheduling attributes of an existing _PID_, or runs _command_ with the given attributes.
+*chrt* sets or retrieves the real-time scheduling attributes of an existing _PID_[:_inode_], or runs _command_ with the given attributes.
+The _inode_ uniquely identifies the process identity in the pidfs. To retrieve a process's inode number you can use the *getino*(1) utility.
 
 == POLICY OPTIONS
 
@@ -80,6 +81,18 @@ Specifies period parameter for *SCHED_DEADLINE* policy (Linux-specific). Note th
 
 *-D*, *--sched-deadline* _nanoseconds_::
 Specifies deadline parameter for *SCHED_DEADLINE* policy (Linux-specific).
+
+*-G*, *--reclaim-grub*::
+Enables GRUB (Greedy Reclamation of Unused Bandwidth) algorithm. Linux-specific, supported since 4.13.
+
+*-O*, *--deadline-overrun*::
+Set *SCHED_FLAG_DL_OVERRUN* to receive *SIGXCPU* when a *SCHED_DEADLINE* task exceeds its runtime budget within a period. Without this flag the task is silently throttled until the next period. Linux-specific, supported since 4.16.
+
+*-U*, *--clamp-min* _value_::
+Set *SCHED_FLAG_UTIL_CLAMP_MIN* to define the minimum utilization hint for the task (range 0-1024, where 1024 represents 100% of maximum CPU capacity), or *-1* to reset to the system default. Resetting requires kernel >= 5.11, otherwise the syscall will fail with *EINVAL*. Tells the scheduler to place the task on a cpu with enough capacity. Linux-specific, supported since 5.3.
+
+*-X*, *--clamp-max* _value_::
+Set *SCHED_FLAG_UTIL_CLAMP_MAX* to define the maximum utilization cap for the task (range 0-1024), or *-1* to reset to the system default. Resetting requires kernel >= 5.11, otherwise the syscall will fail with *EINVAL*. Tells the scheduler not to boost CPU frequency unnecessarily for this task. Linux-specific, supported since 5.3.
 
 *-R*, *--reset-on-fork*::
 Use *SCHED_RESET_ON_FORK* or *SCHED_FLAG_RESET_ON_FORK* flag. Linux-specific, supported since 2.6.31.
@@ -118,12 +131,12 @@ ____
 //TRANSLATORS: Keep {colon} untranslated
 You can also retrieve the real-time attributes of an existing task{colon}::
 ____
-*chrt --pid* _PID_
+*chrt --pid* _PID_[:_inode_]
 ____
 //TRANSLATORS: Keep {colon} untranslated
 Or set them{colon}::
 ____
-*chrt --pid* _policy-option priority PID_
+*chrt --pid* _policy-option_ _priority_ _PID_[:_inode_]
 ____
 For example, to set the scheduling policy to *SCHED_RR* (round-robin) and the priority to *30* for process *1234*{colon}::
 ____
@@ -131,11 +144,11 @@ ____
 ____
 Reset priorities to default for a process{colon}::
 ____
-*chrt --pid -o 0* _PID_
+*chrt --pid -o 0* _PID_[:_inode_]
 ____
 Set a custom slice of 1 ms for a *SCHED_OTHER* task (priority is optional for policies other than *SCHED_FIFO* and *SCHED_RR*){colon}::
 ____
-*chrt --pid -o -T 1000000* _PID_
+*chrt --pid -o -T 1000000* _PID_[:_inode_]
 ____
 See *sched*(7) for a detailed discussion of the different scheduler classes and how they interact.
 
@@ -159,7 +172,8 @@ mailto:kzak@redhat.com[Karel Zak]
 *nice*(1),
 *renice*(1),
 *taskset*(1),
-*sched*(7)
+*sched*(7),
+*getino*(1)
 
 See *sched_setscheduler*(2) for a description of the Linux scheduling scheme.
 

@@ -35,7 +35,7 @@ ts_skip_nonroot
 "$TS_CMD_UNSHARE" --user --map-root-user \
 	--pid --mount-proc \
 	--fork --forward-signals --kill-child \
-	"$TS_HELPER_SIGRECEIVE" < /dev/null >> $TS_OUTPUT 2>> $TS_ERRLOG &
+	"$TS_HELPER_SIGRECEIVE" < /dev/null >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" &
 
 UNSHARE_PID=$!
 
@@ -66,9 +66,9 @@ EXIT_CODE=$?
 # test_sigreceive exits with the signal number it receives (15 = SIGTERM)
 # With --kill-child, it should still receive SIGTERM first via forwarding
 if [ $EXIT_CODE -eq 15 ]; then
-	echo "SIGTERM forwarded successfully with kill-child" >> $TS_OUTPUT
+	echo "SIGTERM forwarded successfully with kill-child" >> "$TS_OUTPUT"
 else
-	echo "UNEXPECTED EXIT CODE: $EXIT_CODE" >> $TS_OUTPUT
+	echo "UNEXPECTED EXIT CODE: $EXIT_CODE" >> "$TS_OUTPUT"
 fi
 
 ts_finalize

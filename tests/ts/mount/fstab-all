@@ -76,7 +76,7 @@ echo  "${TS_DEVICE}4 ${MOUNTPOINT}D ext4 rw,defaults 0 0" >> "${TS_FSTAB}"
 
 
 ts_init_subtest "basic"
-$TS_CMD_MOUNT --all --fstab "${TS_FSTAB}" >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_MOUNT --all --fstab "${TS_FSTAB}" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 [ $? == 0 ] || ts_log "mount failed"
 udevadm settle
 $TS_CMD_UMOUNT ${MOUNTPOINT}{A,B,C,D}
@@ -85,48 +85,43 @@ ts_finalize_subtest
 
 
 ts_init_subtest "filter-type"
-$TS_CMD_MOUNT --all --fstab "${TS_FSTAB}" --types ext4 >> $TS_OUTPUT 2>> $TS_ERRLOG
-[ $? == 0 ] || ts_log "mount failed"
+$TS_CMD_MOUNT --all --fstab "${TS_FSTAB}" --types ext4 >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+			|| ts_log "mount failed"
 udevadm settle
-$TS_CMD_UMOUNT ${MOUNTPOINT}D
-[ $? == 0 ] || ts_log "umount failed"
+$TS_CMD_UMOUNT ${MOUNTPOINT}D || ts_log "umount failed"
 ts_finalize_subtest
 
 
 ts_init_subtest "filter-notype"
-$TS_CMD_MOUNT --all --fstab "${TS_FSTAB}" --types noext4 >> $TS_OUTPUT 2>> $TS_ERRLOG
-[ $? == 0 ] || ts_log "mount failed"
+$TS_CMD_MOUNT --all --fstab "${TS_FSTAB}" --types noext4 >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+			|| ts_log "mount failed"
 udevadm settle
-$TS_CMD_UMOUNT ${MOUNTPOINT}{A,B,C}
-[ $? == 0 ] || ts_log "umount failed"
+$TS_CMD_UMOUNT ${MOUNTPOINT}{A,B,C} || ts_log "umount failed"
 ts_finalize_subtest
 
 
 ts_init_subtest "filter-option"
-$TS_CMD_MOUNT --all --fstab "${TS_FSTAB}" --test-opts ro >> $TS_OUTPUT 2>> $TS_ERRLOG
-[ $? == 0 ] || ts_log "mount failed"
+$TS_CMD_MOUNT --all --fstab "${TS_FSTAB}" --test-opts ro >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+			|| ts_log "mount failed"
 udevadm settle
-$TS_CMD_UMOUNT ${MOUNTPOINT}C
-[ $? == 0 ] || ts_log "umount failed"
+$TS_CMD_UMOUNT ${MOUNTPOINT}C || ts_log "umount failed"
 ts_finalize_subtest
 
 
 ts_init_subtest "override-option"
-$TS_CMD_MOUNT --all --fstab "${TS_FSTAB}" --options ro >> $TS_OUTPUT 2>> $TS_ERRLOG
-[ $? == 0 ] || ts_log "mount failed"
+$TS_CMD_MOUNT --all --fstab "${TS_FSTAB}" --options ro >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+			|| ts_log "mount failed"
 udevadm settle
-$TS_CMD_UMOUNT ${MOUNTPOINT}{A,B,C,D}
-[ $? == 0 ] || ts_log "umount failed"
+$TS_CMD_UMOUNT ${MOUNTPOINT}{A,B,C,D} || ts_log "umount failed"
 ts_finalize_subtest
 
 
 ts_init_subtest "relative-path"
 cd "$TS_OUTDIR" > /dev/null
-$TS_CMD_MOUNT --all --fstab $(basename "${TS_FSTAB}") >> $TS_OUTPUT 2>> $TS_ERRLOG
-[ $? == 0 ] || ts_log "mount failed"
+$TS_CMD_MOUNT --all --fstab "$(basename "${TS_FSTAB}")" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+			|| ts_log "mount failed"
 udevadm settle
-$TS_CMD_UMOUNT ${MOUNTPOINT}{A,B,C,D}
-[ $? == 0 ] || ts_log "umount failed"
+$TS_CMD_UMOUNT ${MOUNTPOINT}{A,B,C,D} || ts_log "umount failed"
 cd - > /dev/null
 ts_finalize_subtest
 
@@ -143,11 +138,10 @@ echo  "${TS_DEVICE}4 /foo/D ext4 rw,defaults 0 0" >> "${TS_FSTAB}"
 $TS_CMD_MOUNT	--all \
 		--fstab "${TS_FSTAB}" \
 		--target-prefix $MY_ROOT \
-		--options X-mount.mkdir >> $TS_OUTPUT 2>> $TS_ERRLOG
-[ $? == 0 ] || ts_log "mount failed"
+		--options X-mount.mkdir >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+		|| ts_log "mount failed"
 udevadm settle
-$TS_CMD_UMOUNT $MY_ROOT/foo/{A,B,C,D}
-[ $? == 0 ] || ts_log "umount failed"
+$TS_CMD_UMOUNT $MY_ROOT/foo/{A,B,C,D} || ts_log "umount failed"
 ts_finalize_subtest
 
 ts_finalize

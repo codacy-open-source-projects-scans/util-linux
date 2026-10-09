@@ -24,6 +24,7 @@
 
 #include "strutils.h"
 #include "pathnames.h"
+#include "fileutils.h"
 
 #include <sys/fanotify.h>
 #include <sys/epoll.h>
@@ -197,6 +198,12 @@ static int fanotify_next_fs(struct libmnt_monitor *mn, struct monitor_entry *me,
 	    meta->vers != FANOTIFY_METADATA_VERSION)
 		goto nothing;
 
+	if (meta->mask & FAN_Q_OVERFLOW) {
+		DBG_OBJ(MONITOR, mn, ul_debug("fanotify queue overflow"));
+		data->remaining = 0;
+		return -EOVERFLOW;
+	}
+
 	thislen = meta->event_len - sizeof(*meta);
 
 	mnt = (struct fanotify_event_info_mnt *)
@@ -301,7 +308,7 @@ int mnt_monitor_enable_fanotify(struct libmnt_monitor *mn, int enable, int ns)
 		 * and will be closed by fanotify_free_data() (called from
 		 * free_monitor_entry()).
 		 */
-		data->ns_fd = open(_PATH_PROC_NSDIR "/mnt", O_RDONLY);
+		data->ns_fd = open(_PATH_PROC_NSDIR "/mnt", O_RDONLY | O_CLOEXEC);
 		if (data->ns_fd < 0)
 			goto err;
 
@@ -312,7 +319,12 @@ int mnt_monitor_enable_fanotify(struct libmnt_monitor *mn, int enable, int ns)
 		if (!me->path)
 			goto err;
 	} else {
-		if (asprintf(&me->path, _PATH_PROC_FDDIR "/%d", data->ns_fd) < 0)
+		char buf[UL_FDPATH_BUFSIZ];
+
+		if (!ul_fd_mkpath(buf, sizeof(buf), data->ns_fd))
+			goto err;
+		me->path = strdup(buf);
+		if (!me->path)
 			goto err;
 	}
 

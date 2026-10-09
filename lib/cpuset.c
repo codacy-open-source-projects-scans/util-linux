@@ -221,6 +221,38 @@ char *cpulist_create(char *str, size_t len,
 }
 
 /*
+ * cpulist_flat_create - Convert cpumask to flat comma-separated list
+ * Output: ONLY single CPUs, NO ranges (e.g. "0,1,2,3,4")
+ */
+char *cpulist_flat_create(char *str, size_t len,
+			    cpu_set_t *set, size_t setsize)
+{
+	char *ptr = str;
+	int entry_made = 0;
+	size_t max = cpuset_nbits(setsize);
+	size_t cpu;
+	int rlen;
+
+	for (cpu = 0; cpu < max; cpu++) {
+		if (!CPU_ISSET_S(cpu, setsize, set))
+			continue;
+
+		rlen = snprintf(ptr, len, "%zu,", cpu);
+		if (rlen < 0 || (size_t)rlen >= len)
+			return NULL;
+
+		ptr += rlen;
+		len -= rlen;
+		entry_made = 1;
+	}
+	ptr -= entry_made;
+	*ptr = '\0';
+
+	return str;
+}
+
+
+/*
  * Returns string with CPU mask.
  */
 char *cpumask_create(char *str, size_t len,
@@ -329,7 +361,8 @@ int cpulist_parse(const char *str, cpu_set_t *set, size_t setsize, int fail)
 		unsigned int s;	/* stride */
 		const char *c1, *c2;
 
-		if (nextnumber(p, &end, &a) != 0)
+		if (nextnumber(p, &end, &a) != 0 ||
+			(*end && *end != ',' && *end != '-'))
 			return 1;
 		b = a;
 		s = 1;
@@ -339,13 +372,15 @@ int cpulist_parse(const char *str, cpu_set_t *set, size_t setsize, int fail)
 		c2 = nexttoken(p, ',');
 
 		if (c1 != NULL && (c2 == NULL || c1 < c2)) {
-			if (nextnumber(c1, &end, &b) != 0)
+			if (nextnumber(c1, &end, &b) != 0 ||
+				(*end && *end != ',' && *end != ':'))
 				return 1;
 
-			c1 = end && *end ? nexttoken(end, ':') : NULL;
+			c1 = nexttoken(end, ':');
 
 			if (c1 != NULL && (c2 == NULL || c1 < c2)) {
-				if (nextnumber(c1, &end, &s) != 0)
+				if (nextnumber(c1, &end, &s) != 0 ||
+					(*end && *end != ','))
 					return 1;
 				if (s == 0)
 					return 1;

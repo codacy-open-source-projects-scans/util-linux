@@ -482,9 +482,9 @@ static int sgi_write_disklabel(struct fdisk_context *cxt)
 
 	assert(sgi_pt_checksum(sgilabel) == 0);
 
-	if (lseek(cxt->dev_fd, 0, SEEK_SET) < 0)
+	if (ul_vfs_lseek(cxt->vfs, cxt->dev_fd, 0, SEEK_SET) < 0)
 		goto err;
-	if (write_all(cxt->dev_fd, sgilabel, DEFAULT_SECTOR_SIZE))
+	if (ul_vfs_write_all(cxt->vfs, cxt->dev_fd, sgilabel, DEFAULT_SECTOR_SIZE))
 		goto err;
 	if (!strncmp((char *) sgilabel->volume[0].name, "sgilabel", 8)) {
 		/*
@@ -494,13 +494,13 @@ static int sgi_write_disklabel(struct fdisk_context *cxt)
 		int infostartblock
 			= be32_to_cpu(sgilabel->volume[0].block_num);
 
-		if (lseek(cxt->dev_fd, (off_t) infostartblock *
+		if (ul_vfs_lseek(cxt->vfs, cxt->dev_fd, (off_t) infostartblock *
 					DEFAULT_SECTOR_SIZE, SEEK_SET) < 0)
 			goto err;
 		info = sgi_new_info();
 		if (!info)
 			goto err;
-		if (write_all(cxt->dev_fd, info, sizeof(*info)))
+		if (ul_vfs_write_all(cxt->vfs, cxt->dev_fd, info, sizeof(*info)))
 			goto err;
 	}
 
@@ -978,7 +978,7 @@ static int sgi_create_disklabel(struct fdisk_context *cxt)
 	if (cxt->geom.heads && cxt->geom.sectors) {
 		fdisk_sector_t llsectors;
 
-		if (blkdev_get_sectors(cxt->dev_fd, (unsigned long long *) &llsectors) == 0) {
+		if (blkdev_get_sectors(cxt->dev_fd, &llsectors) == 0) {
 			/* the get device size ioctl was successful */
 			fdisk_sector_t llcyls;
 			int sec_fac = cxt->sector_size / 512;

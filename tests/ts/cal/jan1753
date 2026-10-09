@@ -26,7 +26,7 @@ USETERM=$( ts_has_option "useterm" "$*" )
 MYMONTH="1 1753"
 
 function call_cal {
-	local testname=$(echo "$2" | sed 's/-//g')
+	local testname="${2//-/}"
 
 	ts_init_subtest "$testname"
 	ts_log "$1"
@@ -34,12 +34,14 @@ function call_cal {
 	if [ "$USETERM" == "yes" ]; then
 		$TS_CMD_CAL "$@"
 	fi
-	$TS_CMD_CAL "$@" >> $TS_OUTPUT
+	$TS_CMD_CAL "$@" >> "$TS_OUTPUT"
 
 	ts_finalize_subtest
 }
 
+# UL_TESTCOVERAGE_MANUAL_VALIDATION= --monday --three --saturday
 call_cal "Monday-based 1753 week numbers" --monday --three --week $MYMONTH
 call_cal "Sunday-based 1753 week numbers" -3w $MYMONTH
+call_cal "Saturday-based 1753 week numbers" --saturday --three --week $MYMONTH
 
 ts_finalize

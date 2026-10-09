@@ -32,7 +32,7 @@ ts_scsi_debug_init dev_size_mb=100 sector_size=512 physblk_exp=3
 ts_init_subtest "v2.32"
 $TS_CMD_WIPEFS -a ${TS_DEVICE} &> /dev/null
 udevadm settle
-$TS_CMD_SFDISK ${TS_DEVICE} >> $TS_OUTPUT 2>> $TS_ERRLOG <<EOF
+$TS_CMD_SFDISK ${TS_DEVICE} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" <<EOF
 label: gpt
 label-id: 613005F9-1C8C-E141-8AEB-F32E8E296C75
 device: ${TS_DEVICE}
@@ -46,7 +46,7 @@ ${TS_DEVICE}3 : start=       45056, size=       24576, type=0FC63DAF-8483-4772-8
 ${TS_DEVICE}4 : start=       69632, size=      135135, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=AF79D434-C8B3-2445-80FB-317AB157447C
 EOF
 udevadm settle
-$TS_CMD_SFDISK --list -o START,END,SIZE,UUID,TYPE,NAME ${TS_DEVICE} >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list -o START,END,SIZE,UUID,TYPE,NAME ${TS_DEVICE} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_fdisk_clean $TS_DEVICE
 ts_finalize_subtest
 
@@ -54,7 +54,7 @@ ts_finalize_subtest
 ts_init_subtest "v2.35"
 $TS_CMD_WIPEFS -a ${TS_DEVICE} &> /dev/null
 udevadm settle
-$TS_CMD_SFDISK ${TS_DEVICE} >> $TS_OUTPUT 2>> $TS_ERRLOG <<EOF
+$TS_CMD_SFDISK ${TS_DEVICE} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" <<EOF
 label: gpt
 label-id: 613005F9-1C8C-E141-8AEB-F32E8E296C75
 device: ${TS_DEVICE}
@@ -69,18 +69,30 @@ ${TS_DEVICE}3 : start=       45056, size=       24576, type=0FC63DAF-8483-4772-8
 ${TS_DEVICE}4 : start=       69632, size=      135135, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, uuid=AF79D434-C8B3-2445-80FB-317AB157447C
 EOF
 udevadm settle
-$TS_CMD_SFDISK --list -o START,END,SIZE,UUID,TYPE,NAME ${TS_DEVICE} >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list -o START,END,SIZE,UUID,TYPE,NAME ${TS_DEVICE} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_fdisk_clean $TS_DEVICE
 ts_finalize_subtest
 
 
 ts_init_subtest "current"
-$TS_CMD_SFDISK --dump ${TS_DEVICE} > $TS_OUTPUT.dump 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --dump ${TS_DEVICE} > "$TS_OUTPUT".dump 2>> "$TS_ERRLOG"
 $TS_CMD_WIPEFS -a ${TS_DEVICE} &> /dev/null
 udevadm settle
-cat $TS_OUTPUT.dump | $TS_CMD_SFDISK ${TS_DEVICE} >> $TS_OUTPUT 2>> $TS_ERRLOG
+cat "$TS_OUTPUT".dump | $TS_CMD_SFDISK ${TS_DEVICE} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 udevadm settle
-$TS_CMD_SFDISK --list -o START,END,SIZE,UUID,TYPE,NAME ${TS_DEVICE} >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SFDISK --list -o START,END,SIZE,UUID,TYPE,NAME ${TS_DEVICE} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+ts_fdisk_clean $TS_DEVICE
+ts_finalize_subtest
+
+
+ts_init_subtest "no-device-names"
+$TS_CMD_SFDISK --dump --no-device-names ${TS_DEVICE} >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_fdisk_clean $TS_DEVICE
+ts_finalize_subtest
+
+
+ts_init_subtest "no-device-names-json"
+$TS_CMD_SFDISK --dump --no-device-names --json ${TS_DEVICE} >> $TS_OUTPUT 2>> $TS_ERRLOG
 ts_fdisk_clean $TS_DEVICE
 ts_finalize_subtest
 

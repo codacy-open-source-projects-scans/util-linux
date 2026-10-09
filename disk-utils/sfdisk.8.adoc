@@ -92,7 +92,7 @@ List the partitions of all or the specified devices. This command can be used to
 List the free unpartitioned areas on all or the specified devices.
 
 *--part-attrs* _device partition-number_ [__attributes__]::
-Change the GPT partition attribute bits. If _attributes_ is not specified, then print the current partition settings. The _attributes_ argument is a comma- or space-delimited list of bits numbers or bit names. For example, the string "RequiredPartition,50,51" sets three bits. The currently supported attribute bits are:
+Change the GPT partition attribute bits. If _attributes_ is not specified, then print the current partition settings. The _attributes_ argument is a comma- or space-delimited list of bits numbers or bit names. For example, the string "RequiredPartition,50,51" sets three bits. Bit numbers may be given in decimal, octal, or hexadecimal (for example "0x2" is equivalent to "2" or "LegacyBIOSBootable"). The currently supported attribute bits are:
 +
 *Bit 0 (RequiredPartition)*;;
 If this bit is set, the partition is required for the platform to function. The creator of the partition indicates that deletion or modification of the contents can result in loss of platform features or failure for the platform to boot or operate. The system cannot function normally if this partition is removed, and it should be considered part of the hardware of the system.
@@ -103,7 +103,7 @@ The partition may be bootable by legacy BIOS firmware.
 *Bits 3-47*;;
 Undefined and must be zero. Reserved for expansion by future versions of the UEFI specification.
 *Bits 48-63*;;
-Reserved for GUID specific use. The use of these bits will vary depending on the partition type. For example Microsoft uses bit 60 to indicate read-only, 61 for shadow copy of another partition, 62 for hidden partitions and 63 to disable automount.
+Reserved for GUID specific use. The use of these bits will vary depending on the partition type. For example Microsoft uses bit 60 to indicate read-only, 61 for shadow copy of another partition, 62 for hidden partitions and 63 to disable automount. The "GUID:" prefix (e.g. "GUID:60") is accepted for these bits but is restricted to the 48-63 range.
 
 *--part-label* _device partition-number_ [__label__]::
 Change the GPT partition name (label). If _label_ is not specified, then print the current partition label.
@@ -180,6 +180,9 @@ to avoid collisions with *systemd-udevd*(8) or other tools.
 
 *-n*, *--no-act*::
 Do everything except writing to the device.
+
+*--no-device-names*::
+Do not print device names in *--dump* output.
 
 *--no-reread*::
 Do not check through the re-read-partition-table ioctl whether the device is in use.
@@ -454,6 +457,8 @@ Enable sfdisk debug output.
 Since version 2.26 *sfdisk* no longer provides the *-R* or *--re-read* option to force the kernel to reread the partition table. Use *blockdev --rereadpt* instead.
 
 Since version 2.26 *sfdisk* does not provide the *--DOS*, *--IBM*, *--DOS-extended*, *--unhide*, *--show-extended*, *--cylinders*, *--heads*, *--sectors*, *--inside-outer*, *--not-inside-outer* options.
+
+Since version 2.43, on an interactive terminal and on an EFI system, the chosen disklabel is GPT; otherwise, *sfdisk* defaults to DOS/MBR, or SUN on SPARC.
 
 == EXAMPLES
 

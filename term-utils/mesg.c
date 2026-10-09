@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * Copyright (c) 1987, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -15,11 +16,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -60,7 +57,7 @@
 #include "c.h"
 #include "rpmatch.h"
 #include "ttyutils.h"
-#include "pathnames.h"
+#include "fileutils.h"
 
 /* exit codes */
 
@@ -92,7 +89,7 @@ int main(int argc, char *argv[])
 {
 	struct stat sb;
 	char *tty;
-	char ttybuf[sizeof(_PATH_PROC_FDDIR) + sizeof(stringify_value(INT_MAX))];
+	char ttybuf[UL_FDPATH_BUFSIZ];
 	int ch, fd, verbose = FALSE, ret;
 
 	static const struct option longopts[] = {
@@ -133,8 +130,9 @@ int main(int argc, char *argv[])
 
 	tty = ttyname(fd);
 	if (!tty) {
-		snprintf(ttybuf, sizeof(ttybuf), "%s/%d", _PATH_PROC_FDDIR, fd);
-		tty = ttybuf;
+		tty = ul_fd_mkpath(ttybuf, sizeof(ttybuf), fd);
+		if (!tty)
+			err(MESG_EXIT_FAILURE, _("no tty"));
 		if (verbose)
 			warnx(_("ttyname() failed, attempting to go around using: %s"), tty);
 	}

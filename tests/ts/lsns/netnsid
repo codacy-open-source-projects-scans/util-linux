@@ -91,7 +91,7 @@ fi
 } > $FIFO
 
 test "$IP_ID" = "$LSNS_ID"
-echo $? >> $TS_OUTPUT
+echo $? >> "$TS_OUTPUT"
 
 cleanup
 ts_finalize

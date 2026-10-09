@@ -13,6 +13,7 @@ for i in $@; do N=`echo "$i" | sed "s/$FROM/$TO/g"`; mv "$i" "$N"; done
  * This shell script will do renames of files, but may fail
  * in cases involving special characters. Here a C version.
  */
+#include <limits.h>
 #include <stdio.h>
 #ifdef HAVE_STDIO_EXT_H
 #	include <stdio_ext.h>
@@ -142,7 +143,8 @@ static int ask(char *name)
 static int do_symlink(char *from, char *to, char *s, int verbose, int noact,
                       int nooverwrite, int interactive)
 {
-	char *newname = NULL, *target = NULL;
+	char *newname = NULL;
+	char target[PATH_MAX];
 	int ret = 1;
 	ssize_t ssz;
 	struct stat sb;
@@ -164,12 +166,10 @@ static int do_symlink(char *from, char *to, char *s, int verbose, int noact,
 		warnx(_("%s: not a symbolic link"), s);
 		return 2;
 	}
-	target = xmalloc(sb.st_size + 1);
 
-	ssz = readlink(s, target, sb.st_size + 1);
+	ssz = readlink(s, target, PATH_MAX - 1);
 	if (ssz < 0) {
 		warn(_("%s: readlink failed"), s);
-		free(target);
 		return 2;
 	}
 	target[ssz] = '\0';
@@ -201,7 +201,6 @@ static int do_symlink(char *from, char *to, char *s, int verbose, int noact,
 	if (verbose && (noact || ret == 1))
 		printf("%s: `%s' -> `%s'\n", s, target, newname);
 	free(newname);
-	free(target);
 	return ret;
 }
 
@@ -228,7 +227,7 @@ static int do_file(char *from, char *to, char *s, int verbose, int noact,
 	if (string_replace(from, to, s, &newname) != 0)
 		return 0;
 
-	if ((nooverwrite || interactive) && access(newname, F_OK) != 0)
+	if ((nooverwrite || interactive) && lstat(newname, &sb) != 0)
 		nooverwrite = interactive = 0;
 
 	if (nooverwrite || (interactive && (noact || ask(newname) != 0))) {
@@ -246,6 +245,157 @@ static int do_file(char *from, char *to, char *s, int verbose, int noact,
 	return ret;
 }
 
+/*
+ * Open @path and fstat() it into @st, checking the file type on the fd that
+ * is going to be used rather than on the path, so that the check cannot be
+ * raced.
+ *
+ * O_NONBLOCK keeps the open from hanging on a FIFO with no peer on the other
+ * end, or on a device node waiting for carrier. It stays set on the returned
+ * fd, which is harmless: only regular files get that far and the flag has no
+ * effect on those.
+ *
+ * Returns the fd, or -1. All failures are reported here and leave errno
+ * zeroed; the one exception is a symlink hit with O_NOFOLLOW, which is not
+ * an error but a file type the caller handles on its own, and which is
+ * reported back as errno ELOOP.
+ */
+static int open_regular(const char *path, int flags, mode_t mode,
+                        struct stat *st)
+{
+	int fd = open(path, flags | O_CLOEXEC | O_NONBLOCK, mode);
+
+	if (fd < 0) {
+		if ((flags & O_NOFOLLOW) && errno == ELOOP)
+			return -1;
+		if (flags & O_CREAT)
+			warn(_("%s: create failed"), path);
+		else
+			warn(_("%s: open failed"), path);
+		goto fail;
+	}
+	if (fstat(fd, st) == -1) {
+		warn(_("stat of %s failed"), path);
+		close(fd);
+		goto fail;
+	}
+	if (!S_ISREG(st->st_mode)) {
+		warnx(_("%s: cannot copy (unsupported file type)"), path);
+		close(fd);
+		goto fail;
+	}
+	return fd;
+fail:
+	errno = 0;
+	return -1;
+}
+
+/* Copy file/symlink instead of rename; same semantics as do_file. */
+static int do_copy(char *from, char *to, char *s, int verbose, int noact,
+                   int nooverwrite, int interactive)
+{
+	char *newname = NULL;
+	char target[PATH_MAX];
+	int ret = 1, res;
+	int src_fd = -1, dst_fd = -1;
+	ssize_t ssz;
+	struct stat sb, dst_sb;
+
+	if (faccessat(AT_FDCWD, s, F_OK, AT_SYMLINK_NOFOLLOW) != 0 &&
+	    errno != EINVAL) {
+		warn(_("%s: not accessible"), s);
+		return 2;
+	}
+
+	if (string_replace(from, to, s, &newname) != 0)
+		return 0;
+
+	if ((nooverwrite || interactive) && lstat(newname, &sb) != 0)
+		nooverwrite = interactive = 0;
+
+	if (nooverwrite || (interactive && (noact || ask(newname) != 0))) {
+		if (verbose)
+			printf(_("Skipping existing file: `%s'\n"), newname);
+		ret = 0;
+		goto done;
+	}
+
+	if (noact)
+		goto done;
+
+	src_fd = open_regular(s, O_RDONLY | O_NOFOLLOW, 0, &sb);
+	if (src_fd < 0 && errno == ELOOP) {
+		/* the path is a symlink, O_NOFOLLOW caused open to fail */
+		if (lstat(s, &sb) == -1) {
+			warn(_("stat of %s failed"), s);
+			ret = 2;
+			goto done;
+		}
+		if (!S_ISLNK(sb.st_mode)) {
+			warnx(_("%s: cannot copy (unsupported file type)"), s);
+			ret = 2;
+			goto done;
+		}
+
+		ssz = readlink(s, target, PATH_MAX - 1);
+		if (ssz < 0) {
+			warn(_("%s: readlink failed"), s);
+			ret = 2;
+			goto done;
+		}
+		target[ssz] = '\0';
+		if (unlink(newname) != 0 && errno != ENOENT) {
+			warn(_("%s: unlink failed"), newname);
+			ret = 2;
+			goto done;
+		}
+		if (symlink(target, newname) != 0) {
+			warn(_("%s: symlinking to %s failed"), s, newname);
+			ret = 2;
+		}
+		goto done;
+	} else if (src_fd < 0) {
+		ret = 2;	/* already reported by open_regular() */
+		goto done;
+	}
+
+	/* Regular file copy */
+	dst_fd = open_regular(newname, O_WRONLY | O_CREAT,
+			      sb.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO),
+			      &dst_sb);
+	if (dst_fd < 0) {
+		ret = 2;	/* already reported by open_regular() */
+		goto done;
+	}
+	if (is_same_inode(src_fd, &dst_sb)) {
+		warnx(_("%s and %s are the same file"), s, newname);
+		ret = 2;
+		goto done;
+	}
+	if (dst_sb.st_size > 0 && ftruncate(dst_fd, 0) != 0) {
+		warn(_("%s: truncate failed"), newname);
+		ret = 2;
+		goto done;
+	}
+	res = ul_copy_file(src_fd, dst_fd);
+	if (res != 0) {
+		int num = errno;
+		unlink(newname);
+		errno = num;
+		warn(_("%s: copy to %s failed"), s, newname);
+		ret = 2;
+	}
+done:
+	if (verbose && (noact || ret == 1))
+		printf("`%s' -> `%s'\n", s, newname);
+	free(newname);
+	if (src_fd >= 0)
+		close(src_fd);
+	if (dst_fd >= 0)
+		close(dst_fd);
+	return ret;
+}
+
 static void __attribute__((__noreturn__)) usage(void)
 {
 	FILE *out = stdout;
@@ -260,6 +410,7 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(USAGE_OPTIONS, out);
 	fputs(_(" -v, --verbose       explain what is being done\n"), out);
 	fputs(_(" -s, --symlink       act on the target of symlinks\n"), out);
+	fputs(_(" -c, --copy          copy instead of rename\n"), out);
 	fputs(_(" -n, --no-act        do not make any changes\n"), out);
 	fputs(_(" -a, --all           replace all occurrences\n"), out);
 	fputs(_(" -l, --last          replace only the last occurrence\n"), out);
@@ -289,10 +440,12 @@ int main(int argc, char **argv)
 		{"no-overwrite", no_argument, NULL, 'o'},
 		{"interactive", no_argument, NULL, 'i'},
 		{"symlink", no_argument, NULL, 's'},
+		{"copy", no_argument, NULL, 'c'},
 		{NULL, 0, NULL, 0}
 	};
 	static const ul_excl_t excl[] = {       /* rows and cols in ASCII order */
 		{ 'a','l' },
+		{ 'c','s' },
 		{ 'i','o' },
 		{ 0 }
 	};
@@ -303,7 +456,7 @@ int main(int argc, char **argv)
 	textdomain(PACKAGE);
 	close_stdout_atexit();
 
-	while ((c = getopt_long(argc, argv, "vsVhnaloi", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "vsVhnaloic", longopts, NULL)) != -1) {
 		err_exclusive_options(c, longopts, excl, excl_st);
 		switch (c) {
 		case 'n':
@@ -326,6 +479,9 @@ int main(int argc, char **argv)
 			break;
 		case 's':
 			do_rename = do_symlink;
+			break;
+		case 'c':
+			do_rename = do_copy;
 			break;
 
 		case 'V':

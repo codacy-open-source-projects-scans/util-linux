@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * Copyright (c) 1989, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -12,11 +13,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -105,7 +102,8 @@ struct column_control {
 		header_repeat,
 		header_as_columns,	/* --table-header-as-columns */
 		hide_unnamed,
-		maxout : 1,
+		maxout,
+		minout,			/* --table-minout */
 		keep_empty_lines,	/* --keep-empty-lines */
 		tab_noheadings,
 		use_spaces;
@@ -172,7 +170,7 @@ static inline size_t ansi_esc_width(ansi_esc_states *state, size_t *found, const
 	case ANSI_OSC:
 		*found += chw;
 		if (*str == ANSI_LNK) // OSC8-Link
-			*state = ANSI_LNK; 
+			*state = ANSI_LNK;
 		else
 			*state = ANSI_END; // other command sequences are ignored
 		return 0;
@@ -392,7 +390,10 @@ static void init_table(struct column_control *ctl)
 	} else
 		scols_table_enable_noencoding(ctl->tab, 1);
 
-	scols_table_enable_maxout(ctl->tab, ctl->maxout ? 1 : 0);
+	if (ctl->maxout)
+		scols_table_enable_maxout(ctl->tab, 1);
+	else if (ctl->minout)
+		scols_table_enable_minout(ctl->tab, 1);
 	scols_table_enable_colors(ctl->tab, colors_wanted() ? 1 : 0);
 
 	if (ctl->tab_columns) {
@@ -585,12 +586,17 @@ static void reorder_table(struct column_control *ctl)
 	char **order = split_or_error(ctl->tab_order, N_("failed to parse --table-order list"));
 	char **one;
 
+	if (!ncols) {
+		ul_strv_free(order);
+		return;
+	}
+
 	wanted = xcalloc(ncols, sizeof(struct libscols_column *));
 
 	UL_STRV_FOREACH(one, order) {
-		struct libscols_column *cl = string_to_column(ctl, *one);
-		if (cl)
-			wanted[count++] = cl;
+		wanted[count++] = string_to_column(ctl, *one);
+		if (count >= ncols)
+			break;
 	}
 
 	for (i = 0; i < count; i++) {
@@ -1034,6 +1040,7 @@ static void __attribute__((__noreturn__)) usage(void)
 		"                                    to the column's width\n"), out);
 	fputs(_(" -d, --table-noheadings           don't print header\n"), out);
 	fputs(_(" -m, --table-maxout               fill all available space\n"), out);
+	fputs(_("     --table-minout               minimize output width\n"), out);
 	fputs(_(" -e, --table-header-repeat        repeat header for each page\n"), out);
 	fputs(_(" -K, --table-header-as-columns    use the first row as table header\n"), out);
 	fputs(_(" -H, --table-hide <columns>       don't print the columns\n"), out);
@@ -1084,6 +1091,7 @@ int main(int argc, char **argv)
 		OPT_COLOR	= CHAR_MAX + 1,
 		OPT_COLORSCHEME,
 		OPT_WRAP_SEPARATOR,
+		OPT_MINOUT,
 	};
 
 	static const struct option longopts[] =
@@ -1106,6 +1114,7 @@ int main(int argc, char **argv)
 		{ "table-hide",          required_argument, NULL, 'H' },
 		{ "table-name",          required_argument, NULL, 'n' },
 		{ "table-maxout",        no_argument,       NULL, 'm' },
+		{ "table-minout",        no_argument,       NULL, OPT_MINOUT },
 		{ "table-noextreme",     required_argument, NULL, 'E' },
 		{ "table-noheadings",    no_argument,       NULL, 'd' },
 		{ "table-order",         required_argument, NULL, 'O' },
@@ -1126,6 +1135,7 @@ int main(int argc, char **argv)
 	static const ul_excl_t excl[] = {       /* rows and cols in ASCII order */
 		{ 'C','K','N' },
 		{ 'J','x' },
+		{ 'm', OPT_MINOUT },
 		{ 't','x' },
 		{ 0 }
 	};
@@ -1194,6 +1204,9 @@ int main(int argc, char **argv)
 			break;
 		case 'm':
 			ctl.maxout = 1;
+			break;
+		case OPT_MINOUT:
+			ctl.minout = 1;
 			break;
 		case 'O':
 			ctl.tab_order = optarg;

@@ -80,8 +80,7 @@ diff=$(check_diff_offset $OFFSET_A $OFFSET_B 0.02) \
 	|| ts_skip "unreliable ntp or sys clock offsets: $NTP_IP $OFFSET_A $OFFSET_B +/-$diff"
 
 # hwclock --show should work if we have a hw clock
-tmp=$($TS_CMD_HWCLOCK --show 2>&1)
-if [ $? != "0" ]; then
+if ! tmp=$($TS_CMD_HWCLOCK --show 2>&1); then
 	echo "$tmp" | grep -q "Cannot access the Hardware Clock via" \
 		&& ts_skip "no hardware clock found"
 	ts_failed "hwclock --show"

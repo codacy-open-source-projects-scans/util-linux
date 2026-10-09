@@ -67,9 +67,9 @@ if [ -z "$LODEVR" ]; then
 fi
 udevadm settle
 if test "$LODEV" = "$LODEVR" ; then
-	echo "equal" >>$TS_OUTPUT
+	echo "equal" >>"$TS_OUTPUT"
 else
-	echo "different" >>$TS_OUTPUT
+	echo "different" >>"$TS_OUTPUT"
 	if test -n "$LODEVR" ; then
 		$TS_CMD_LOSETUP -d "$LODEVR"
 	fi
@@ -91,9 +91,9 @@ if [ -z "$LODEVR" ]; then
 fi
 udevadm settle
 if test "$LODEV" = "$LODEVR" ; then
-	echo "equal" >>$TS_OUTPUT
+	echo "equal" >>"$TS_OUTPUT"
 else
-	echo "different" >>$TS_OUTPUT
+	echo "different" >>"$TS_OUTPUT"
 	if test -n "$LODEVR" ; then
 		$TS_CMD_LOSETUP -d "$LODEVR"
 	fi
@@ -115,9 +115,9 @@ if [ -z "$LODEVR" ]; then
 fi
 udevadm settle
 if test "$LODEV" = "$LODEVR" ; then
-	echo "equal" >>$TS_OUTPUT
+	echo "equal" >>"$TS_OUTPUT"
 else
-	echo "different" >>$TS_OUTPUT
+	echo "different" >>"$TS_OUTPUT"
 	if test -n "$LODEVR" ; then
 		$TS_CMD_LOSETUP -d "$LODEVR"
 	fi
@@ -139,9 +139,9 @@ if [ -z "$LODEVR" ]; then
 fi
 udevadm settle
 if test "$LODEV" = "$LODEVR" ; then
-	echo "equal" >>$TS_OUTPUT
+	echo "equal" >>"$TS_OUTPUT"
 else
-	echo "different" >>$TS_OUTPUT
+	echo "different" >>"$TS_OUTPUT"
 	if test -n "$LODEVR" ; then
 		$TS_CMD_LOSETUP -d "$LODEVR"
 	fi
@@ -163,9 +163,9 @@ if [ -z "$LODEVR" ]; then
 fi
 udevadm settle
 if test "$LODEV" = "$LODEVR" ; then
-	echo "equal" >>$TS_OUTPUT
+	echo "equal" >>"$TS_OUTPUT"
 else
-	echo "different" >>$TS_OUTPUT
+	echo "different" >>"$TS_OUTPUT"
 	if test -n "$LODEVR" ; then
 		$TS_CMD_LOSETUP -d "$LODEVR"
 	fi
@@ -188,9 +188,9 @@ if [ -z "$LODEVR" ]; then
 fi
 udevadm settle
 if test "$LODEV" = "$LODEVR" ; then
-	echo "equal" >>$TS_OUTPUT
+	echo "equal" >>"$TS_OUTPUT"
 else
-	echo "different" >>$TS_OUTPUT
+	echo "different" >>"$TS_OUTPUT"
 	if test -n "$LODEVR" ; then
 		$TS_CMD_LOSETUP -d "$LODEVR"
 	fi
@@ -204,7 +204,7 @@ udevadm settle
 ts_init_subtest "plain-conflict"
 if [ "$TS_PARALLEL" = "yes" ]; then
 	# There is a race in $LODEV is usage
-	ts_skip_subtest "no-reentrant"
+	ts_skip "no-reentrant"
 else
 	LODEV=$( $TS_CMD_LOSETUP --find --nooverlap --show $BACKFILE )
 	if [ -z "$LODEV" ]; then
@@ -217,15 +217,15 @@ else
 	$TS_CMD_LOSETUP -d "$LODEV"
 	$TS_CMD_LOSETUP -d "$LODEVR" >/dev/null 2>&1
 	ts_log "Success"
-	ts_finalize_subtest
 fi
+ts_finalize_subtest
 
 udevadm settle
 
 ts_init_subtest "plain-readonly"
 if [ "$TS_PARALLEL" = "yes" ]; then
 	# There is a race in $LODEV is usage
-	ts_skip_subtest "no-reentrant"
+	ts_skip "no-reentrant"
 else
 	LODEV=$( $TS_CMD_LOSETUP --find --nooverlap --show --read-only $BACKFILE )
 	if [ -z "$LODEV" ]; then
@@ -238,8 +238,8 @@ else
 	$TS_CMD_LOSETUP -d "$LODEV"
 	$TS_CMD_LOSETUP -d "$LODEVR" >/dev/null 2>&1
 	ts_log "Success"
-	ts_finalize_subtest
 fi
+ts_finalize_subtest
 
 udevadm settle
 

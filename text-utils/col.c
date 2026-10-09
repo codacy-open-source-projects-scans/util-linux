@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
@@ -13,11 +14,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -399,9 +396,12 @@ static int handle_not_graphic(struct col_ctl *ctl, struct col_lines *lns)
 	case BS:
 		if (lns->cur_col == 0)
 			return 1;	/* can't go back further */
-		if (lns->c)
-			lns->cur_col -= lns->c->c_width;
-		else
+		if (lns->c) {
+			if (lns->c->c_width >= 0 && (size_t) lns->c->c_width <= lns->cur_col)
+				lns->cur_col -= lns->c->c_width;
+			else
+				lns->cur_col = 0;
+		} else
 			lns->cur_col -= 1;
 		return 1;
 	case CR:

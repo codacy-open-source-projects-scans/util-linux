@@ -35,36 +35,53 @@
 #include "strutils.h"
 #include "procfs.h"
 #include "sched_attr.h"
-
+#include "pidutils.h"
+#include "pidfd-utils.h"
+#include "linux_version.h"
 
 /* control struct */
 struct chrt_ctl {
-	pid_t	pid;
-	int	policy;				/* SCHED_* */
-	int	priority;
+	pid_t		pid;
+	uint64_t 	pidfd_ino;
+	int		pidfd;
+	int		policy;				/* SCHED_* */
+	int		priority;
 
 	uint64_t runtime;			/* --sched-* options */
 	uint64_t deadline;
 	uint64_t period;
+	uint64_t sched_flags;			/* For sched_attr->sched_flags member */
+
+	uint32_t util_min;			/* --clamp-min value */
+	uint32_t util_max;			/* --clamp-max value */
 
 	unsigned int all_tasks : 1,		/* all threads of the PID */
 		     reset_on_fork : 1,		/* SCHED_RESET_ON_FORK or SCHED_FLAG_RESET_ON_FORK */
 		     altered : 1,		/* sched_set**() used */
-		     verbose : 1;		/* verbose output */
+		     verbose : 1,		/* verbose output */
+		     parse_pid : 1;		/* expect a PID as last command line argument */
 };
 
 static void __attribute__((__noreturn__)) usage(void)
 {
 	FILE *out = stdout;
+	char *pid_arg = NULL;
+
+#ifdef USE_PIDFD_INO_SUPPORT
+	pid_arg = "PID[:inode]";
+#else
+	pid_arg = "PID";
+#endif
+
 
 	fputs(_("Show or change the real-time scheduling attributes of a process.\n"), out);
 	fputs(USAGE_SEPARATOR, out);
-	fputs(_("Set policy:\n"
+	fprintf(out, _("Set policy:\n"
 		" chrt [options] [<priority>] <command> [<argument>...]\n"
-		" chrt --pid <policy-option> [options] [<priority>] <PID>\n"), out);
+		" chrt --pid <policy-option> [options] [<priority>] <%s>\n"), pid_arg);
 	fputs(USAGE_SEPARATOR, out);
-	fputs(_("Get policy:\n"
-		" chrt --pid <PID>\n"), out);
+	fprintf(out, _("Get policy:\n"
+		" chrt --pid <%s>\n"), pid_arg);
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Policy options:\n"), out);
@@ -79,9 +96,13 @@ static void __attribute__((__noreturn__)) usage(void)
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Scheduling options:\n"), out);
 	fputs(_(" -R, --reset-on-fork       set reset-on-fork flag\n"), out);
+	fputs(_(" -G, --reclaim-grub        set SCHED_FLAG_RECLAIM\n"), out);
+	fputs(_(" -O, --deadline-overrun    set SCHED_FLAG_DL_OVERRUN\n"), out);
 	fputs(_(" -T, --sched-runtime <ns>  runtime parameter for DEADLINE\n"), out);
 	fputs(_(" -P, --sched-period <ns>   period parameter for DEADLINE\n"), out);
 	fputs(_(" -D, --sched-deadline <ns> deadline parameter for DEADLINE\n"), out);
+	fputs(_(" -U, --clamp-min <value>   set SCHED_FLAG_UTIL_CLAMP_MIN (0-1024 or -1 to reset)\n"), out);
+	fputs(_(" -X, --clamp-max <value>   set SCHED_FLAG_UTIL_CLAMP_MAX (0-1024 or -1 to reset)\n"), out);
 
 	fputs(USAGE_SEPARATOR, out);
 	fputs(_("Other options:\n"), out);
@@ -153,16 +174,29 @@ static bool supports_runtime_param(int policy)
 static const char *get_supported_runtime_param_policies(void)
 {
 #if defined(SCHED_BATCH)
-#if defined(SCHED_DEADLINE)
+# if defined(SCHED_DEADLINE)
 	return _("SCHED_OTHER, SCHED_BATCH and SCHED_DEADLINE");
-#else
+# else
 	return _("SCHED_OTHER and SCHED_BATCH");
-#endif /* SCHED_DEADLINE */
+# endif /* SCHED_DEADLINE */
 #elif defined(SCHED_DEADLINE)
 	return _("SCHED_OTHER and SCHED_DEADLINE");
 #else
 	return _("SCHED_OTHER");
 #endif
+}
+
+static struct path_cxt *get_tasks_or_err(pid_t pid)
+{
+	struct path_cxt *pc = NULL;
+
+	if (!pid)
+		pid = getpid();
+
+	pc = ul_new_procfs_path(pid, NULL);
+	if (!pc)
+		err(EXIT_FAILURE, _("cannot obtain the list of tasks for PID '%d'"), pid);
+	return pc;
 }
 
 static void show_sched_pid_info(struct chrt_ctl *ctl, pid_t pid)
@@ -194,12 +228,14 @@ static void show_sched_pid_info(struct chrt_ctl *ctl, pid_t pid)
 
 		policy = sa.sched_policy;
 		prio = sa.sched_priority;
+# ifdef SCHED_FLAG_RESET_ON_FORK
 		reset_on_fork = sa.sched_flags & SCHED_FLAG_RESET_ON_FORK;
+# endif
 		runtime = sa.sched_runtime;
-#ifdef SCHED_DEADLINE
+# ifdef SCHED_DEADLINE
 		deadline = sa.sched_deadline;
 		period = sa.sched_period;
-#endif
+# endif
 	}
 
 	/*
@@ -207,7 +243,7 @@ static void show_sched_pid_info(struct chrt_ctl *ctl, pid_t pid)
 	 */
 fallback:
 	if (errno == ENOSYS)
-#endif
+#endif /* HAVE_SCHED_SETATTR */
 	{
 		struct sched_param sp;
 
@@ -219,10 +255,10 @@ fallback:
 			err(EXIT_FAILURE, _("failed to get pid %d's attributes"), pid);
 		else
 			prio = sp.sched_priority;
-# ifdef SCHED_RESET_ON_FORK
+#ifdef SCHED_RESET_ON_FORK
 		if (policy & SCHED_RESET_ON_FORK)
 			reset_on_fork = 1;
-# endif
+#endif
 	}
 
 	if (ctl->altered)
@@ -265,7 +301,9 @@ static void show_sched_info(struct chrt_ctl *ctl)
 #ifdef __linux__
 		DIR *sub = NULL;
 		pid_t tid;
-		struct path_cxt *pc = ul_new_procfs_path(ctl->pid, NULL);
+		struct path_cxt *pc = NULL;
+
+		pc = get_tasks_or_err(ctl->pid);
 
 		while (pc && procfs_process_next_tid(pc, &sub, &tid) == 0)
 			show_sched_pid_info(ctl, tid);
@@ -312,6 +350,7 @@ static void show_min_max(void)
 	}
 }
 
+#ifndef HAVE_SCHED_SETATTR
 static int set_sched_one_by_setscheduler(struct chrt_ctl *ctl, pid_t pid)
 {
 	struct sched_param sp = { .sched_priority = ctl->priority };
@@ -323,19 +362,18 @@ static int set_sched_one_by_setscheduler(struct chrt_ctl *ctl, pid_t pid)
 		policy |= SCHED_RESET_ON_FORK;
 # endif
 
-#if defined (__linux__) && defined(SYS_sched_setscheduler)
+# if defined (__linux__) && defined(SYS_sched_setscheduler)
 	/* musl libc returns ENOSYS for its sched_setscheduler library
 	 * function, because the sched_setscheduler Linux kernel system call
 	 * does not conform to Posix; so we use the system call directly
 	 */
 	return syscall(SYS_sched_setscheduler, pid, policy, &sp);
-#else
+# else
 	return sched_setscheduler(pid, policy, &sp);
-#endif
+# endif
 }
 
 
-#ifndef HAVE_SCHED_SETATTR
 static int set_sched_one(struct chrt_ctl *ctl, pid_t pid)
 {
 	return set_sched_one_by_setscheduler(ctl, pid);
@@ -345,10 +383,7 @@ static int set_sched_one(struct chrt_ctl *ctl, pid_t pid)
 static int set_sched_one(struct chrt_ctl *ctl, pid_t pid)
 {
 	struct sched_attr sa = { .size = sizeof(struct sched_attr) };
-
-	/* old API is good enough for non-deadline */
-	if (!supports_runtime_param(ctl->policy))
-		return set_sched_one_by_setscheduler(ctl, pid);
+	int ret;
 
 	/* not changed by chrt, follow the current setting */
 	sa.sched_nice = getpriority(PRIO_PROCESS, pid);
@@ -359,6 +394,9 @@ static int set_sched_one(struct chrt_ctl *ctl, pid_t pid)
 	sa.sched_runtime  = ctl->runtime;
 	sa.sched_period   = ctl->period;
 	sa.sched_deadline = ctl->deadline;
+	sa.sched_flags    = ctl->sched_flags;
+	sa.sched_util_min = ctl->util_min;
+	sa.sched_util_max = ctl->util_max;
 
 # ifdef SCHED_FLAG_RESET_ON_FORK
 	/* Don't use SCHED_RESET_ON_FORK for sched_setattr()! */
@@ -366,9 +404,15 @@ static int set_sched_one(struct chrt_ctl *ctl, pid_t pid)
 		sa.sched_flags |= SCHED_FLAG_RESET_ON_FORK;
 # endif
 	errno = 0;
-	return sched_setattr(pid, &sa, 0);
+	ret = sched_setattr(pid, &sa, 0);
+	if (ret == -1 && errno == EINVAL
+		&& (ctl->util_min == UINT32_MAX || ctl->util_max == UINT32_MAX)
+		&& get_linux_version() < KERNEL_VERSION(5, 11, 0))
+			warnx(_("--clamp-min and --clamp-max reset may be unsupported on Linux < 5.11"));
+	return ret;
 }
 #endif /* HAVE_SCHED_SETATTR */
+
 
 static void set_sched(struct chrt_ctl *ctl)
 {
@@ -376,10 +420,9 @@ static void set_sched(struct chrt_ctl *ctl)
 #ifdef __linux__
 		DIR *sub = NULL;
 		pid_t tid;
-		struct path_cxt *pc = ul_new_procfs_path(ctl->pid, NULL);
+		struct path_cxt *pc = NULL;
 
-		if (!pc)
-			err(EXIT_FAILURE, _("cannot obtain the list of tasks"));
+		pc = get_tasks_or_err(ctl->pid);
 
 		while (procfs_process_next_tid(pc, &sub, &tid) == 0) {
 			if (set_sched_one(ctl, tid) == -1)
@@ -390,21 +433,27 @@ static void set_sched(struct chrt_ctl *ctl)
 		err(EXIT_FAILURE, _("cannot obtain the list of tasks"));
 #endif
 	} else if (set_sched_one(ctl, ctl->pid) == -1)
-		err(EXIT_FAILURE, _("failed to set pid %d's policy"), ctl->pid);
+		err(EXIT_FAILURE, _("failed to set pid %d's policy"), ctl->pid ? ctl->pid : getpid());
 
 	ctl->altered = 1;
 }
 
 int main(int argc, char **argv)
 {
-	struct chrt_ctl _ctl = { .pid = -1, .policy = SCHED_RR }, *ctl = &_ctl;
+	struct chrt_ctl _ctl = {
+		.pidfd = -1,
+		.policy = SCHED_RR
+	}, *ctl = &_ctl;
 	int c;
 	bool policy_given = false, need_prio = false;
 
 	static const struct option longopts[] = {
 		{ "all-tasks",  no_argument, NULL, 'a' },
 		{ "batch",	no_argument, NULL, 'b' },
+		{ "clamp-min",  required_argument, NULL, 'U' },
+		{ "clamp-max",  required_argument, NULL, 'X' },
 		{ "deadline",   no_argument, NULL, 'd' },
+		{ "deadline-overrun", no_argument, NULL, 'O' },
 		{ "ext",	no_argument, NULL, 'e' },
 		{ "fifo",	no_argument, NULL, 'f' },
 		{ "idle",	no_argument, NULL, 'i' },
@@ -417,6 +466,7 @@ int main(int argc, char **argv)
 		{ "sched-period",   required_argument, NULL, 'P' },
 		{ "sched-deadline", required_argument, NULL, 'D' },
 		{ "reset-on-fork",  no_argument,       NULL, 'R' },
+		{ "reclaim-grub",   no_argument,       NULL, 'G' },
 		{ "verbose",	no_argument, NULL, 'v' },
 		{ "version",	no_argument, NULL, 'V' },
 		{ NULL,		no_argument, NULL, 0 }
@@ -427,7 +477,7 @@ int main(int argc, char **argv)
 	textdomain(PACKAGE);
 	close_stdout_atexit();
 
-	while((c = getopt_long(argc, argv, "+abdD:efiphmoP:T:rRvV", longopts, NULL)) != -1)
+	while((c = getopt_long(argc, argv, "+abdD:efiphmoOP:T:rRU:X:GvV", longopts, NULL)) != -1)
 	{
 		switch (c) {
 		case 'a':
@@ -460,6 +510,36 @@ int main(int argc, char **argv)
 		case 'R':
 			ctl->reset_on_fork = 1;
 			break;
+		case 'G':
+#ifdef SCHED_FLAG_RECLAIM
+			ctl->sched_flags |= SCHED_FLAG_RECLAIM;
+#endif
+			break;
+		case 'O':
+#ifdef SCHED_FLAG_DL_OVERRUN
+			ctl->sched_flags |= SCHED_FLAG_DL_OVERRUN;
+#endif
+			break;
+		case 'U':
+#ifdef SCHED_FLAG_UTIL_CLAMP_MIN
+			ctl->sched_flags |= SCHED_FLAG_UTIL_CLAMP_MIN;
+			if (strcmp(optarg, "-1") == 0)
+				ctl->util_min = UINT32_MAX;
+			else
+				ctl->util_min = (uint32_t) str2unum_or_err(optarg, 10,
+					_("--clamp-min value must be in range 0-1024 or -1 to reset"), 1024);
+#endif
+			break;
+		case 'X':
+#ifdef SCHED_FLAG_UTIL_CLAMP_MAX
+			ctl->sched_flags |= SCHED_FLAG_UTIL_CLAMP_MAX;
+			if (strcmp(optarg, "-1") == 0)
+				ctl->util_max = UINT32_MAX;
+			else
+				ctl->util_max = (uint32_t) str2unum_or_err(optarg, 10,
+					_("--clamp-max value must be in range 0-1024 or -1 to reset"), 1024);
+#endif
+			break;
 		case 'i':
 #ifdef SCHED_IDLE
 			ctl->policy = SCHED_IDLE;
@@ -474,7 +554,7 @@ int main(int argc, char **argv)
 			policy_given = true;
 			break;
 		case 'p':
-			ctl->pid = 0;  /* indicate that a PID is expected */
+			ctl->parse_pid = 1;  /* indicate that a PID is expected */
 			break;
 		case 'r':
 			ctl->policy = SCHED_RR;
@@ -509,13 +589,11 @@ int main(int argc, char **argv)
 	}
 
 	/* If option --pid was given, parse the very last argument as a PID. */
-	if (ctl->pid == 0) {
-		if (need_prio && argc - optind < 2)
-			errx(EXIT_FAILURE, _("policy %s requires a priority argument"),
-						get_policy_name(ctl->policy));
+	if (ctl->parse_pid) {
 		errno = 0;
-		/* strtopid_or_err() is not suitable here, as 0 can be passed. */
-		ctl->pid = strtos32_or_err(argv[argc - 1], _("invalid PID argument"));
+		ul_parse_pid_str_or_err(argv[argc - 1], &ctl->pid, &ctl->pidfd_ino, UL_PID_ZERO);
+		if (ctl->pidfd_ino > 0)
+			ctl->pidfd = ul_get_valid_pidfd_or_err(ctl->pid, ctl->pidfd_ino);
 
 		/* If no policy nor priority was given, show current settings. */
 		if (!policy_given && argc - optind == 1) {
@@ -527,25 +605,38 @@ int main(int argc, char **argv)
 	if (ctl->policy == SCHED_RR)
 		need_prio = true;
 
-	if (ctl->verbose)
+	if (ctl->parse_pid && ctl->verbose)
 		show_sched_info(ctl);
 
-	bool have_prio = need_prio ||
-		(ctl->pid == -1 ? (optind < argc && isdigit_string(argv[optind])) : (argc - optind > 1));
-
-	if (have_prio) {
+	if (argc - optind > 1 && (ctl->parse_pid || isdigit_string(argv[optind]))) {
 		errno = 0;
 		ctl->priority = strtos32_or_err(argv[optind], _("invalid priority argument"));
-	} else
+		optind++;
+	} else if (need_prio && !ctl->parse_pid && isdigit_string(argv[optind])) {
+		errx(EXIT_FAILURE, _("no command or priority specified"));
+	} else if (need_prio) {
+		errx(EXIT_FAILURE, _("policy %s requires a priority argument"),
+					get_policy_name(ctl->policy));
+	} else {
 		ctl->priority = 0;
+	}
 
 	if (ctl->runtime && !supports_runtime_param(ctl->policy))
 		errx(EXIT_FAILURE, _("--sched-runtime option is supported for %s"),
 				     get_supported_runtime_param_policies());
-#ifdef SCHED_DEADLINE
+#ifdef HAVE_SCHED_SETATTR
+# ifdef SCHED_DEADLINE
 	if ((ctl->deadline || ctl->period) && ctl->policy != SCHED_DEADLINE)
 		errx(EXIT_FAILURE, _("--sched-{deadline,period} options are "
 				     "supported for SCHED_DEADLINE only"));
+#  ifdef SCHED_FLAG_RECLAIM
+	if ((ctl->sched_flags & SCHED_FLAG_RECLAIM) && ctl->policy != SCHED_DEADLINE)
+		errx(EXIT_FAILURE, _("--reclaim-grub is only supported for SCHED_DEADLINE"));
+#  endif
+#  ifdef SCHED_FLAG_DL_OVERRUN
+	if ((ctl->sched_flags & SCHED_FLAG_DL_OVERRUN) && ctl->policy != SCHED_DEADLINE)
+		errx(EXIT_FAILURE, _("--deadline-overrun is only supported for SCHED_DEADLINE"));
+#  endif
 	if (ctl->policy == SCHED_DEADLINE) {
 		/* The basic rule is runtime <= deadline <= period, so we can
 		 * make deadline and runtime optional on command line. Note we
@@ -557,29 +648,43 @@ int main(int argc, char **argv)
 		if (ctl->runtime == 0)
 			ctl->runtime = ctl->deadline;
 	}
-#else
+# endif /* SCHED_DEADLINE */
+#else /* !HAVE_SCHED_SETATTR */
 	if (ctl->deadline || ctl->period)
 		errx(EXIT_FAILURE, _("SCHED_DEADLINE is unsupported"));
-#endif
-	if (ctl->pid == -1)
-		ctl->pid = 0;
+# ifdef SCHED_FLAG_RECLAIM
+	if (ctl->sched_flags & SCHED_FLAG_RECLAIM)
+		errx(EXIT_FAILURE, _("SCHED_FLAG_RECLAIM is unsupported"));
+# endif
+# ifdef SCHED_FLAG_DL_OVERRUN
+	if (ctl->sched_flags & SCHED_FLAG_DL_OVERRUN)
+		errx(EXIT_FAILURE, _("SCHED_FLAG_DL_OVERRUN is unsupported"));
+# endif
+# ifdef SCHED_FLAG_UTIL_CLAMP_MIN
+	if (ctl->sched_flags & SCHED_FLAG_UTIL_CLAMP_MIN)
+		errx(EXIT_FAILURE, _("SCHED_FLAG_UTIL_CLAMP_MIN is unsupported"));
+# endif
+# ifdef SCHED_FLAG_UTIL_CLAMP_MAX
+	if (ctl->sched_flags & SCHED_FLAG_UTIL_CLAMP_MAX)
+		errx(EXIT_FAILURE, _("SCHED_FLAG_UTIL_CLAMP_MAX is unsupported"));
+# endif
+#endif /* HAVE_SCHED_SETATTR */
 	if (ctl->priority < sched_get_priority_min(ctl->policy) ||
-	    sched_get_priority_max(ctl->policy) < ctl->priority)
+			sched_get_priority_max(ctl->policy) < ctl->priority)
 		errx(EXIT_FAILURE,
-		     _("unsupported priority value for the policy: %d: see --max for valid range"),
-		     ctl->priority);
+		     _("unsupported priority value %d for the %s policy"
+		       " (see --max for valid range)"),
+		     ctl->priority, get_policy_name(ctl->policy));
 	set_sched(ctl);
 
 	if (ctl->verbose)
 		show_sched_info(ctl);
 
-	if (!ctl->pid) {
-		argv += optind;
+	if (ctl->pidfd >= 0)
+		close(ctl->pidfd);
 
-		if (need_prio)
-			argv++;
-		else if (argv[0] && isdigit_string(argv[0]))
-			argv++;
+	if (!ctl->parse_pid) {
+		argv += optind;
 
 		if (argv[0] && strcmp(argv[0], "--") == 0)
 			argv++;

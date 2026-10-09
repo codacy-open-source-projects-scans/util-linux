@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * Copyright (c) 1989 The Regents of the University of California.
  * All rights reserved.
@@ -10,11 +11,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -93,6 +90,8 @@ void addfile(char *name, struct hexdump *hex)
 
 		add_fmt(fmt, hex);
 	}
+	if (ferror(fp))
+		err(EXIT_FAILURE, _("can't read %s"), name);
 
 	free(buf);
 	fclose(fp);
@@ -408,9 +407,12 @@ isint:				cs[3] = '\0';
 					/* "cut out" the color_unit(s) */
 					a = strchr(p2, '[');
 					p2 = strrchr(p2, ']');
-					if (a++ && p2)
-						pr->colorlist = color_fmt(xstrndup(a, p2++ - a), pr->bcnt);
-					else
+					if (a++ && p2) {
+						char *cfmt = xstrndup(a, p2++ - a);
+
+						pr->colorlist = color_fmt(cfmt, pr->bcnt);
+						free(cfmt);
+					} else
 						badconv(p2);
 				}
 				/* we don't want colors, quietly skip over them */
@@ -503,8 +505,10 @@ static struct list_head *color_fmt(char *cfmt, int bcnt)
 		hcnext->fmt = color_sequence_from_colorname(clr);
 		free(clr);
 
-		if (!hcnext->fmt)
+		if (!hcnext->fmt) {
+			free_colorlist(ret_head);
 			return NULL;
+		}
 
 		/* only colorize this specific value */
 		if (*cfmt == ':') {
@@ -515,9 +519,9 @@ static struct list_head *color_fmt(char *cfmt, int bcnt)
 				errno = 0;
 				end = NULL;
 				if (cfmt[1] == 'x' || cfmt[1] == 'X')
-					hcnext->val = strtoul(cfmt + 2, &end, 16);
+					hcnext->val = strtoll(cfmt + 2, &end, 16);
 				else
-					hcnext->val = strtoul(cfmt, &end, 8);
+					hcnext->val = strtoll(cfmt, &end, 8);
 				if (errno || end == cfmt)
 					badfmt(fmt);
 				cfmt = end;
@@ -564,18 +568,21 @@ static struct list_head *color_fmt(char *cfmt, int bcnt)
 				++cfmt;
 				errno = 0;
 
-				hcnext->range =
-				  strtoul(cfmt, &cfmt, 10) - hcnext->offt + 1;
+				unsigned long end_offt = strtoul(cfmt, &cfmt, 10);
 				if (errno)
 					badfmt(fmt);
-				/* offset range must be between 0 and format byte count */
-				if (hcnext->range < 0)
+				if (end_offt < (unsigned long) hcnext->offt)
 					badcnt("_L");
+				hcnext->range = end_offt - hcnext->offt + 1;
 				/* the offset extends over several print units, clone
 				 * the condition, link it in and adjust the address/offset */
-				while (hcnext->range > bcnt) {
+				while (hcnext->range > (size_t) bcnt) {
 					hc = xcalloc(1, sizeof(struct hexdump_clr));
 					memcpy(hc, hcnext, sizeof(struct hexdump_clr));
+
+					/* the string is owned by every node; clone
+					 * it to avoid double-free in hex_free() */
+					hc->str = hcnext->str ? xstrdup(hcnext->str) : NULL;
 
 					hc->range = bcnt;
 
@@ -591,7 +598,7 @@ static struct list_head *color_fmt(char *cfmt, int bcnt)
 			hcnext->offt = (off_t)-1;
 
 		/* check if the string we're looking for is the same length as the range */
-		if (hcnext->str && (int)strlen(hcnext->str) != hcnext->range)
+		if (hcnext->str && strlen(hcnext->str) != hcnext->range)
 			badcnt("_L");
 
 		/* link in another condition */

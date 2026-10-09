@@ -43,6 +43,7 @@ lib_blkid_sources = '''
   src/partitions/aix.h
   src/partitions/atari.c
   src/partitions/bsd.c
+  src/partitions/dasd.c
   src/partitions/dos.c
   src/partitions/gpt.c
   src/partitions/mac.c
@@ -154,12 +155,13 @@ lib_blkid = both_libraries(
   'blkid',
   list_h,
   lib_blkid_sources,
+  econf_sources, common_dl_sources,
   include_directories : [dir_include, dir_libblkid],
   link_depends : libblkid_link_depends,
   version : libblkid_version,
   link_args : libblkid_link_args,
   link_with : lib_common,
-  dependencies : build_libblkid ? [lib_econf] : disabler(),
+  dependencies : build_libblkid ? econf_deps : disabler(),
   install : build_libblkid)
 blkid_dep = declare_dependency(link_with: lib_blkid, include_directories: '.')
 

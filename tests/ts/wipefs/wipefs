@@ -22,14 +22,14 @@ mkdir -p "$backups"
 $TS_CMD_WIPEFS --all --backup="${backups}" ${img} &>/dev/null || ts_die "wipefs failed"
 
 #there should be just one magic string/backup file in this case
-INFILE=$(ls $backups/wipefs-$(basename ${img})-*.bak)
+INFILE=$(find "$backups/" -iname "wipefs-$(basename "${img}")-*.bak")
 OFFT=$(echo $INFILE | sed 's/^.*-\(.*\).bak$/\1/')
-dd if=$INFILE of=$img bs=1 conv=notrunc seek=$(($OFFT)) &>/dev/null
+dd if=$INFILE of=$img bs=1 conv=notrunc seek=$((OFFT)) &>/dev/null
 
 #the bytes should be copied back, check if wipefs can recognize it
 $TS_CMD_WIPEFS -a ${img} > $TS_OUTDIR/out 2>/dev/null
 
 # check for output
-[ -s $TS_OUTDIR/out ] && echo "OK" &> $TS_OUTPUT || exit 1
+[ -s $TS_OUTDIR/out ] && echo "OK" &> "$TS_OUTPUT" || exit 1
 
 ts_finalize

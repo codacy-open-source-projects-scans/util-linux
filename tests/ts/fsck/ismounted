@@ -28,7 +28,7 @@ ts_skip_nonroot
 ts_check_losetup
 ts_check_prog "mkfs.ext2"
 
-> $TS_OUTPUT
+: > "$TS_OUTPUT"
 
 ts_device_init
 DEVICE=$TS_LODEV
@@ -39,10 +39,10 @@ ts_device_has "TYPE" "ext2" $DEVICE || ts_die "Cannot find ext2 on $DEVICE"
 
 [ -d "$TS_MOUNTPOINT" ] || mkdir -p $TS_MOUNTPOINT
 
-$TS_CMD_MOUNT $DEVICE $TS_MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_MOUNT $DEVICE $TS_MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 # test by ismounted.c
-$TS_HELPER_ISMOUNTED $DEVICE | awk '{print $1}' >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_HELPER_ISMOUNTED $DEVICE | awk '{print $1}' >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 $TS_CMD_UMOUNT $DEVICE || ts_die "Cannot umount $DEVICE"
 

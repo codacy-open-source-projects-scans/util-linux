@@ -39,9 +39,9 @@ for COMMAND in fsck fsck.ext4 python python3 python3.8
 do
 	COUNT=$($TS_CMD_WHEREIS -B $BIN_DIR -M $MAN_DIR -f $COMMAND | wc -w)
 	if [ $COUNT -eq 3 ]; then
-		echo "$COMMAND success" >> $TS_OUTPUT
+		echo "$COMMAND success" >> "$TS_OUTPUT"
 	else
-		echo "$COMMAND failure" >> $TS_OUTPUT
+		echo "$COMMAND failure" >> "$TS_OUTPUT"
 	fi
 done
 

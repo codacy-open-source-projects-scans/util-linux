@@ -679,19 +679,18 @@ static int strtosize_sectors(const char *str, unsigned long sector_size,
 
 void resize_partition(struct fdisk_context *cxt)
 {
-	struct fdisk_partition *pa = NULL, *npa = NULL, *next = NULL;
+	struct fdisk_partition *npa = NULL;
 	char *query = NULL, *response = NULL, *default_size;
-	struct fdisk_table *tb = NULL;
 	uint64_t max_size, secs;
 	uintmax_t size;
-	size_t i;
+	size_t i = 0;
 	int rc;
 
 	assert(cxt);
 
 	rc = fdisk_ask_partnum(cxt, &i, FALSE);
 	if (rc)
-		goto err;
+		goto out;
 
 	rc = fdisk_partition_get_max_size(cxt, i, &max_size);
 	if (rc)
@@ -732,10 +731,7 @@ void resize_partition(struct fdisk_context *cxt)
 out:
 	free(query);
 	free(response);
-	fdisk_unref_partition(next);
-	fdisk_unref_partition(pa);
 	fdisk_unref_partition(npa);
-	fdisk_unref_table(tb);
 	return;
 
 err:
@@ -939,8 +935,10 @@ int print_partition_info(struct fdisk_context *cxt)
 		rc = fdisk_partition_to_string(pa, cxt, id, &data);
 		if (rc < 0)
 			goto clean_data;
-		if (!data || !*data)
+		if (!data || !*data) {
+			free(data);
 			continue;
+		}
 		fdisk_info(cxt, "%15s: %s", fdisk_field_get_name(fd), data);
 		free(data);
 	}
@@ -1008,7 +1006,7 @@ static void dump_blkdev(struct fdisk_context *cxt, const char *name,
 	else {
 		unsigned char *buf = xmalloc(size);
 
-		if (read_all(fd, (char *) buf, size) != (ssize_t) size)
+		if (ul_read_all(fd, (char *) buf, size) != (ssize_t) size)
 			fdisk_warn(cxt, _("cannot read"));
 		else
 			dump_buffer(offset, buf, size);
@@ -1043,7 +1041,7 @@ static fdisk_sector_t get_dev_blocks(char *dev)
 
 	if ((fd = open(dev, O_RDONLY|O_NONBLOCK)) < 0)
 		err(EXIT_FAILURE, _("cannot open %s"), dev);
-	ret = blkdev_get_sectors(fd, (unsigned long long *) &size);
+	ret = blkdev_get_sectors(fd, &size);
 	close(fd);
 	if (ret < 0)
 		err(EXIT_FAILURE, _("BLKGETSIZE ioctl failed on %s"), dev);
@@ -1151,6 +1149,7 @@ int main(int argc, char **argv)
 	struct fdisk_context *cxt;
 	char *outarg = NULL;
 	const char *devname, *lockmode = NULL;
+	const char *wanted_label = NULL;
 	enum {
 		OPT_BYTES	= CHAR_MAX + 1,
 		OPT_LOCK
@@ -1276,6 +1275,7 @@ int main(int argc, char **argv)
 			if (!lb)
 				errx(EXIT_FAILURE, _("unsupported disklabel: %s"), optarg);
 			fdisk_label_set_disabled(lb, 0);
+			wanted_label = fdisk_label_get_name(lb);
 			break;
 		}
 		case 'u':
@@ -1403,8 +1403,15 @@ int main(int argc, char **argv)
 
 		if (!fdisk_has_label(cxt)) {
 			fdisk_info(cxt, _("Device does not contain a recognized partition table."));
-			if (!noauto_pt)
-				fdisk_create_disklabel(cxt, NULL);
+			if (!noauto_pt) {
+				if (is_interactive && !wanted_label)
+					rc = fdisk_create_disklabel(cxt, fdisk_get_recommended_labelname());
+				else
+					rc = fdisk_create_disklabel(cxt, wanted_label);
+
+				if (rc)
+					fdisk_warn(cxt, _("Failed to create a disklabel."));
+			}
 
 		} else if (fdisk_is_label(cxt, GPT) && fdisk_gpt_is_hybrid(cxt))
 			fdisk_warnx(cxt, _(

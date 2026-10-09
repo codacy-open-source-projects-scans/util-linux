@@ -86,6 +86,10 @@
 
 #include "logindefs.h"
 
+#if defined (HAVE_LIBECONF) && defined (USE_VENDORDIR)
+# include "shells.h"
+#endif
+
 #define LOGIN_MAX_TRIES        3
 #define LOGIN_EXIT_TIMEOUT     5
 #define LOGIN_TIMEOUT          60
@@ -396,7 +400,7 @@ static void motd(void)
 			done += motddir(file);
 #endif
 		if (S_ISREG(st.st_mode) && st.st_size > 0) {
-			int fd = open(file, O_RDONLY, 0);
+			int fd = open(file, O_RDONLY | O_CLOEXEC, 0);
 			if (fd >= 0) {
 				ul_copy_file(fd, fileno(stdout));
 				close(fd);
@@ -453,7 +457,7 @@ static void open_tty(const char *tty)
 {
 	int i, fd, flags;
 
-	fd = open(tty, O_RDWR | O_NONBLOCK);
+	fd = open(tty, O_RDWR | O_NONBLOCK | O_CLOEXEC);
 	if (fd == -1) {
 		syslog(LOG_ERR, _("FATAL: can't reopen tty: %m"));
 		sleepexit(EXIT_FAILURE);
@@ -698,7 +702,7 @@ static void log_lastlog(struct login_context *cxt)
 	sa.sa_handler = SIG_IGN;
 	sigaction(SIGXFSZ, &sa, &oldsa_xfsz);
 
-	fd = open(_PATH_LASTLOG, O_RDWR, 0);
+	fd = open(_PATH_LASTLOG, O_RDWR | O_CLOEXEC, 0);
 	if (fd < 0)
 		goto done;
 	offset = cxt->pwd->pw_uid * sizeof(ll);
@@ -1524,20 +1528,20 @@ static void login_shell_fallback(char **child_argv)
 	if (!key_file)
 		return;
 
-	error = econf_getKeys(key_file, NULL, &size, &keys);
+	error = econf_call(econf_getKeys)(key_file, NULL, &size, &keys);
 	if (error) {
-		econf_free(key_file);
+		econf_call(econf_freeFile)(key_file);
 		errx(EXIT_FAILURE,
 			_("Cannot evaluate entries in shells files: %s"),
-			econf_errString(error));
+			econf_call(econf_errString)(error));
 	}
 
 	for (size_t i = 0; i < size; i++) {
 		build_shell_argv(keys[i], child_argv);
 		execvp(child_argv[0], child_argv + 1);
 	}
-	econf_free(keys);
-	econf_free(key_file);
+	econf_call(econf_freeArray)(keys);
+	econf_call(econf_freeFile)(key_file);
 #else
 	char *s;
 	setusershell();

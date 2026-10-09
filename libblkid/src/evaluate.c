@@ -54,7 +54,7 @@
 static int verify_tag(const char *devname, const char *name, const char *value)
 {
 	blkid_probe pr;
-	int fd = -1, rc = -1;
+	int rc = -1;
 	size_t len;
 	const char *data;
 	int errsv = 0;
@@ -73,13 +73,10 @@ static int verify_tag(const char *devname, const char *name, const char *value)
 	blkid_probe_enable_partitions(pr, TRUE);
 	blkid_probe_set_partitions_flags(pr, BLKID_PARTS_ENTRY_DETAILS);
 
-	fd = open(devname, O_RDONLY|O_CLOEXEC|O_NONBLOCK);
-	if (fd < 0) {
+	if (blkid_probe_open_device(pr, devname, 0)) {
 		errsv = errno;
 		goto done;
 	}
-	if (blkid_probe_set_device(pr, fd, 0, 0))
-		goto done;
 	rc = blkid_do_safeprobe(pr);
 	if (rc)
 		goto done;
@@ -89,8 +86,6 @@ static int verify_tag(const char *devname, const char *name, const char *value)
 done:
 	DBG(EVALUATE, ul_debug("%s: %s verification %s",
 			devname, name, rc == 0 ? "PASS" : "FAILED"));
-	if (fd >= 0)
-		close(fd);
 	blkid_free_probe(pr);
 
 	/* for non-root users we use unverified udev links */
@@ -218,18 +213,8 @@ static char *evaluate_by_scan(const char *token, const char *value,
 	return res;
 }
 
-/**
- * blkid_evaluate_tag:
- * @token: token name (e.g "LABEL" or "UUID") or unparsed tag (e.g. "LABEL=foo")
- * @value: token data (e.g. "foo")
- * @cache: pointer to cache (or NULL when you don't want to re-use the cache)
- *
-* If the @value is NULL and @token is not in the NAME=value format, then return
-* a copy of the @token.
- *
- * Returns: allocated string with a device name.
- */
-char *blkid_evaluate_tag(const char *token, const char *value, blkid_cache *cache)
+static char *evaluate_tag(const char *token, const char *value,
+		blkid_cache *cache, int flags)
 {
 	struct blkid_config *conf = NULL;
 	char *t = NULL, *v = NULL;
@@ -260,7 +245,8 @@ char *blkid_evaluate_tag(const char *token, const char *value, blkid_cache *cach
 	for (i = 0; i < conf->nevals; i++) {
 		if (conf->eval[i] == BLKID_EVAL_UDEV)
 			ret = evaluate_by_udev(token, value, conf->uevent);
-		else if (conf->eval[i] == BLKID_EVAL_SCAN)
+		else if (conf->eval[i] == BLKID_EVAL_SCAN
+			 && !(flags & BLKID_EVALUATE_NOPROBE))
 			ret = evaluate_by_scan(token, value, cache, conf);
 		if (ret)
 			break;
@@ -272,6 +258,40 @@ out:
 	free(t);
 	free(v);
 	return ret;
+}
+
+/**
+ * blkid_evaluate_tag:
+ * @token: token name (e.g "LABEL" or "UUID") or unparsed tag (e.g. "LABEL=foo")
+ * @value: token data (e.g. "foo")
+ * @cache: pointer to cache (or NULL when you don't want to re-use the cache)
+ *
+ * If the @value is NULL and @token is not in the NAME=value format, then return
+ * a copy of the @token.
+ *
+ * Returns: allocated string with a device name.
+ */
+char *blkid_evaluate_tag(const char *token, const char *value, blkid_cache *cache)
+{
+	return evaluate_tag(token, value, cache, 0);
+}
+
+/**
+ * blkid_evaluate_tag2:
+ * @token: token name (e.g "LABEL" or "UUID") or unparsed tag (e.g. "LABEL=foo")
+ * @value: token data (e.g. "foo")
+ * @cache: pointer to cache (or NULL when you don't want to re-use the cache)
+ * @flags: BLKID_EVALUATE_* flags
+ *
+ * Same as blkid_evaluate_tag(), but with flags to control evaluation.
+ * The BLKID_EVALUATE_NOPROBE flag disables low-level device probing.
+ *
+ * Returns: allocated string with a device name.
+ */
+char *blkid_evaluate_tag2(const char *token, const char *value,
+		blkid_cache *cache, int flags)
+{
+	return evaluate_tag(token, value, cache, flags);
 }
 
 /**

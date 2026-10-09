@@ -232,7 +232,7 @@ echo
 printf "%13s: %-30s    " "kernel" "$(uname -s) $(uname -r)"
 echo
 echo
-echo "      options: $(echo $OPTS | sed 's/ / \\\n               /g')"
+echo "      options: ${OPTS// / $'\n'               }"
 echo
 
 if [ "$paraller_jobs" -ne 1 ]; then
@@ -245,11 +245,10 @@ fi
 
 mkdir -p "$top_builddir"/tests/
 >| $top_builddir/tests/failures
-printf "%s\n" ${comps[*]} |
-	sort |
-	xargs -I '{}' -P $paraller_jobs -n 1 bash -c "'{}' \"$OPTS\" ||
-		echo '{}' >> $top_builddir/tests/failures"
-if [ $? != 0 ]; then
+
+if ! printf "%s\n" "${comps[@]}" | sort | xargs -I '{}' -P $paraller_jobs -n 1 bash -c "'{}' \"$OPTS\" \
+		|| echo '{}' >> $top_builddir/tests/failures"; then
+
 	echo "xargs error" >&2
 	exit 1
 fi

@@ -10,8 +10,8 @@ ts_check_test_command "$TS_CMD_FINDMNT"
 ts_check_test_command "$TS_HELPER_SYSINFO"
 
 FS="$("$TS_CMD_FINDMNT" -nr -o FSTYPE -T "$TS_OUTDIR")"
-if [[ "$FS" = "tmpfs" || "$FS" = "overlay" || "$FS" = "" ]]; then
-	ts_skip "fincore does not work on tmpfs or unknown fs"
+if [[ "$FS" = "tmpfs" || "$FS" = "overlay" || "$FS" = "zfs" || "$FS" = "" ]]; then
+	ts_skip "fincore does not work on ${FS:-unknown fs}"
 fi
 
 # https://github.com/util-linux/util-linux/pull/3529
@@ -39,7 +39,7 @@ function _dd
 	msg=$(dd "$@" 2>&1)
 	ret=$?
 	if [ $ret != 0 ]; then
-		echo "failed: dd $@" >&2
+		echo "failed: dd $*" >&2
 		echo "$msg" >&2
 	fi
 	return $ret
@@ -148,105 +148,105 @@ ts_log_both "[ NON EXISTING FILE ]"
 
     $TS_CMD_FINCORE --raw --output $OUT_COLUMNS --bytes --noheadings $input
     footer "$?"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     run_dd_test "EMPTY FILE" 0
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     run_dd_test "PAGESIZE -1 (incore)" $(( PAGE_SIZE - 1 ))
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     run_dd_test "JUST PAGESIZE(incore)" $(( PAGE_SIZE ))
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     run_dd_test "JUST PAGESIZE(directio)" $(( PAGE_SIZE )) "oflag=direct"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     run_dd_test "TWO PAGES(incore)" $(( 2 * PAGE_SIZE ))
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     run_dd_test "TWO PAGES(directio)" $(( 2 * PAGE_SIZE )) "oflag=direct"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     run_dd_dd_test "TWO PAGES(mixed directio,incore)" \
 			    oflag=direct \
 			    "oflag=append seek=1"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     run_dd_dd_test "TWO PAGES(mixed incore,directio)" \
 		   "" \
 		   "oflag=direct,append seek=1"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     hole_count=$(( WINDOW_SIZE / PAGE_SIZE - 2 ))
     run_dd_dd_test "WINDOW SIZE(incore-sparse-incore)" \
 		   "" \
 		   "oflag=append seek=$hole_count"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     hole_count=$(( WINDOW_SIZE / PAGE_SIZE - 2 ))
     run_dd_dd_test "WINDOW SIZE(directio-sparse-directio)" \
 		   "oflag=direct" \
 		   "oflag=append,direct seek=$hole_count"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     hole_count=$(( WINDOW_SIZE / PAGE_SIZE - 2 ))
     run_dd_dd_test "WINDOW SIZE(incore-sparse-directio)" \
 		   "" \
 		   "oflag=append,direct seek=$hole_count"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     hole_count=$(( WINDOW_SIZE / PAGE_SIZE - 2 ))
     run_dd_dd_test "WINDOW SIZE(directio-sparse-incore)" \
 		   "oflag=direct" \
 		   "oflag=append seek=$hole_count"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     hole_count=$(( WINDOW_SIZE / PAGE_SIZE - 1 ))
     run_dd_dd_test "WINDOW SIZE + 1 page(incore-sparse-incore)" \
 		   "" \
 		   "oflag=append seek=$hole_count"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     hole_count=$(( WINDOW_SIZE / PAGE_SIZE - 1 ))
     run_dd_dd_test "WINDOW SIZE + 1 page(directio-sparse-directio)" \
 		   "oflag=direct" \
 		   "oflag=append,direct seek=$hole_count"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     hole_count=$(( WINDOW_SIZE / PAGE_SIZE - 1 ))
     run_dd_dd_test "WINDOW SIZE + 1 page(incore-sparse-directio)" \
 		   "" \
 		   "oflag=append,direct seek=$hole_count"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
     hole_count=$(( WINDOW_SIZE / PAGE_SIZE - 1 ))
     run_dd_dd_test "WINDOW SIZE + 1 page(directio-sparse-incore)" \
 		   "oflag=direct" \
 		   "oflag=append seek=$hole_count"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 ts_log_both "[ MULTIPLE FILES ]"
 {
     $TS_CMD_FINCORE --raw --output $OUT_COLUMNS --bytes $INPUT
     footer "$?"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 rm -f $INPUT
 INPUT=
@@ -256,25 +256,25 @@ OUT_COLUMNS=SIZE,FILE
 
 {
 	run_dd_test "EMPTY" 0
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
 	run_dd_test 1b 1
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
 	run_dd_test 1k 1024
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
 	run_dd_test 10k 10240
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 ts_log_both "[ GRAND TOTAL SIZE ]"
 {
     $TS_CMD_FINCORE --raw --output $OUT_COLUMNS --bytes --noheadings --total $INPUT
     footer "$?"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 rm -f $INPUT
 INPUT=
@@ -283,29 +283,29 @@ OUT_COLUMNS=PAGES,FILE
 
 {
 	run_dd_test "EMPTY" 0
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
 	run_dd_test 1b 1
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
 	run_dd_test 'ONE PAGE' $PAGE_SIZE
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
 	run_dd_test 'TWO PAGES' $(( 2 * PAGE_SIZE ))
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 {
 	run_dd_test 'TEN PAGES' $(( 10 * PAGE_SIZE ))
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 ts_log_both "[ GRAND TOTAL PAGES ]"
 {
     $TS_CMD_FINCORE --raw --output $OUT_COLUMNS --bytes --noheadings --total $INPUT
     footer "$?"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 OUT_COLUMNS=$OLD_COLUMNS
 
@@ -315,21 +315,21 @@ if [ -n "$RECURSIVE" ]; then
 
 	{
 	    run_dd_test "dir/EMPTY FILE" 0
-	} >> $TS_OUTPUT 2>> $TS_ERRLOG
+	} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 	{
 	    run_dd_test "dir/PAGESIZE -1 (incore)" $(( PAGE_SIZE - 1 ))
-	} >> $TS_OUTPUT 2>> $TS_ERRLOG
+	} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 	{
 	    run_dd_test "dir/JUST PAGESIZE(incore)" $(( PAGE_SIZE ))
-	} >> $TS_OUTPUT 2>> $TS_ERRLOG
+	} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 	ts_log_both "[ RECURSIVE SCAN ]"
 	{
 	    $TS_CMD_FINCORE --raw --output $OUT_COLUMNS --bytes --recursive --raw "$dir" |sort
 	    footer "$?"
-	} >> $TS_OUTPUT 2>> $TS_ERRLOG
+	} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 fi
 
 rm -f $INPUT

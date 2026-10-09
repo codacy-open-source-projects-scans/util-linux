@@ -24,7 +24,7 @@ TESTPROG="$TS_HELPER_SCOLS_TERMREDUCE"
 ts_check_test_command "$TESTPROG"
 
 # Single-shot test: output must match expected file exactly.
-ts_run $TESTPROG >> $TS_OUTPUT 2>> $TS_ERRLOG
+ts_run $TESTPROG >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 ts_finalize
 

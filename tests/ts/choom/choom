@@ -30,9 +30,7 @@ oom_score_adj=$("$TS_CMD_CHOOM" --pid $PID \
 
 (( oom_score_adj++ ))
 
-"$TS_CMD_CHOOM" --pid $PID --adjust $oom_score_adj &>/dev/null
-
-if [[ "$?" != 0 ]]; then
+if ! "$TS_CMD_CHOOM" --pid $PID --adjust $oom_score_adj &>/dev/null; then
         ts_failed "OOM adjust score change failed"
 fi
 

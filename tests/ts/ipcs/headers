@@ -24,37 +24,37 @@ ts_init "$*"
 ts_check_test_command "$TS_CMD_IPCS"
 
 ts_init_subtest "shm-headers"
-$TS_CMD_IPCS --shmems --time | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --shmems --pid | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --shmems --creator | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --shmems --limits | grep "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --shmems --summary | grep "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_IPCS --shmems --time | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --shmems --pid | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --shmems --creator | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --shmems --limits | grep "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --shmems --summary | grep "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 ts_init_subtest "mesg-headers"
-$TS_CMD_IPCS --queues --time | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --queues --pid | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --queues --creator | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --queues --limits | grep  "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --queues --summary | grep  "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_IPCS --queues --time | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --queues --pid | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --queues --creator | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --queues --limits | grep  "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --queues --summary | grep  "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 ts_init_subtest "sem-headers"
-$TS_CMD_IPCS --semaphores --time | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --semaphores --pid | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --semaphores --creator | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --semaphores --limits | grep  "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --semaphores --summary | grep  "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_IPCS --semaphores --time | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --semaphores --pid | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --semaphores --creator | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --semaphores --limits | grep  "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --semaphores --summary | grep  "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 ts_init_subtest "all-headers"
-$TS_CMD_IPCS --all | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_IPCS --all | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
-$TS_CMD_IPCS --all --time | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --all --pid | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --all --creator | grep -A1 "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --all --limits | grep "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
-$TS_CMD_IPCS --all --summary | grep "^---"  >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_IPCS --all --time | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --all --pid | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --all --creator | grep -A1 "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --all --limits | grep "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+$TS_CMD_IPCS --all --summary | grep "^---"  >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 ts_finalize

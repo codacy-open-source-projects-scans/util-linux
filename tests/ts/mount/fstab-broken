@@ -38,16 +38,16 @@ echo "tmpd $MNT tmpfs" >> "$TS_FSTAB"
 ts_fstab_close
 
 ts_init_subtest "mount"
-$TS_CMD_MOUNT --fstab "$TS_FSTAB" $MNT &> /dev/null
-[ "$?" = "0" ] || ts_log "error: mount $MNT"
-$TS_CMD_FINDMNT --kernel --mountpoint "$MNT" &> /dev/null
-if [ "$?" != "0" ]; then
+$TS_CMD_MOUNT --fstab "$TS_FSTAB" $MNT &> /dev/null || ts_log "error: mount $MNT"
+
+if ! $TS_CMD_FINDMNT --kernel --mountpoint "$MNT" &> /dev/null; then
 	ts_log "Cannot find $MNT in /proc/self/mountinfo"
 else
 	ts_log "OK"
 fi
-$TS_CMD_UMOUNT $MNT &> /dev/null
-if [ "$?" = "0" ]; then
+
+
+if $TS_CMD_UMOUNT $MNT &> /dev/null; then
 	# for old systems with mtab and /sbin/mount.tmpfs
 	/bin/umount --fake "$MNT" &> /dev/null
 else
@@ -57,16 +57,16 @@ ts_finalize_subtest
 
 
 ts_init_subtest "mount-all"
-$TS_CMD_MOUNT --fstab "$TS_FSTAB" --all &> /dev/null
-[ "$?" = "0" ] || ts_log "error: mount -a"
-$TS_CMD_FINDMNT --kernel --mountpoint "$MNT" &> /dev/null
-if [ "$?" != "0" ]; then
+$TS_CMD_MOUNT --fstab "$TS_FSTAB" --all &> /dev/null || ts_log "error: mount -a"
+
+if ! $TS_CMD_FINDMNT --kernel --mountpoint "$MNT" &> /dev/null; then
 	ts_log "Cannot find $MNT in /proc/self/mountinfo"
 else
 	ts_log "OK"
 fi
-$TS_CMD_UMOUNT $MNT &> /dev/null
-if [ "$?" = "0" ]; then
+
+
+if $TS_CMD_UMOUNT $MNT &> /dev/null; then
 	# for old systems with mtab and /sbin/mount.tmpfs
 	/bin/umount --fake $MNT &> /dev/null
 else

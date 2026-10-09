@@ -71,6 +71,22 @@ if enable_btrfs
   lib_mount_sources += 'src/btrfs.c'
 endif
 
+if lib_selinux.found()
+  lib_mount_sources += selinux_sources + [selinux_utils_c]
+endif
+
+if lib_cryptsetup.found()
+  lib_mount_sources += cryptsetup_sources
+endif
+
+if conf.get('USE_LIBMOUNT_UDEV_SUPPORT').to_string() == '1'
+  lib_mount_sources += systemd_sources
+endif
+
+if use_dlopen_selinux or use_dlopen_cryptsetup or (conf.get('USE_LIBMOUNT_UDEV_SUPPORT').to_string() == '1' and use_dlopen_systemd)
+  lib_mount_sources += common_dl_sources
+endif
+
 libmount_sym = 'src/libmount.sym'
 libmount_sym_path = '@0@/@1@'.format(meson.current_source_dir(), libmount_sym)
 
@@ -78,12 +94,23 @@ if build_libmount and not have_dirfd and not have_ddfd
   error('neither dirfd nor ddfd are available')
 endif
 
+lib__mount_compile_deps = [blkid_dep]
+if lib_selinux.found()
+  lib__mount_compile_deps += selinux_deps
+endif
+if lib_cryptsetup.found()
+  lib__mount_compile_deps += cryptsetup_deps
+endif
+if conf.get('USE_LIBMOUNT_UDEV_SUPPORT').to_string() == '1'
+  lib__mount_compile_deps += systemd_deps
+endif
+
 lib__mount = static_library(
   '_mount',
   lib_mount_sources,
   include_directories : [dir_include,
                          dir_libmount],
-  dependencies : [blkid_dep])
+  dependencies : lib__mount_compile_deps)
 
 lib_mount_static = static_library(
   'mount_static',
@@ -93,14 +120,9 @@ lib_mount_static = static_library(
   install : false)
 mount_static_dep = declare_dependency(link_with: lib_mount_static, include_directories: '.')
 
-lib__mount_deps = [
-  lib_selinux,
-  cryptsetup_dlopen ? lib_dl : lib_cryptsetup,
-  realtime_libs
-]
-
-if conf.get('USE_LIBMOUNT_UDEV_SUPPORT').to_string() == '1'
-  lib__mount_deps += [lib_systemd]
+lib__mount_deps = [realtime_libs]
+if use_dlopen_selinux or use_dlopen_cryptsetup or use_dlopen_systemd
+  lib__mount_deps += [lib_dl]
 endif
 
 libmount_link_depends = []

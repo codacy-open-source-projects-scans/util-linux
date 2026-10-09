@@ -77,5 +77,5 @@ trap "cleanup" EXIT
 	echo DONE >&"${MKFDS[1]}"
     fi
     wait "${MKFDS_PID}"
-} > $TS_OUTPUT 2>&1
+} > "$TS_OUTPUT" 2>&1
 ts_finalize

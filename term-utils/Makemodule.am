@@ -42,31 +42,6 @@ scriptlive_LDADD = $(LDADD) libcommon.la $(ISNAN_LIBS) $(REALTIME_LIBS) -lutil
 endif # BUILD_SCRIPTLIVE
 
 
-if BUILD_AGETTY
-sbin_PROGRAMS += agetty
-MANPAGES += term-utils/agetty.8
-dist_noinst_DATA += term-utils/agetty.8.adoc
-agetty_SOURCES = term-utils/agetty.c \
-		 lib/logindefs.c
-if USE_PLYMOUTH_SUPPORT
-agetty_SOURCES += lib/plymouth-ctrl.c
-endif
-if LINUX
-agetty_SOURCES += lib/netlink.c lib/netaddrq.c
-endif
-agetty_LDADD = $(LDADD) libcommon.la
-if BSD
-agetty_LDADD += -lutil
-endif
-if HAVE_ECONF
-agetty_LDADD += $(ECONF_LIBS)
-endif
-if HAVE_SYSTEMD
-agetty_LDADD += $(SYSTEMD_LIBS)
-agetty_CFLAGS = $(SYSTEMD_CFLAGS)
-endif
-endif # BUILD_AGETTY
-
 
 if BUILD_SETTERM
 usrbin_exec_PROGRAMS += setterm
@@ -106,7 +81,13 @@ wall_CFLAGS = $(SUID_CFLAGS) $(AM_CFLAGS)
 wall_LDFLAGS = $(SUID_LDFLAGS) $(AM_LDFLAGS)
 wall_LDADD = $(LDADD) libcommon.la
 if HAVE_SYSTEMD
+wall_SOURCES += $(systemd_sources)
+if USE_DLOPEN_SYSTEMD
+wall_SOURCES += $(common_dl_sources)
+wall_LDADD += $(common_dl_ldadd)
+else
 wall_LDADD += $(SYSTEMD_LIBS)
+endif
 wall_CFLAGS += $(SYSTEMD_CFLAGS)
 endif
 if USE_TTY_GROUP
@@ -132,7 +113,13 @@ write_CFLAGS = $(SUID_CFLAGS) $(AM_CFLAGS)
 write_LDFLAGS = $(SUID_LDFLAGS) $(AM_LDFLAGS)
 write_LDADD = $(LDADD) libcommon.la
 if HAVE_SYSTEMD
+write_SOURCES += $(systemd_sources)
+if USE_DLOPEN_SYSTEMD
+write_SOURCES += $(common_dl_sources)
+write_LDADD += $(common_dl_ldadd)
+else
 write_LDADD += $(SYSTEMD_LIBS)
+endif
 write_CFLAGS += $(SYSTEMD_CFLAGS)
 endif
 

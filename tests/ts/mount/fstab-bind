@@ -20,11 +20,11 @@ ts_fstab_add $MY_SOURCE "$TS_MOUNTPOINT" "none" "bind,default,noauto"
 mkdir -p $MY_SOURCE
 mkdir -p $TS_MOUNTPOINT
 
-$TS_CMD_MOUNT --fstab "$TS_FSTAB" $TS_MOUNTPOINT >> $TS_OUTPUT 2>> $TS_ERRLOG
-[ "$?" = "0" ] || ts_log "error: mount $TS_MOUNTPOINT"
+$TS_CMD_MOUNT --fstab "$TS_FSTAB" $TS_MOUNTPOINT >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" \
+                || ts_log "error: mount $TS_MOUNTPOINT"
 
-$TS_CMD_FINDMNT --mountpoint "$TS_MOUNTPOINT" &> /dev/null
-[ $? -eq 0 ] || ts_die "Not found target (mount failed?)"
+$TS_CMD_FINDMNT --mountpoint "$TS_MOUNTPOINT" &> /dev/null \
+                || ts_die "Not found target (mount failed?)"
 
 $TS_CMD_UMOUNT $TS_MOUNTPOINT || ts_die "Cannot umount $TS_MOUNTPOINT"
 

@@ -19,6 +19,7 @@ TS_DESC="XMODE.m for classical system calls for multiplexing"
 
 . "$TS_TOPDIR"/functions.sh
 ts_init "$*"
+. "$TS_SELF/lsfd-functions.bash"
 
 ts_check_test_command "$TS_CMD_LSFD"
 ts_check_test_command "$TS_HELPER_MKFDS"
@@ -37,21 +38,31 @@ PID=
 for multiplexer in pselect6 select poll ppoll; do
     ts_init_subtest "${multiplexer}"
     if ! "$TS_HELPER_MKFDS" -W | grep -q "^$multiplexer\$"; then
-	ts_skip_subtest "the multiplexer ${multiplexer} is not available"
+	ts_skip "the multiplexer ${multiplexer} is not available"
+	ts_finalize_subtest
 	continue
     fi
 
     {
-	coproc MKFDS { "$TS_HELPER_MKFDS" -w "$multiplexer" multiplexing {10..22}; }
+	coproc MKFDS { "$TS_HELPER_MKFDS" -w "$multiplexer" multiplexing {10..21}; }
     } > "$TS_OUTPUT" 2>&1
+    # bash unsets MKFDS_PID when the coproc terminates; save it
+    MKFDS_CPID=$MKFDS_PID
 
     if read -r -u "${MKFDS[0]}" PID; then
+	if ! kill -0 "$PID" 2>/dev/null; then
+	    wait "$MKFDS_CPID"
+	    ts_skip "the $multiplexer process exited unexpectedly"
+	    ts_finalize_subtest
+	    continue
+	fi
 	syscall_line=$(cat /proc/"${PID}"/syscall 2>> "$TS_OUTPUT")
 	syscall_status=$?
 	if [[ "$syscall_status" != 0 ]]; then
 	    kill -CONT "${PID}"
-	    wait "${MKFDS_PID}"
-	    ts_skip_subtest "cannot open /proc/${PID}/syscall"
+	    wait "$MKFDS_CPID"
+	    ts_skip "cannot open /proc/${PID}/syscall"
+	    ts_finalize_subtest
 	    continue
 	fi
 	syscall_n=$(cut -f1 -d' ' <<< "$syscall_line")
@@ -59,17 +70,18 @@ for multiplexer in pselect6 select poll ppoll; do
 	# on any platforms.
 	if [[ "$syscall_n" == 0 ]]; then
 	    kill -CONT "${PID}"
-	    wait "${MKFDS_PID}"
-	    ts_skip_subtest "incorrect syscall number in /proc/${PID}/syscall"
+	    wait "$MKFDS_CPID"
+	    ts_skip "incorrect syscall number in /proc/${PID}/syscall"
+	    ts_finalize_subtest
 	    continue
 	fi
 
 	{
-	    "${TS_CMD_LSFD}" -n -o ASSOC,XMODE -p "${PID}" -Q '(FD >= 10) && (FD <= 22)'
+	    "${TS_CMD_LSFD}" -r -n -o ASSOC,XMODE -p "${PID}" -Q '(FD >= 10) && (FD <= 21)'
 	    echo "[$multiplexer] ASSOC,XMODE: $?"
 
 	    # For debugging
-	    if [[ $("${TS_CMD_LSFD}" -n -o XMODE -p "${PID}" -Q '(FD == 10)') != "r----m" ]]; then
+	    if [[ $("${TS_CMD_LSFD}" -r -n -o XMODE -p "${PID}" -Q '(FD == 10)') != "r----m" ]]; then
 		cat /proc/"${PID}"/syscall
 	    fi
 
@@ -77,7 +89,10 @@ for multiplexer in pselect6 select poll ppoll; do
 	} >> "$TS_OUTPUT" 2>&1
     fi
 
-    wait "${MKFDS_PID}"
+    wait "$MKFDS_CPID"
+    if [ $? -eq "$ENOSYS" ]; then
+	ts_skip "the $multiplexer syscall is not available (ENOSYS)"
+    fi
     ts_finalize_subtest
 done
 

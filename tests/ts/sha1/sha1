@@ -24,7 +24,7 @@ ts_check_test_command "$TS_HELPER_SHA1"
 
 cat $TS_SELF/data | while read data
 do
-	echo -n $data | $TS_HELPER_SHA1 >> $TS_OUTPUT
+	echo -n $data | $TS_HELPER_SHA1 >> "$TS_OUTPUT"
 done
 
 ts_finalize

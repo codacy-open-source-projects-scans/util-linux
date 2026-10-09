@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * Copyright (c) 1988, 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -10,11 +11,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -62,8 +59,7 @@
 #include <grp.h>
 
 #if defined(USE_SYSTEMD) && HAVE_DECL_SD_SESSION_GET_USERNAME == 1
-# include <systemd/sd-login.h>
-# include <systemd/sd-daemon.h>
+# include "dl-systemd.h"
 #endif
 
 #include "nls.h"
@@ -183,8 +179,8 @@ static int is_gr_member(const char *login, const struct group_workspace *buf)
 			_("getgrouplist found more groups than sysconf allows"));
 	}
 
-	for (; ngroups >= 0; --ngroups) {
-		if (buf->requested_group == (gid_t) buf->groups[ngroups])
+	for (int i = 0; i < ngroups; i++) {
+		if (buf->requested_group == (gid_t) buf->groups[i])
 			return 1;
 	}
 
@@ -272,11 +268,11 @@ int main(int argc, char **argv)
 	iov.iov_len = mbufsize;
 
 #if defined(USE_SYSTEMD) && HAVE_DECL_SD_SESSION_GET_USERNAME == 1
-	if (sd_booted() > 0) {
+	if (ul_dlopen_libsystemd() == 0 && systemd_call(sd_booted)() > 0) {
 		char **sessions_list;
 		int sessions;
 
-		sessions = sd_get_sessions(&sessions_list);
+		sessions = systemd_call(sd_get_sessions)(&sessions_list);
 		if (sessions < 0) {
 			warnx(_("error getting sessions: %s"), strerror(-sessions));
 			goto utmp;
@@ -286,12 +282,12 @@ int main(int argc, char **argv)
 			char *name, *tty;
 			int r;
 
-			if ((r = sd_session_get_username(sessions_list[i], &name)) < 0) {
+			if ((r = systemd_call(sd_session_get_username)(sessions_list[i], &name)) < 0) {
 				warnx(_("get user name failed: %s"), strerror (-r));
 				goto utmp;
 			}
 			if (!(group_buf && !is_gr_member(name, group_buf))
-			    && sd_session_get_tty(sessions_list[i], &tty) >= 0
+			    && systemd_call(sd_session_get_tty)(sessions_list[i], &tty) >= 0
 			    && ul_strv_consume(&ttys, tty) < 0)
 				err(EXIT_FAILURE, _("failed to allocate lines list"));
 
@@ -377,14 +373,13 @@ static char *makemsg(char *fname, char **mvec, int mvecsz,
 		 * Which means that we may leave a non-blank character
 		 * in column 80, but that can't be helped.
 		 */
-		/* snprintf is not always available, but the sprintf's here
-		   will not overflow as long as %d takes at most 100 chars */
 		fprintf(fs, "\r%*s\r\n", TERM_WIDTH, " ");
 
 		snprintf(lbuf, lbuflen,
 				_("Broadcast message from %s@%s (%s) (%s):"),
 				whom, hostname, where, date);
-		fprintf(fs, "%-*.*s\007\007\r\n", TERM_WIDTH, TERM_WIDTH, lbuf);
+		fputs_careful(lbuf, fs, '^', true, TERM_WIDTH);
+		fprintf(fs, "\007\007\r\n");
 		free(hostname);
 		free(whombuf);
 	}

@@ -91,9 +91,9 @@ if read -r -u "${MKFDS[0]}" PID FD0; then
 	if read -r -u "${MKFDS[0]}" FD1; then
 	    if inode1=$(${TS_CMD_LSFD} --noheadings --raw --pid "$PID" --filter "FD == $FD1" -oINODE); then
 		if [[ -n "$INODE1" && "$INODE1" == "$inode1" ]]; then
-		    echo inode1: OK >> $TS_OUTPUT
+		    echo inode1: OK >> "$TS_OUTPUT"
 		else
-		    echo inode1: FAILED "$INODE1" == "$inode1" >> $TS_OUTPUT
+		    echo inode1: FAILED "$INODE1" == "$inode1" >> "$TS_OUTPUT"
 
 		    echo >&"${MKFDS[1]}"
 		    ts_failed "inode doesn't match in the second file open"

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * Copyright (c) 1989 The Regents of the University of California.
  * All rights reserved.
@@ -10,11 +11,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by the University of
- *	California, Berkeley and its contributors.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -42,8 +39,8 @@ struct hexdump_clr {
 	struct list_head colorlist;	/* next color unit */
 	const char *fmt;		/* the color, UL_COLOR_* */
 	off_t offt;			/* offset of range where unit is valid... */
-	int range;			/* ... and range length */
-	int val;			/* value ... */
+	size_t range;			/* ... and range length */
+	int64_t val;			/* value ... */
 	char *str;			/* ... or string to match */
 	int invert;			/* invert condition? */
 };
@@ -90,6 +87,7 @@ struct hexdump {
   struct list_head fshead;				/* head of format strings */
   ssize_t blocksize;			/* data block size */
   int exitval;				/* final exit value */
+  int stdout_errno;			/* errno from stdout error */
   ssize_t length;			/* max bytes to read */
   off_t skip;				/* bytes to skip */
   /* Sparse file optimization using FIEMAP (Linux only) */
@@ -114,6 +112,7 @@ void __attribute__((__noreturn__)) usage(void);
 void conv_c(struct hexdump_pr *, u_char *);
 void conv_u(struct hexdump_pr *, u_char *);
 int  next(char **, struct hexdump *);
+void free_colorlist(struct list_head *);
 int parse_args(int, char **, struct hexdump *);
 
 #endif /* UTIL_LINUX_HEXDUMP_H */

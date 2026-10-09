@@ -23,9 +23,14 @@ ts_init "$*"
 
 ts_check_test_command "$TS_CMD_GETOPT"
 
-TEMP=$($TS_CMD_GETOPT -o ab:c:: --long a-long,b-long:,c-long:: -n 'example.bash' -- -a -b 1 -c2  --a-long --b-long 3 --c-long foo bar)
 
-if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
+
+if ! TEMP=$($TS_CMD_GETOPT -o ab:c:: --long a-long,b-long:,c-long:: \
+	-n 'example.bash' -- -a -b 1 -c2  --a-long --b-long 3 --c-long foo bar); 
+then
+	echo "Terminating..." >&2
+	exit 1 ; 
+fi
 
 eval set -- "$TEMP"
 
@@ -41,9 +46,9 @@ while true ; do
 		--) shift ; break ;;
 		*) echo "Internal error!"; break;;
 	esac
-done >> $TS_OUTPUT 2>> $TS_ERRLOG
+done >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
-echo "Remaining arguments:" >> $TS_OUTPUT 2>> $TS_ERRLOG
-for arg do echo '--> '"\`$arg'" >> $TS_OUTPUT 2>> $TS_ERRLOG; done
+echo "Remaining arguments:" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
+for arg do echo '--> '"\`$arg'" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"; done
 
 ts_finalize

@@ -75,10 +75,10 @@ ts_finalize_subtest
 
 ts_init_subtest "ENDPOINTS-column"
 if ! lsfd_check_sockdiag --subtest unix; then
-    # lsfd_check_sockdiag calls ts_skip_subtest or ts_failed_subtest.
+    # lsfd_check_sockdiag calls ts_skip or ts_failed.
     :
 elif ts_is_in_docker; then
-    ts_skip_subtest "unsupported in docker environment"
+    ts_skip "unsupported in docker environment"
 else
     {
 	coproc MKFDS { "$TS_HELPER_MKFDS" unix-dgram $FDS $FDC \
@@ -102,15 +102,15 @@ else
 	fi
 	wait "${MKFDS_PID}"
     } > "$TS_OUTPUT" 2>&1
-    ts_finalize_subtest
 fi
+ts_finalize_subtest
 
 ts_init_subtest "UNIX.IPEEER-column"
 if ! lsfd_check_sockdiag --subtest unix; then
-    # lsfd_check_sockdiag calls ts_skip_subtest or ts_failed_subtest.
+    # lsfd_check_sockdiag calls ts_skip or ts_failed.
     :
 elif ts_is_in_docker; then
-    ts_skip_subtest "unsupported in docker environment"
+    ts_skip "unsupported in docker environment"
 else
     {
 	coproc MKFDS { "$TS_HELPER_MKFDS" unix-dgram $FDS $FDC \
@@ -139,7 +139,7 @@ else
 	fi
 	wait "${MKFDS_PID}"
     } > "$TS_OUTPUT" 2>&1
-    ts_finalize_subtest
 fi
+ts_finalize_subtest
 
 ts_finalize

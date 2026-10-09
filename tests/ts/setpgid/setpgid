@@ -21,7 +21,7 @@ ts_init "$*"
 ts_check_test_command "$TS_CMD_SETPGID"
 [ -e /proc/self/stat ] || ts_skip "/proc/self/stat is missing"
 
-$TS_CMD_SETPGID echo "success" >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SETPGID echo "success" >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 # qemu-user always reports '0' for the pgid field which prevents the test from
 # working so we skip it.
@@ -29,6 +29,6 @@ ts_skip_qemu_user
 
 PGID1="$(awk '{print $5}' /proc/self/stat)"
 PGID2="$($TS_CMD_SETPGID awk '{print $5}' /proc/self/stat)"
-test ! "$PGID1" = "$PGID2" && echo "not equal" >> $TS_OUTPUT
+test ! "$PGID1" = "$PGID2" && echo "not equal" >> "$TS_OUTPUT"
 
 ts_finalize

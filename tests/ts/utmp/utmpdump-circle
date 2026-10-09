@@ -33,7 +33,7 @@ OUT_TXT=${TS_OUTDIR}/${TS_TESTNAME}.txt
 #
 # old text format -> binary -> new text format -> binary
 
-echo "no output expected" > $TS_OUTPUT
+echo "no output expected" > "$TS_OUTPUT"
 for f in txt-a txt-b txt-ipv6; do
 	$TS_CMD_UTMPDUMP -r $TS_SELF/$f-old > $OUT_BIN1 2>/dev/null &&
 	$TS_CMD_UTMPDUMP $OUT_BIN1 > $OUT_TXT 2>/dev/null &&
@@ -41,7 +41,7 @@ for f in txt-a txt-b txt-ipv6; do
 	$TS_CMD_UTMPDUMP -r $OUT_TXT > $OUT_BIN2 2>/dev/null &&
 	diff -q $OUT_BIN1 $OUT_BIN2 ||
 	echo "circle failed for $f"
-done >> $TS_OUTPUT 2>> $TS_ERRLOG
+done >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 rm -f "$OUT_BIN1" "$OUT_BIN2" "$OUT_TXT"
 

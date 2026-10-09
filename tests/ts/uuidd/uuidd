@@ -26,8 +26,7 @@ UUIDD_PID="$(mktemp -u "${TS_OUTDIR}/uuiddXXXXXXXXXXXXX")"
 # socket path must be short (SIZEOF_SOCKADDR_UN_SUN_PATH 108)
 UUIDD_SOCKET=$(mktemp "/tmp/ultest-$TS_COMPONENT-$TS_TESTNAME-socketXXXXXX")
 
-$TS_CMD_UUIDD -p "$UUIDD_PID" -s "$UUIDD_SOCKET"
-if [ $? -ne 0 ]; then
+if ! $TS_CMD_UUIDD -p "$UUIDD_PID" -s "$UUIDD_SOCKET"; then
 	ts_failed "daemon start"
 fi
 

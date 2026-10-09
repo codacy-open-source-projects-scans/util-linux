@@ -8,8 +8,8 @@ ts_init "$*"
 ts_check_prog sqlite3
 ts_check_test_command "$TS_CMD_LSLOGINS"
 
-$TS_CMD_LSLOGINS --version|grep "lastlog2" >/dev/null
-if [ $? -ne 0 ]; then
+
+if ! $TS_CMD_LSLOGINS --version|grep "lastlog2" >/dev/null; then
     ts_skip "lastlog2 not supported"
 fi
 

@@ -35,6 +35,7 @@
 
 #include "linux_version.h"
 #include "c.h"
+#include "timeutils.h"
 #include "sysfs.h"
 #include "pathnames.h"
 #include "loopdev.h"
@@ -1294,8 +1295,7 @@ static int loopcxt_check_size(struct loopdev_cxt *lc, int file_fd)
 		return -errno;
 	}
 	if (S_ISBLK(st.st_mode)) {
-		if (blkdev_get_size(file_fd,
-				(unsigned long long *) &expected_size)) {
+		if (blkdev_get_size(file_fd, &expected_size)) {
 			DBG_OBJ(CXT, lc, ul_debug("failed to determine device size"));
 			return -errno;
 		}
@@ -1319,7 +1319,7 @@ static int loopcxt_check_size(struct loopdev_cxt *lc, int file_fd)
 		return -errno;
 	}
 
-	if (blkdev_get_size(dev_fd, (unsigned long long *) &size)) {
+	if (blkdev_get_size(dev_fd, &size)) {
 		DBG_OBJ(CXT, lc, ul_debug("failed to determine loopdev size"));
 		return -errno;
 	}
@@ -1342,7 +1342,7 @@ static int loopcxt_check_size(struct loopdev_cxt *lc, int file_fd)
 			return -errno;
 		}
 
-		if (blkdev_get_size(dev_fd, (unsigned long long *) &size))
+		if (blkdev_get_size(dev_fd, &size))
 			return -errno;
 
 		if (expected_size != size) {
@@ -1398,16 +1398,21 @@ int loopcxt_setup_device(struct loopdev_cxt *lc)
 	if (lc->config.info.lo_flags & LO_FLAGS_DIRECT_IO)
 		flags |= O_DIRECT;
 	if (lc->flags & LOOPDEV_FL_NOFOLLOW)
-		flags |= O_NOFOLLOW;
+		file_fd = ul_open_no_symlinks(lc->filename, mode | flags, 0);
+	else
+		file_fd = open(lc->filename, mode | flags);
 
-	if ((file_fd = open(lc->filename, mode | flags)) < 0) {
-		if (mode != O_RDONLY && (errno == EROFS || errno == EACCES))
-			file_fd = open(lc->filename, (mode = O_RDONLY) | flags);
-
-		if (file_fd < 0) {
-			DBG_OBJ(SETUP, lc, ul_debug("open backing file failed: %m"));
-			return -errno;
-		}
+	if (file_fd < 0 && mode != O_RDONLY
+	    && (errno == EROFS || errno == EACCES)) {
+		mode = O_RDONLY;
+		if (lc->flags & LOOPDEV_FL_NOFOLLOW)
+			file_fd = ul_open_no_symlinks(lc->filename, mode | flags, 0);
+		else
+			file_fd = open(lc->filename, mode | flags);
+	}
+	if (file_fd < 0) {
+		DBG_OBJ(SETUP, lc, ul_debug("open backing file failed: %m"));
+		return -errno;
 	}
 	DBG_OBJ(SETUP, lc, ul_debug("backing file open: OK"));
 
@@ -1621,6 +1626,7 @@ static int loopcxt_get_device_nr(struct loopdev_cxt *lc, int *nr)
 	errno = 0;
 	if (!lc || !nr)
 		return rc;
+	*nr = -1;
 
 	dev = loopcxt_get_device(lc);
 	if (!dev)

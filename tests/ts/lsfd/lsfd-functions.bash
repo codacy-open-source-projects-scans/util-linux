@@ -16,6 +16,11 @@
 #
 
 # The exit-status used in a test target.
+#
+# Update the following constants when changing
+# the error definitions in tests/helpers/test_mkfds.h.
+readonly EXIT_EXPIRED=124
+
 readonly EPERM=18
 readonly ENOPROTOOPT=19
 readonly EPROTONOSUPPORT=20
@@ -106,11 +111,9 @@ function lsfd_check_mkfds_factory
 function lsfd_check_sockdiag
 {
 	local is_subtest
-	local suffix=
 
 	case "$1" in
 	    (--subtest)
-		suffix=_subtest
 		is_subtest=1
 		shift
 		;;
@@ -133,13 +136,13 @@ function lsfd_check_sockdiag
 	    0)
 		return 0;;
 	    "$EPROTONOSUPPORT")
-		ts_skip$suffix "NETLINK_SOCK_DIAG protocol is not supported in socket(2)";;
+		ts_skip "NETLINK_SOCK_DIAG protocol is not supported in socket(2)";;
 	    "$EACCES")
-		ts_skip$suffix "sending a msg via a sockdiag netlink socket is not permitted";;
+		ts_skip "sending a msg via a sockdiag netlink socket is not permitted";;
 	    "$ENOENT")
-		ts_skip$suffix "sockdiag netlink socket is not available";;
+		ts_skip "sockdiag netlink socket is not available";;
 	    *)
-		ts_failed$suffix "failed to create a sockdiag netlink socket $family ($err): $msg";;
+		ts_failed "failed to create a sockdiag netlink socket $family ($err): $msg";;
 	esac
 
 	return 1
@@ -184,5 +187,27 @@ function lsfd_check_userns
 		ts_skip "maybe /proc/self/uid_map it not writable";;
 	    *)
 		ts_failed "failed to use a AF_VSOCK socket: $msg [$err]";;
+	esac
+}
+
+function lsfd_check_udp_lite
+{
+	ts_check_test_command "$TS_HELPER_MKFDS"
+
+	local ip=$1
+	if [[ "$ip" == 4 ]]; then
+	    ip=
+	fi
+
+	"$TS_HELPER_MKFDS" --dont-pause --quiet "udp$ip" 3 4 lite=1
+	err=$?
+
+	case $err in
+	    0)
+		return;;
+	    "$EPROTONOSUPPORT")
+		ts_skip "no UDP-Lite available (IPv$1)";;
+	    *)
+		ts_failed "failed to use a IPPROTO_UDPLITE protocol: $msg [$err]";;
 	esac
 }

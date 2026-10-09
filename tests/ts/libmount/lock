@@ -28,12 +28,12 @@ NLOOPS=1000
 NPROCESSES=50
 
 
-> $TS_OUTPUT.debug
-echo 0 > $TS_OUTPUT
+: > "$TS_OUTPUT".debug
+echo 0 > "$TS_OUTPUT"
 SYNCTIME=$(( $(date +%s) + 5 ))
 
-for id in $(seq 0 $(( $NPROCESSES - 1 ))); do
-	ts_run $TESTPROG --lock --synctime $SYNCTIME $TS_OUTPUT $NLOOPS >> $TS_OUTPUT.debug 2>&1 &
+for id in $(seq 0 $(( NPROCESSES - 1 ))); do
+	ts_run $TESTPROG --lock --synctime $SYNCTIME "$TS_OUTPUT" $NLOOPS >> "$TS_OUTPUT".debug 2>&1 &
 done
 
 wait

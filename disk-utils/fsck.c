@@ -53,6 +53,7 @@
 #include <libmount.h>
 
 #include "nls.h"
+#include "path.h"
 #include "pathnames.h"
 #include "exitcodes.h"
 #include "c.h"
@@ -313,32 +314,20 @@ static void fs_set_done(struct libmnt_fs *fs)
 
 static int is_irrotational_disk(dev_t disk)
 {
-	char path[PATH_MAX];
-	FILE *f;
-	int rc, x;
+	struct path_cxt *pc;
+	int32_t x = 0;
+	int rc = 0;
 
-
-	rc = snprintf(path, sizeof(path),
-			"/sys/dev/block/%u:%u/queue/rotational",
-			major(disk), minor(disk));
-
-	if (rc < 0 || (unsigned int) rc >= sizeof(path))
+	pc = ul_new_path("/sys/dev/block");
+	if (!pc)
 		return 0;
 
-	f = fopen(path, "r");
-	if (!f)
-		return 0;
+	rc = ul_path_readf_s32(pc, &x,
+			"%u:%u/queue/rotational",
+			major(disk), minor(disk)) == 0 && x == 0;
 
-	rc = fscanf(f, "%d", &x);
-	if (rc != 1) {
-		if (ferror(f))
-			warn(_("cannot read %s"), path);
-		else
-			warnx(_("parse error: %s"), path);
-	}
-	fclose(f);
-
-	return rc == 1 ? !x : 0;
+	ul_unref_path(pc);
+	return rc;
 }
 
 static void lock_disk(struct fsck_instance *inst)
@@ -693,6 +682,8 @@ static int execute(const char *progname, const char *progpath,
 		pid = -1;
 	else if ((pid = fork()) < 0) {
 		warn(_("fork failed"));
+		for (i = 0; i < argc; i++)
+			free(argv[i]);
 		free_instance(inst);
 		return errno;
 	} else if (pid == 0) {
@@ -964,6 +955,17 @@ static struct fs_type_compile {
 #define FS_TYPE_NORMAL	0
 #define FS_TYPE_OPT	1
 #define FS_TYPE_NEGOPT	2
+
+static void free_fs_type_compile(struct fs_type_compile *cmp)
+{
+	if (cmp->list) {
+		size_t i;
+		for (i = 0; cmp->list[i]; i++)
+			free(cmp->list[i]);
+		free(cmp->list);
+	}
+	free(cmp->type);
+}
 
 static void compile_fs_type(char *fs_type, struct fs_type_compile *cmp)
 {
@@ -1717,5 +1719,6 @@ int main(int argc, char *argv[])
 	mnt_unref_cache(mntcache);
 	mnt_unref_table(fstab);
 	mnt_unref_table(mtab);
+	free_fs_type_compile(&fs_type_compiled);
 	return status;
 }

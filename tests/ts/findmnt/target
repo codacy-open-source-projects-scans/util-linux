@@ -22,14 +22,14 @@ ts_check_test_command "$TS_CMD_FINDMNT"
 
 
 ts_init_subtest "root"
-$TS_CMD_FINDMNT --target "/" --kernel --tab-file "$TS_SELF/files/mountinfo" &> $TS_OUTPUT
-echo rc=$? >> $TS_OUTPUT
+$TS_CMD_FINDMNT --target "/" --kernel --tab-file "$TS_SELF/files/mountinfo" &> "$TS_OUTPUT"
+echo rc=$? >> "$TS_OUTPUT"
 ts_finalize_subtest
 
 
 ts_init_subtest "non-root"
-$TS_CMD_FINDMNT --target "/" --kernel --tab-file "$TS_SELF/files/mountinfo-nonroot" &> $TS_OUTPUT
-echo rc=$? >> $TS_OUTPUT
+$TS_CMD_FINDMNT --target "/" --kernel --tab-file "$TS_SELF/files/mountinfo-nonroot" &> "$TS_OUTPUT"
+echo rc=$? >> "$TS_OUTPUT"
 ts_finalize_subtest
 
 ts_finalize

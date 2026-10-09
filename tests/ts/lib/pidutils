@@ -22,73 +22,82 @@ ts_init "$*"
 ts_check_test_command "$TS_HELPER_PARSEPID"
 ts_check_test_command "$TS_HELPER_STRERROR"
 
+
 ts_init_subtest "flag-unset"
+{
+        "$TS_HELPER_PARSEPID" 1
+        "$TS_HELPER_PARSEPID" 1:
+        "$TS_HELPER_PARSEPID" 1:0
+        "$TS_HELPER_PARSEPID" 1:122
+        "$TS_HELPER_PARSEPID" -- -1:122
+        "$TS_HELPER_PARSEPID" -- -2147
+        "$TS_HELPER_PARSEPID" '1:-122'
+        "$TS_HELPER_PARSEPID" 2147
+        "$TS_HELPER_PARSEPID" -- 0 
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
-"$TS_HELPER_PARSEPID" 1 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" 1: >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" 1:0 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" 1:122 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" -- -1:122 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" -- -2147 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" '1:-122' >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" 2147 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" -- 0 >> $TS_OUTPUT 2>> $TS_ERRLOG
-
-sed -i -e "s@$($TS_HELPER_STRERROR EINVAL)@EINVAL@" $TS_OUTPUT $TS_ERRLOG
-sed -i -e "s@$($TS_HELPER_STRERROR ERANGE)@ERANGE@" $TS_OUTPUT $TS_ERRLOG
+sed -i -e "s@$($TS_HELPER_STRERROR EINVAL)@EINVAL@" "$TS_OUTPUT" "$TS_ERRLOG"
+sed -i -e "s@$($TS_HELPER_STRERROR ERANGE)@ERANGE@" "$TS_OUTPUT" "$TS_ERRLOG"
 
 ts_finalize_subtest
+
 
 ts_init_subtest "flag-zero"
+{
+        "$TS_HELPER_PARSEPID" --zero 1
+        "$TS_HELPER_PARSEPID" --zero 1:
+        "$TS_HELPER_PARSEPID" --zero 1:0
+        "$TS_HELPER_PARSEPID" --zero 1:122
+        "$TS_HELPER_PARSEPID" --zero -- -1:122
+        "$TS_HELPER_PARSEPID" --zero -- -2147
+        "$TS_HELPER_PARSEPID" --zero '1:-122'
+        "$TS_HELPER_PARSEPID" --zero 2147
+        "$TS_HELPER_PARSEPID" --zero 0
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
-"$TS_HELPER_PARSEPID" --zero 1 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero 1: >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero 1:0 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero 1:122 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero -- -1:122 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero -- -2147 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero '1:-122' >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero 2147 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero 0 >> $TS_OUTPUT 2>> $TS_ERRLOG
-sed -i -e "s@$($TS_HELPER_STRERROR EINVAL)@EINVAL@" $TS_OUTPUT $TS_ERRLOG
-sed -i -e "s@$($TS_HELPER_STRERROR ERANGE)@ERANGE@" $TS_OUTPUT $TS_ERRLOG
+sed -i -e "s@$($TS_HELPER_STRERROR EINVAL)@EINVAL@" "$TS_OUTPUT" "$TS_ERRLOG"
+sed -i -e "s@$($TS_HELPER_STRERROR ERANGE)@ERANGE@" "$TS_OUTPUT" "$TS_ERRLOG"
 
 ts_finalize_subtest
+
 
 ts_init_subtest "flag-negative"
+{
+        "$TS_HELPER_PARSEPID" --negative 1
+        "$TS_HELPER_PARSEPID" --negative 1:
+        "$TS_HELPER_PARSEPID" --negative -- -1:0
+        "$TS_HELPER_PARSEPID" --negative 1:122
+        "$TS_HELPER_PARSEPID" --negative '1:-122'
+        "$TS_HELPER_PARSEPID" --negative 1:0
+        "$TS_HELPER_PARSEPID" --negative -- -1:122
+        "$TS_HELPER_PARSEPID" --negative -- -2147
+        "$TS_HELPER_PARSEPID" --negative -- '-2147:78'
+        "$TS_HELPER_PARSEPID" --negative 2147
+        "$TS_HELPER_PARSEPID" --negative 0
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
-"$TS_HELPER_PARSEPID" --negative 1 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --negative 1: >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --negative -- -1:0 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --negative 1:122 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --negative '1:-122' >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --negative 1:0 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --negative -- -1:122 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --negative -- -2147 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --negative -- '-2147:78' >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --negative 2147 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --negative 0 >> $TS_OUTPUT 2>> $TS_ERRLOG
-sed -i -e "s@$($TS_HELPER_STRERROR EINVAL)@EINVAL@" $TS_OUTPUT $TS_ERRLOG
-sed -i -e "s@$($TS_HELPER_STRERROR ERANGE)@ERANGE@" $TS_OUTPUT $TS_ERRLOG
-
+sed -i -e "s@$($TS_HELPER_STRERROR EINVAL)@EINVAL@" "$TS_OUTPUT" "$TS_ERRLOG"
+sed -i -e "s@$($TS_HELPER_STRERROR ERANGE)@ERANGE@" "$TS_OUTPUT" "$TS_ERRLOG"
 
 ts_finalize_subtest
 
+
 ts_init_subtest "flag-zero-negative"
+{
+        "$TS_HELPER_PARSEPID" --zero --negative 1
+        "$TS_HELPER_PARSEPID" --zero --negative 1:
+        "$TS_HELPER_PARSEPID" --zero --negative -- -1443
+        "$TS_HELPER_PARSEPID" --zero --negative 1:0
+        "$TS_HELPER_PARSEPID" --zero --negative 1:122
+        "$TS_HELPER_PARSEPID" --zero --negative '1:-122'
+        "$TS_HELPER_PARSEPID" --zero --negative -- -1:122
+        "$TS_HELPER_PARSEPID" --zero --negative -- -2147
+        "$TS_HELPER_PARSEPID" --zero --negative 2147
+        "$TS_HELPER_PARSEPID" --zero --negative 0
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
-"$TS_HELPER_PARSEPID" --zero --negative 1 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero --negative 1: >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero --negative -- -1443 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero --negative 1:0 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero --negative 1:122 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero --negative '1:-122' >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero --negative -- -1:122 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero --negative -- -2147 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero --negative 2147 >> $TS_OUTPUT 2>> $TS_ERRLOG
-"$TS_HELPER_PARSEPID" --zero --negative 0 >> $TS_OUTPUT 2>> $TS_ERRLOG
-sed -i -e "s@$($TS_HELPER_STRERROR EINVAL)@EINVAL@" $TS_OUTPUT $TS_ERRLOG
-sed -i -e "s@$($TS_HELPER_STRERROR ERANGE)@ERANGE@" $TS_OUTPUT $TS_ERRLOG
-
+sed -i -e "s@$($TS_HELPER_STRERROR EINVAL)@EINVAL@" "$TS_OUTPUT" "$TS_ERRLOG"
+sed -i -e "s@$($TS_HELPER_STRERROR ERANGE)@ERANGE@" "$TS_OUTPUT" "$TS_ERRLOG"
 
 ts_finalize_subtest
 

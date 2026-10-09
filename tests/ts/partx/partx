@@ -35,6 +35,7 @@ shopt -s nullglob
 function check_partition_count
 {
 	# this function needs shopt -s nullglob
+	udevadm settle
 	local cnt_want=$1
 	local devname=$(basename $TS_DEVICE)
 	local parts=(/sys/block/${devname}/${devname}*)
@@ -57,7 +58,7 @@ ts_init_subtest "addpart"
 		echo OK ||
 		echo "Unable to add partition"
 	check_partition_count 1
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 udevadm settle
@@ -68,7 +69,7 @@ ts_init_subtest "delpart"
 		echo OK ||
 		echo "Unable to remove partition"
 	check_partition_count 0
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 
@@ -89,7 +90,7 @@ ts_init_subtest "detect-parts"
 		echo OK ||
 		echo "Unable to list partitions"
 	check_partition_count $PARTS
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 udevadm settle
@@ -101,7 +102,7 @@ ts_init_subtest "delete-all"
 		echo "partitions deleted" ||
 		echo "Unable to delete partitions on $TS_DEVICE"
 	check_partition_count 0
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 udevadm settle
@@ -113,7 +114,7 @@ ts_init_subtest "add-all"
 		echo "partitions added" ||
 		echo "Unable to add partitions for $TS_DEVICE"
 	check_partition_count $PARTS
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 udevadm settle
@@ -125,7 +126,7 @@ ts_init_subtest "update-one"
 		echo "partitions updated" ||
 		echo "Unable to update 2nd partition for $TS_DEVICE"
 	check_partition_count $PARTS
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 udevadm settle
@@ -137,7 +138,7 @@ ts_init_subtest "delete-one"
 		echo "last partition removed" ||
 		echo "Unable to remove a partition on $TS_DEVICE"
 	check_partition_count $((PARTS-1))
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 udevadm settle
@@ -153,7 +154,7 @@ ts_init_subtest "delete-non-existent"
 	$TS_CMD_PARTX -d --nr $PARTS $TS_DEVICE &&
 		echo "partx: OK" ||
 		echo "partx failed: removed non-existing partition"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 udevadm settle
@@ -164,7 +165,7 @@ ts_init_subtest "add-existing"
 	$TS_CMD_PARTX -a --nr 1 $TS_DEVICE 2>/dev/null &&
 		echo "partx failed: re-added an existing partition" ||
 		echo "partx: OK"
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 udevadm settle
@@ -180,7 +181,7 @@ ts_init_subtest "change-by-range"
 		echo "partitions added" ||
 		echo "Failed to add $TS_DEVICE partitions"
 	check_partition_count $PARTS
-} >> $TS_OUTPUT 2>> $TS_ERRLOG
+} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 ts_finalize_subtest
 
 ts_finalize

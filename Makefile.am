@@ -112,6 +112,7 @@ include libfdisk/Makemodule.am
 include schedutils/Makemodule.am
 include text-utils/Makemodule.am
 include term-utils/Makemodule.am
+include agetty-cmd/Makemodule.am
 include login-utils/Makemodule.am
 include sys-utils/Makemodule.am
 include misc-utils/Makemodule.am
@@ -211,22 +212,37 @@ edit_cmd = sed \
 	 -e 's|@LIBBLKID_VERSION[@]|$(LIBBLKID_VERSION)|g'
 
 if HAVE_SELINUX
+if USE_DLOPEN_SELINUX
+edit_cmd += -e 's|@LIBSELINUX[@]||g'
+else
 edit_cmd += -e 's|@LIBSELINUX[@]|libselinux|g'
+endif
 else
 edit_cmd += -e 's|@LIBSELINUX[@]||g'
 endif
 
 if HAVE_CRYPTSETUP
-if CRYPTSETUP_VIA_DLOPEN
+if USE_DLOPEN_CRYPTSETUP
 edit_cmd += -e 's|@LIBCRYPTSETUP[@]||g'
-edit_cmd += -e 's|@LIBDL[@]|-ldl|g'
 else
 edit_cmd += -e 's|@LIBCRYPTSETUP[@]|libcryptsetup|g'
-edit_cmd += -e 's|@LIBDL[@]||g'
 endif
 else
 edit_cmd += -e 's|@LIBCRYPTSETUP[@]||g'
+endif
+
+if USE_DLOPEN_SELINUX
+edit_cmd += -e 's|@LIBDL[@]|-ldl|g'
+else
+if USE_DLOPEN_CRYPTSETUP
+edit_cmd += -e 's|@LIBDL[@]|-ldl|g'
+else
+if USE_DLOPEN_SYSTEMD
+edit_cmd += -e 's|@LIBDL[@]|-ldl|g'
+else
 edit_cmd += -e 's|@LIBDL[@]||g'
+endif
+endif
 endif
 
 if USE_VENDORDIR
@@ -336,6 +352,9 @@ checkmans:
 checkxalloc:
 	@ $(top_srcdir)/tools/checkxalloc.sh
 
+checkcloexec:
+	@ $(top_srcdir)/tools/checkcloexec.sh
+
 checkdecl:
 	@ $(top_srcdir)/tools/checkdecl.sh
 
@@ -351,7 +370,7 @@ checkusage:
 		$(usrbin_exec_PROGRAMS) $(usrsbin_exec_PROGRAMS)
 
 testcoverage:
-	@ $(top_srcdir)/tools/testcoverage.sh $(top_srcdir) --show-missing-opts
+	@ $(top_srcdir)/tools/testcoverage.sh $(top_srcdir) --show-missing-opts $(ARGS)
 
 checklibdoc:
 	@ $(top_srcdir)/tools/checklibdocs.sh \

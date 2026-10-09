@@ -191,3 +191,9 @@ BLKID_2_39 {
 BLKID_2_40 {
     blkid_wipe_all;
 } BLKID_2_39;
+
+BLKID_2_43 {
+    blkid_evaluate_tag2;
+    blkid_probe_open_device;
+    blkid_probe_set_vfs;
+} BLKID_2_40;

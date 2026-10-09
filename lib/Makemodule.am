@@ -22,6 +22,7 @@ libcommon_la_SOURCES = \
 	lib/crc64.c \
 	lib/c_strtod.c \
 	lib/debug.c \
+	lib/default_shell.c \
 	lib/encode.c \
 	lib/env.c \
 	lib/fileutils.c \
@@ -37,7 +38,6 @@ libcommon_la_SOURCES = \
 	lib/randutils.c \
 	lib/sha1.c \
 	lib/sha256.c \
-	lib/shells.c \
 	lib/signames.c \
 	lib/strutils.c \
 	lib/strv.c \
@@ -69,6 +69,7 @@ libcommon_la_SOURCES += lib/procfs.c
 endif
 endif
 
+
 EXTRA_LTLIBRARIES += libtcolors.la
 libtcolors_la_CFLAGS = $(AM_CFLAGS)
 libtcolors_la_SOURCES = lib/colors.c lib/color-names.c include/colors.h include/color-names.h
@@ -86,6 +87,33 @@ endif # !HAVE_TINFO
 
 MANPAGES += lib/terminal-colors.d.5
 dist_noinst_DATA += lib/terminal-colors.d.5.adoc
+
+# Common dlopen infrastructure
+common_dl_sources = \
+	lib/dl-utils.c \
+	include/dl-utils.h
+common_dl_ldadd = -ldl
+
+# Per-library sources (header always, .c only with dlopen)
+selinux_sources = include/dl-selinux.h
+if USE_DLOPEN_SELINUX
+selinux_sources += lib/dl-selinux.c
+endif
+
+cryptsetup_sources = include/dl-cryptsetup.h
+if USE_DLOPEN_CRYPTSETUP
+cryptsetup_sources += lib/dl-cryptsetup.c
+endif
+
+systemd_sources = include/dl-systemd.h
+if USE_DLOPEN_SYSTEMD
+systemd_sources += lib/dl-systemd.c
+endif
+
+econf_sources = include/dl-econf.h
+if USE_DLOPEN_ECONF
+econf_sources += lib/dl-econf.c
+endif
 
 check_PROGRAMS += \
 	test_blkdev \
@@ -252,5 +280,11 @@ test_logindefs_SOURCES = lib/logindefs.c
 test_logindefs_CPPFLAGS = -DTEST_PROGRAM $(AM_CPPFLAGS)
 test_logindefs_LDADD = $(LDADD) libcommon.la
 if HAVE_ECONF
+test_logindefs_SOURCES += \
+	lib/dl-utils.c \
+	include/dl-utils.h \
+	lib/dl-econf.c \
+	include/dl-econf.h
+test_logindefs_CPPFLAGS += $(ECONF_CFLAGS)
 test_logindefs_LDADD += $(ECONF_LIBS)
 endif

@@ -145,6 +145,7 @@ void emergency_do_mounts(void) { }
 
 #endif /* USE_SULOGIN_EMERGENCY_MOUNT */
 
+#ifdef __linux__
 /*
  * Read and allocate one line from file,
  * the caller has to free the result
@@ -175,7 +176,6 @@ char *oneline(const char * const file)
 	return ret;
 }
 
-#ifdef __linux__
 /*
  *  Read and determine active attribute for tty below
  *  /sys/class/tty, the caller has to free the result.

@@ -21,6 +21,7 @@ static struct libmnt_cache *mntcache;
 enum fs_devs_type {
 	FSTYPE_BTRFS = 1,
 	FSTYPE_ZFS = 2,
+	FSTYPE_BCACHEFS = 3,
 };
 
 struct fs_devs_group {
@@ -111,6 +112,12 @@ static void fs_devs_add_devname(struct fs_devs_group *grp, const char *name)
 /* Cache a mount entry in the group */
 static void fs_devs_add_filesystem(struct fs_devs_group *grp, struct libmnt_fs *fs)
 {
+	size_t i;
+
+	for (i = 0; i < grp->nfss; i++) {
+		if (grp->fss[i] == fs)
+			return;
+	}
 	grp->fss = xreallocarray(grp->fss,
 			grp->nfss + 1, sizeof(struct libmnt_fs *));
 	mnt_ref_fs(fs);
@@ -190,6 +197,12 @@ static struct fs_devs_group *fs_devs_find_group(struct lsblk_device *dev)
 				return grp;
 			break;
 		}
+		case FSTYPE_BCACHEFS:
+			for (j = 0; j < grp->ndevnames; j++) {
+				if (strcmp(grp->devnames[j], dev->name) == 0)
+					return grp;
+			}
+			break;
 		}
 	}
 	return NULL;
@@ -205,6 +218,70 @@ static void fs_devs_apply_group(struct lsblk_device *dev,
 		add_filesystem(dev, grp->fss[i]);
 }
 
+/* Check if devpath appears as a colon-separated token in source
+ * (e.g. "/dev/sdc1" in "/dev/sdc1:/dev/sdc2") */
+static int is_source_member(const char *source, const char *devpath)
+{
+	size_t len = strlen(devpath);
+	const char *p = source;
+
+	while ((p = strstr(p, devpath)) != NULL) {
+		if ((p == source || *(p - 1) == ':')
+		    && (p[len] == '\0' || p[len] == ':'))
+			return 1;
+		p += len;
+	}
+	return 0;
+}
+
+/* Cache mount entries from mountinfo for all groups of the given fstype.
+ * For each group, search mountinfo for entries where the source matches
+ * any member device. */
+static void fs_devs_cache_mounts(int fstype, const char *mnt_fstype)
+{
+	size_t i;
+
+	assert(mtab);
+
+	for (i = 0; i < fs_devs_ngroups; i++) {
+		struct fs_devs_group *grp = &fs_devs_groups[i];
+		struct libmnt_iter *itr;
+		struct libmnt_fs *fs;
+		size_t j;
+
+		if (grp->fstype != fstype)
+			continue;
+
+		itr = mnt_new_iter(MNT_ITER_BACKWARD);
+		if (!itr)
+			return;
+
+		for (j = 0; j < grp->ndevnames; j++) {
+			char devpath[PATH_MAX];
+
+			snprintf(devpath, sizeof(devpath), "/dev/%s",
+					grp->devnames[j]);
+			mnt_reset_iter(itr, MNT_ITER_BACKWARD);
+
+			while (mnt_table_next_fs(mtab, itr, &fs) == 0) {
+				const char *ft = mnt_fs_get_fstype(fs);
+
+				if (!ft || strcmp(ft, mnt_fstype) != 0)
+					continue;
+				if (mnt_fs_streq_srcpath(fs, devpath))
+					fs_devs_add_filesystem(grp, fs);
+				else if (fstype == FSTYPE_BCACHEFS) {
+					const char *src = mnt_fs_get_source(fs);
+
+					if (src && is_source_member(src, devpath))
+						fs_devs_add_filesystem(grp, fs);
+				}
+			}
+		}
+		mnt_free_iter(itr);
+	}
+}
+
 /* Scan /sys/fs/btrfs/<uuid>/devices/ and register multi-device groups */
 static void fs_devs_scan_btrfs(void)
 {
@@ -212,7 +289,6 @@ static void fs_devs_scan_btrfs(void)
 	struct dirent *d, *dd;
 	char path[PATH_MAX];
 	const char *prefix = lsblk->sysroot ? lsblk->sysroot : "";
-	size_t i;
 
 	snprintf(path, sizeof(path), "%s/sys/fs/btrfs", prefix);
 	dir = opendir(path);
@@ -250,37 +326,7 @@ static void fs_devs_scan_btrfs(void)
 	}
 	closedir(dir);
 
-	/* Cache mount entries for all btrfs groups. Search mountinfo
-	 * for entries where source matches any member device. */
-	assert(mtab);
-
-	for (i = 0; i < fs_devs_ngroups; i++) {
-		struct fs_devs_group *grp = &fs_devs_groups[i];
-		struct libmnt_iter *itr;
-		struct libmnt_fs *fs;
-		size_t j;
-
-		if (grp->fstype != FSTYPE_BTRFS)
-			continue;
-
-		itr = mnt_new_iter(MNT_ITER_BACKWARD);
-		if (!itr)
-			return;
-
-		for (j = 0; j < grp->ndevnames; j++) {
-			char devpath[PATH_MAX];
-
-			snprintf(devpath, sizeof(devpath), "/dev/%s",
-					grp->devnames[j]);
-			mnt_reset_iter(itr, MNT_ITER_BACKWARD);
-
-			while (mnt_table_next_fs(mtab, itr, &fs) == 0) {
-				if (mnt_fs_streq_srcpath(fs, devpath))
-					fs_devs_add_filesystem(grp, fs);
-			}
-		}
-		mnt_free_iter(itr);
-	}
+	fs_devs_cache_mounts(FSTYPE_BTRFS, "btrfs");
 }
 
 /* Scan mountinfo for ZFS pools and register multi-device groups.
@@ -329,6 +375,80 @@ static void fs_devs_scan_zfs(void)
 	mnt_free_iter(itr);
 }
 
+/* Scan /sys/fs/bcachefs/<uuid>/dev-N/block symlinks and register
+ * multi-device groups */
+static void fs_devs_scan_bcachefs(void)
+{
+	DIR *dir, *devdir;
+	struct dirent *d, *dd;
+	char path[PATH_MAX];
+	const char *prefix = lsblk->sysroot ? lsblk->sysroot : "";
+	size_t ndevs;
+
+	snprintf(path, sizeof(path), "%s/sys/fs/bcachefs", prefix);
+	dir = opendir(path);
+	if (!dir)
+		return;
+
+	while ((d = xreaddir(dir)) != NULL) {
+		struct fs_devs_group *grp;
+
+		snprintf(path, sizeof(path), "%s/sys/fs/bcachefs/%s",
+				prefix, d->d_name);
+		devdir = opendir(path);
+		if (!devdir)
+			continue;
+
+		/* Count device entries to skip single-device filesystems */
+		ndevs = 0;
+		while ((dd = xreaddir(devdir)) != NULL) {
+			if (strncmp(dd->d_name, "dev-", 4) == 0)
+				ndevs++;
+		}
+		if (ndevs < 2) {
+			closedir(devdir);
+			continue;
+		}
+		rewinddir(devdir);
+
+		grp = fs_devs_get_group(FSTYPE_BCACHEFS, d->d_name);
+		if (!grp) {
+			struct fs_devs_group new_grp = {
+				.fstype = FSTYPE_BCACHEFS,
+				.identifier = xstrdup(d->d_name)
+			};
+			grp = fs_devs_add_group(&new_grp);
+		}
+
+		while ((dd = xreaddir(devdir)) != NULL) {
+			char buf[PATH_MAX];
+			const char *name;
+			ssize_t len;
+
+			if (strncmp(dd->d_name, "dev-", 4) != 0)
+				continue;
+
+			snprintf(path, sizeof(path),
+					"%s/sys/fs/bcachefs/%s/%s/block",
+					prefix, d->d_name, dd->d_name);
+			len = readlink(path, buf, sizeof(buf) - 1);
+			if (len < 0)
+				continue;
+			buf[len] = '\0';
+
+			name = ul_basename(buf);
+			if (!name || !*name || *name == '/')
+				continue;
+
+			fs_devs_add_devname(grp, name);
+		}
+		closedir(devdir);
+	}
+	closedir(dir);
+
+	fs_devs_cache_mounts(FSTYPE_BCACHEFS, "bcachefs");
+}
+
 /* Scan all supported multi-device filesystem types */
 static void fs_devs_scan(void)
 {
@@ -337,6 +457,7 @@ static void fs_devs_scan(void)
 	fs_devs_scanned = 1;
 	fs_devs_scan_btrfs();
 	fs_devs_scan_zfs();
+	fs_devs_scan_bcachefs();
 }
 
 /* Try to find mount entries via multi-device filesystem group membership.

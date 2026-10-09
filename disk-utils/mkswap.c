@@ -29,8 +29,7 @@
 #include <getopt.h>
 #include <assert.h>
 #ifdef HAVE_LIBSELINUX
-# include <selinux/selinux.h>
-# include <selinux/context.h>
+# include "dl-selinux.h"
 # include "selinux-utils.h"
 #endif
 #ifdef HAVE_LINUX_FS_H
@@ -364,7 +363,7 @@ done:
 /* return size in pages */
 static unsigned long long get_size(const struct mkswap_control *ctl)
 {
-	unsigned long long size;
+	uint64_t size;
 
 	if (ctl->file && ctl->filesz)
 		size = ctl->filesz;
@@ -374,7 +373,7 @@ static unsigned long long get_size(const struct mkswap_control *ctl)
 			err(EXIT_FAILURE, _("cannot open %s"), ctl->devname);
 		if (blkdev_get_size(fd, &size) < 0)
 			err(EXIT_FAILURE, _("cannot determine size of %s"), ctl->devname);
-		if ((unsigned long long) ctl->offset > size)
+		if ((uint64_t) ctl->offset > size)
 			errx(EXIT_FAILURE, _("offset larger than file size"));
 		close(fd);
 	}
@@ -401,13 +400,16 @@ static void open_device(struct mkswap_control *ctl)
 	assert(ctl->devname);
 
 	if (ctl->file) {
-		if (stat(ctl->devname, &ctl->devstat) == 0) {
+		ctl->fd = open(ctl->devname, O_RDWR | O_CREAT, 0600);
+		if (ctl->fd >= 0) {
+			if (fstat(ctl->fd, &ctl->devstat) < 0)
+				err(EXIT_FAILURE, _("stat of %s failed"), ctl->devname);
 			if (!S_ISREG(ctl->devstat.st_mode))
-				err(EXIT_FAILURE, _("cannot create swap file %s: node isn't regular file"), ctl->devname);
-			if (chmod(ctl->devname, 0600) < 0)
+				errx(EXIT_FAILURE, _("cannot create swap file %s: node isn't regular file"), ctl->devname);
+			if ((ctl->devstat.st_mode & 07777) != 0600
+			    && fchmod(ctl->fd, 0600) < 0)
 				err(EXIT_FAILURE, _("cannot set permissions on swap file %s"), ctl->devname);
 		}
-		ctl->fd = open(ctl->devname, O_RDWR | O_CREAT, 0600);
 	} else {
 		if (stat(ctl->devname, &ctl->devstat) < 0)
 			err(EXIT_FAILURE, _("stat of %s failed"), ctl->devname);
@@ -489,7 +491,7 @@ static void wipe_device(struct mkswap_control *ctl)
 		if (lseek(ctl->fd, 0, SEEK_SET) != 0)
 			errx(EXIT_FAILURE, _("unable to rewind swap-device"));
 
-		if (write_all(ctl->fd, buf, sizeof(buf)))
+		if (ul_write_all(ctl->fd, buf, sizeof(buf)))
 			errx(EXIT_FAILURE, _("unable to erase bootbits sectors"));
 #ifdef HAVE_LIBBLKID
 		/*
@@ -541,7 +543,7 @@ static void write_header_to_device(struct mkswap_control *ctl)
 	if (lseek(ctl->fd, offset, SEEK_SET) != offset)
 		errx(EXIT_FAILURE, _("unable to rewind swap-device"));
 
-	if (write_all(ctl->fd, (char *) ctl->signature_page + SIGNATURE_OFFSET,
+	if (ul_write_all(ctl->fd, (char *) ctl->signature_page + SIGNATURE_OFFSET,
 		      ctl->pagesize - SIGNATURE_OFFSET) == -1)
 		err(EXIT_FAILURE,
 			_("%s: unable to write signature page"),
@@ -668,7 +670,11 @@ int main(int argc, char **argv)
 				"uuid",
 #endif
 #ifdef HAVE_LIBSELINUX
+# ifdef USE_DLOPEN_SELINUX
+				"selinux(dlopen)",
+# else
 				"selinux",
+# endif
 #endif
 				NULL,
 			};
@@ -800,12 +806,13 @@ int main(int argc, char **argv)
 	deinit_signature_page(&ctl);
 
 #ifdef HAVE_LIBSELINUX
-	if ((ctl.file || S_ISREG(ctl.devstat.st_mode)) && is_selinux_enabled() > 0) {
+	if ((ctl.file || S_ISREG(ctl.devstat.st_mode))
+	    && ul_dlopen_libselinux() == 0 && selinux_call(is_selinux_enabled)() > 0) {
 		const char *context_string;
 		char *oldcontext;
 		context_t newcontext;
 
-		if (fgetfilecon(ctl.fd, &oldcontext) < 0) {
+		if (selinux_call(fgetfilecon)(ctl.fd, &oldcontext) < 0) {
 			if (errno != ENODATA)
 				err(EXIT_FAILURE,
 					_("%s: unable to obtain selinux file label"),
@@ -816,20 +823,20 @@ int main(int argc, char **argv)
 					_("%s: unable to obtain default selinux file label"),
 					ctl.devname);
 		}
-		if (!(newcontext = context_new(oldcontext)))
+		if (!(newcontext = selinux_call(context_new)(oldcontext)))
 			errx(EXIT_FAILURE, _("unable to create new selinux context"));
-		if (context_type_set(newcontext, SELINUX_SWAPFILE_TYPE))
+		if (selinux_call(context_type_set)(newcontext, SELINUX_SWAPFILE_TYPE))
 			errx(EXIT_FAILURE, _("couldn't compute selinux context"));
 
-		context_string = context_str(newcontext);
+		context_string = selinux_call(context_str)(newcontext);
 
 		if (strcmp(context_string, oldcontext)!=0) {
-			if (fsetfilecon(ctl.fd, context_string) && errno != ENOTSUP)
+			if (selinux_call(fsetfilecon)(ctl.fd, context_string) && errno != ENOTSUP)
 				err(EXIT_FAILURE, _("unable to relabel %s to %s"),
 						ctl.devname, context_string);
 		}
-		context_free(newcontext);
-		freecon(oldcontext);
+		selinux_call(context_free)(newcontext);
+		selinux_call(freecon)(oldcontext);
 	}
 #endif
 	/*

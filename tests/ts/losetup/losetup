@@ -27,9 +27,9 @@ ts_check_test_command "$TS_CMD_LSBLK"
 
 # Before checking for loop support we would need to test if losetup -f works at
 # all. At least we do a simple executable test for now.
-$TS_CMD_LOSETUP --version >/dev/null 2>$TS_OUTPUT || ts_failed
-$TS_CMD_LOSETUP --unknownopt >>$TS_OUTPUT 2>/dev/null && ts_failed
-test -s $TS_OUTPUT && ts_failed
+$TS_CMD_LOSETUP --version >/dev/null 2>"$TS_OUTPUT" || ts_failed
+$TS_CMD_LOSETUP --unknownopt >>"$TS_OUTPUT" 2>/dev/null && ts_failed
+test -s "$TS_OUTPUT" && ts_failed
 
 ts_skip_nonroot
 ts_check_losetup
@@ -46,7 +46,7 @@ LODEV=$( $TS_CMD_LOSETUP --find --show $BACKFILE )
 if [ -z "$LODEV" ]; then
 	ts_log "Failed to create loop device"
 fi
-lo_print $LODEV >> $TS_OUTPUT
+lo_print $LODEV >> "$TS_OUTPUT"
 $TS_CMD_LOSETUP --detach $LODEV
 ts_finalize_subtest
 
@@ -55,7 +55,7 @@ LODEV=$( $TS_CMD_LOSETUP --offset 1MiB --find --show $BACKFILE )
 if [ -z "$LODEV" ]; then
 	ts_log "Failed to create loop device"
 fi
-lo_print $LODEV >> $TS_OUTPUT
+lo_print $LODEV >> "$TS_OUTPUT"
 $TS_CMD_LOSETUP --detach $LODEV
 ts_finalize_subtest
 
@@ -65,7 +65,7 @@ LODEV=$( $TS_CMD_LOSETUP --sizelimit 3MiB --find --show $BACKFILE )
 if [ -z "$LODEV" ]; then
 	ts_log "Failed to create loop device"
 fi
-lo_print $LODEV >> $TS_OUTPUT
+lo_print $LODEV >> "$TS_OUTPUT"
 $TS_CMD_LOSETUP -d $LODEV
 ts_finalize_subtest
 
@@ -75,7 +75,7 @@ LODEV=$( $TS_CMD_LOSETUP --offset 1MiB --sizelimit 3MiB --find --show $BACKFILE 
 if [ -z "$LODEV" ]; then
 	ts_log "Failed to create loop device"
 fi
-lo_print $LODEV >> $TS_OUTPUT
+lo_print $LODEV >> "$TS_OUTPUT"
 $TS_CMD_LOSETUP -d $LODEV
 ts_finalize_subtest
 

@@ -153,8 +153,12 @@ function ts_report_skip {
 function ts_skip {
 	ts_report_skip "$1"
 
-	ts_cleanup_on_exit
-	exit 0
+	if [ -n "$TS_SUBNAME" ]; then
+		TS_SUBSKIPPED="yes"
+	else
+		ts_cleanup_on_exit
+		exit 0
+	fi
 }
 
 function ts_skip_nonroot {
@@ -190,9 +194,12 @@ function ts_runs_on_qemu {
 	return
 }
 
-function ts_failed_subtest {
+function ts_failed {
 	local msg="FAILED"
 	local ret=1
+
+	TS_SUBFAILED="yes"
+
 	if [ "$TS_KNOWN_FAIL" = "yes" ]; then
 		msg="KNOWN FAILED"
 		ret=0
@@ -204,12 +211,11 @@ function ts_failed_subtest {
 		ts_report " $msg ($1)"
 	fi
 
-	return $ret
-}
+	if [ -z "$TS_SUBNAME" ]; then
+		exit $ret
+	fi
 
-function ts_failed {
-	ts_failed_subtest "$1"
-	exit $?
+	return $ret
 }
 
 function ts_report_ok {
@@ -415,11 +421,11 @@ function ts_init_env {
 	TS_FSTAB="$TS_OUTDIR/${TS_TESTNAME}.fstab"
 	BLKID_FILE="$TS_OUTDIR/${TS_TESTNAME}.blkidtab"
 
-	declare -a TS_SUID_PROGS
-	declare -a TS_SUID_USER
-	declare -a TS_SUID_GROUP
-	declare -a TS_LOOP_DEVS
-	declare -a TS_LOCKFILE_FD
+	declare -ag TS_SUID_PROGS
+	declare -ag TS_SUID_USER
+	declare -ag TS_SUID_GROUP
+	declare -ag TS_LOOP_DEVS
+	declare -ag TS_LOCKFILE_FD
 
 	if [ -f $TS_TOPDIR/commands.sh ]; then
 		. $TS_TOPDIR/commands.sh
@@ -458,7 +464,13 @@ function ts_init_env {
 
 function ts_init_subtest {
 
+	if [ -n "$TS_SUBNAME" ]; then
+		ts_failed "BUG: subtest '$TS_SUBNAME' not finalized"
+	fi
+
 	TS_SUBNAME="$1"
+	TS_SUBFAILED=""
+	TS_SUBSKIPPED=""
 	ts_init_core_subtest_env
 	TS_NSUBTESTS=$(( $TS_NSUBTESTS + 1 ))
 
@@ -632,12 +644,18 @@ function tt_gen_mem_report {
 function ts_finalize_subtest {
 	local res=0
 
-	ts_gen_diff
-	if [ $? -eq 1 ]; then
-		ts_failed_subtest "$1"
+	if [ "$TS_SUBSKIPPED" = "yes" ]; then
+		:
+	elif [ "$TS_SUBFAILED" = "yes" ]; then
 		res=1
 	else
-		ts_report_ok "$(tt_gen_mem_report "$1")"
+		ts_gen_diff
+		if [ $? -eq 1 ]; then
+			ts_failed "$1"
+			res=1
+		else
+			ts_report_ok "$(tt_gen_mem_report "$1")"
+		fi
 	fi
 
 	[ $res -ne 0 ] && TS_NSUBFAILED=$(( $TS_NSUBFAILED + 1 ))
@@ -646,13 +664,6 @@ function ts_finalize_subtest {
 	ts_init_core_env
 
 	return $res
-}
-
-function ts_skip_subtest {
-	ts_report_skip "$1"
-	# reset environment back to parental test
-	ts_init_core_env
-
 }
 
 # Specify the kernel version X.Y.Z you wish to compare against like:
@@ -678,6 +689,10 @@ function ts_kernel_ver_lt {
 
 function ts_finalize {
 	ts_cleanup_on_exit
+
+	if [ -n "$TS_SUBNAME" ]; then
+		ts_failed "BUG: subtest '$TS_SUBNAME' not finalized"
+	fi
 
 	if [ $TS_NSUBTESTS -ne 0 ]; then
 		if ! ts_gen_diff || [ $TS_NSUBFAILED -ne 0 ]; then

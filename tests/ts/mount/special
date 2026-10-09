@@ -37,30 +37,29 @@ EOF
 chmod +x $MOUNTER
 
 ts_init_subtest "basic"
-$TS_CMD_MOUNT -t mytest /foo /bar &> $TS_OUTPUT
+$TS_CMD_MOUNT -t mytest /foo /bar &> "$TS_OUTPUT"
 ts_finalize_subtest
 
 ts_init_subtest "options"
-$TS_CMD_MOUNT -t mytest -o foo,defaults /foo /bar &> $TS_OUTPUT
+$TS_CMD_MOUNT -t mytest -o foo,defaults /foo /bar &> "$TS_OUTPUT"
 ts_finalize_subtest
 
 ts_init_subtest "multi-types"
-$TS_CMD_MOUNT -t mytest,invalid /foo /bar &> $TS_OUTPUT
+$TS_CMD_MOUNT -t mytest,invalid /foo /bar &> "$TS_OUTPUT"
 ts_finalize_subtest
 
 ts_init_subtest "user"
-$TS_CMD_MOUNT -t mytest -ouser,abc /foo /bar &> $TS_OUTPUT
+$TS_CMD_MOUNT -t mytest -ouser,abc /foo /bar &> "$TS_OUTPUT"
 ts_finalize_subtest
 
 ts_init_subtest "username"
-$TS_CMD_MOUNT -t mytest -ouser=name,abc /foo /bar &> $TS_OUTPUT
+$TS_CMD_MOUNT -t mytest -ouser=name,abc /foo /bar &> "$TS_OUTPUT"
 ts_finalize_subtest
 
 
 ts_init_subtest "missing-options"
 
-grep -q 'nodev[[:space:]]*tmpfs' /proc/filesystems
-if [ "$?" == "0" ]; then
+if grep -q 'nodev[[:space:]]*tmpfs' /proc/filesystems; then
 cat > $MOUNTER <<EOF
 #!/usr/bin/env bash
 # This util-linux regression test component
@@ -76,25 +75,25 @@ EOF
 	rm -f $LIBMOUNT_UTAB
 	echo -n "" > $LIBMOUNT_UTAB
 
-	$TS_CMD_MOUNT -t mytest -o x-bar=BAR /foo "$mountpoint" &> $TS_OUTPUT
+	$TS_CMD_MOUNT -t mytest -o x-bar=BAR /foo "$mountpoint" &> "$TS_OUTPUT"
 	udevadm settle
 
-	grep -q "$mountpoint" /proc/mounts
-	if [ "$?" == "0" ]; then
+	if grep -q "$mountpoint" /proc/mounts; then
 		cat "$LIBMOUNT_UTAB" \
 			| grep "$mountpoint" \
 			| sed -e "s|$mountpoint|/mountpoint|g" \
+			      -e 's/UNIQID=[[:digit:]]* //g' \
 			      -e 's/ID=[[:digit:]]* //g' \
-			&> $TS_OUTPUT
+			&> "$TS_OUTPUT"
 		$TS_CMD_UMOUNT "$mountpoint"
 		unset LIBMOUNT_UTAB
 		rm -f $MOUNTER
-		ts_finalize_subtest
 	else
-		ts_skip_subtest "tmpfs not mounted"
+		ts_skip "tmpfs not mounted"
 	fi
 else
-	ts_skip_subtest "tmpfs unsupported"
+	ts_skip "tmpfs unsupported"
 fi
+ts_finalize_subtest
 
 ts_finalize

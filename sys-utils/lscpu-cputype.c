@@ -104,6 +104,8 @@ void lscpu_unref_cputype(struct lscpu_cputype *ct)
 		free(ct->addrsz);	/* address sizes */
 		free(ct->static_mhz);
 		free(ct->dynamic_mhz);
+		free(ct->isa);
+		free(ct->mmu);
 		free(ct);
 	}
 }
@@ -201,6 +203,7 @@ enum {
 	PAT_VENDOR,
 	PAT_CACHE,
 	PAT_ISA,
+	PAT_MMU,
 };
 
 /*
@@ -242,6 +245,7 @@ static const struct cpuinfo_pattern type_patterns[] =
 	DEF_PAT_CPUTYPE( "max thread id",	PAT_MAX_THREAD_ID, mtid),	/* s390 */
 	DEF_PAT_CPUTYPE( "microcode",	        PAT_MICROCODE, microcode),
 	DEF_PAT_CPUTYPE( "mimpid",		PAT_MODEL,	model),		/* riscv */
+	DEF_PAT_CPUTYPE( "mmu",			PAT_MMU,	mmu),		/* riscv */
 	DEF_PAT_CPUTYPE( "model",		PAT_MODEL,	model),
 	DEF_PAT_CPUTYPE( "model name",		PAT_MODEL_NAME,	modelname),
 	DEF_PAT_CPUTYPE( "mvendorid",		PAT_VENDOR,	vendor),	/* riscv */
@@ -526,16 +530,17 @@ static int cpuinfo_parse_cache(struct lscpu_cxt *cxt, int keynum, char *data)
 
 	DBG_OBJ(GATHER, cxt, ul_debug(" parse cpuinfo cache '%s'", data));
 
-	p = strstr(data, "scope=") + 6;
+	p = strstr(data, "scope=");
 	/* Skip private caches, also present in sysfs */
-	if (!p || strncmp(p, "Private", 7) == 0)
+	if (!p || strncmp(p + 6, "Private", 7) == 0)
 		return 0;
 	p = strstr(data, "level=");
 	if (!p || sscanf(p, "level=%d", &level) != 1)
 		return 0;
-	p = strstr(data, "type=") + 5;
-	if (!p || !*p)
+	p = strstr(data, "type=");
+	if (!p || !*(p + 5))
 		return 0;
+	p += 5;
 	type = 0;
 	if (strncmp(p, "Data", 4) == 0)
 		type = 'd';
@@ -680,6 +685,13 @@ int lscpu_read_cpuinfo(struct lscpu_cxt *cxt)
 				pr->curr_type = lscpu_new_cputype();
 				lscpu_add_cputype(cxt, pr->curr_type);
 			}
+
+			/* On PowerPC, "model" contains the machine/server
+			 * model rather than the CPU model; use revision */
+			if (pattern->id == PAT_MODEL
+			    && pr->curr_type->revision
+			    && strstr(pr->curr_type->revision, "pvr"))
+				break;
 
 			strdup_to_offset(pr->curr_type, pattern->offset, value);
 			break;

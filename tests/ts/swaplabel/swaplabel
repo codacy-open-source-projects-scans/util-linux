@@ -26,36 +26,36 @@ ts_check_test_command "$TS_CMD_FALLOCATE"
 IMAGE=${TS_OUTDIR}/${TS_TESTNAME}.file
 
 PAGE_SIZE=$($TS_HELPER_SYSINFO pagesize)
-PAGE_SIZE_KB=$(( $PAGE_SIZE / 1024 ))
-MIN_SWAP_SIZE=$(( 10 * $PAGE_SIZE ))
+PAGE_SIZE_KB=$(( PAGE_SIZE / 1024 ))
+MIN_SWAP_SIZE=$(( 10 * PAGE_SIZE ))
 MIN_SWAP_SIZE_KB=$(( MIN_SWAP_SIZE / 1024 ))
 
 rm -f $IMAGE
-$TS_CMD_FALLOCATE --posix --length $(( $MIN_SWAP_SIZE - 1 )) $IMAGE 2> /dev/null
+$TS_CMD_FALLOCATE --posix --length $(( MIN_SWAP_SIZE - 1 )) $IMAGE 2> /dev/null
 $TS_CMD_MKSWAP \
 	--label 1234567890abcdef \
 	--uuid 12345678-abcd-abcd-abcd-1234567890ab \
-	$IMAGE >> $TS_OUTPUT 2>> $TS_ERRLOG
+	$IMAGE >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 sed -i -e "s/ $MIN_SWAP_SIZE_KB KiB/ 10 pages/" \
     -e "s:$IMAGE:<swapfile>:g" \
     -e "s/insecure permissions [0-9]*/insecure permissions <perm>/g" \
-   $TS_OUTPUT $TS_ERRLOG
+   "$TS_OUTPUT" "$TS_ERRLOG"
 
 rm -f $IMAGE
 $TS_CMD_FALLOCATE --posix --length $MIN_SWAP_SIZE $IMAGE 2> /dev/null
 $TS_CMD_MKSWAP \
 	--label 1234567890abcdef \
 	--uuid 12345678-abcd-abcd-abcd-1234567890ab \
-	$IMAGE >> $TS_OUTPUT 2>> $TS_ERRLOG
+	$IMAGE >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
-sed -i -e "s/ $(( $MIN_SWAP_SIZE_KB - $PAGE_SIZE_KB )) KiB/ 9 pages/" \
-    -e "s/($(( $MIN_SWAP_SIZE - $PAGE_SIZE )) bytes)/(9xPGSZ bytes)/" \
+sed -i -e "s/ $(( MIN_SWAP_SIZE_KB - PAGE_SIZE_KB )) KiB/ 9 pages/" \
+    -e "s/($(( MIN_SWAP_SIZE - PAGE_SIZE )) bytes)/(9xPGSZ bytes)/" \
     -e "s:$IMAGE:<swapfile>:g" \
     -e "s/insecure permissions [0-9]*/insecure permissions <perm>/g" \
-    $TS_OUTPUT $TS_ERRLOG
+    "$TS_OUTPUT" "$TS_ERRLOG"
 
-$TS_CMD_SWAPLABEL $IMAGE >> $TS_OUTPUT 2>> $TS_ERRLOG
+$TS_CMD_SWAPLABEL $IMAGE >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 #rm -f $IMAGE
 

@@ -51,7 +51,7 @@ udevadm settle
 
 ts_log "Create RAID device"
 mdadm -q --create ${MD_DEVICE} --metadata=0.90 --chunk=64 --level=1 \
-	    --raid-devices=2 ${DEVICE1} ${DEVICE2} >> $TS_OUTPUT 2>> $TS_ERRLOG
+	    --raid-devices=2 ${DEVICE1} ${DEVICE2} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 udevadm settle
 
 # create dos partition table
@@ -62,7 +62,7 @@ q
 EOF
 
 ts_log "Create partitions on RAID device"
-$TS_CMD_FDISK ${MD_DEVICE} >> $TS_OUTPUT 2>> $TS_ERRLOG <<EOF
+$TS_CMD_FDISK ${MD_DEVICE} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG" <<EOF
 n
 p
 1
@@ -81,13 +81,13 @@ EOF
 udevadm settle
 
 ts_log "Probe first RAID member"
-$TS_CMD_BLKID --probe --output udev $DEVICE1 2>> $TS_ERRLOG | sort >> $TS_OUTPUT
+$TS_CMD_BLKID --probe --output udev $DEVICE1 2>> "$TS_ERRLOG" | sort >> "$TS_OUTPUT"
 
 ts_log "Probe second RAID member"
-$TS_CMD_BLKID --probe --output udev $DEVICE1 2>> $TS_ERRLOG | sort >> $TS_OUTPUT
+$TS_CMD_BLKID --probe --output udev $DEVICE1 2>> "$TS_ERRLOG" | sort >> "$TS_OUTPUT"
 
 ts_log "Stop RAID device"
-mdadm -q -S ${MD_DEVICE} >> $TS_OUTPUT 2>> $TS_ERRLOG
+mdadm -q -S ${MD_DEVICE} >> "$TS_OUTPUT" 2>> "$TS_ERRLOG"
 
 udevadm settle
 ts_unlock "md"
@@ -96,8 +96,8 @@ ts_log "Deinitialize devices"
 
 ts_fdisk_clean
 # seems that raid1 minimum I/O size has been changed in kernels >4.4.x and >4.8
-sed -i 's@^\(I/O size (minimum/optimal): \)[1-9][0-9]*@\1<removed>@' $TS_OUTPUT
+sed -i 's@^\(I/O size (minimum/optimal): \)[1-9][0-9]*@\1<removed>@' "$TS_OUTPUT"
 # remove generated UUIDs
-sed -i -e 's/ID_FS_UUID.*//g' $TS_OUTPUT
+sed -i -e 's/ID_FS_UUID.*//g' "$TS_OUTPUT"
 
 ts_finalize
